@@ -39,7 +39,8 @@
       "Later generations: in Pokémon XD, Generation 4 and pack Pokémon icons in Pokémon Storage and the Purification Chamber are now as big as XD's own Pokémon beside them, instead of noticeably smaller.",
       "Settings: the Performance overlay switch is now Controls overlay, as the overlay lists your controls.",
       "Pokédex: Mankey, Snorlax, Gligar, Ursaring, Slugma and Torkoal no longer have dark patches or squares around their eyes, the faint lines above Wooper's eyes are gone, and each Unown letter, and each of Deoxys's forms in XD, has a shiny look to pick under Look, as the game shows them.",
-      "Randomizer: the Shadow Pokémon setting now says that each one keeps its trainer and its level, and Similar strength says it spreads its picks."
+      "Randomizer: the Shadow Pokémon setting now says that each one keeps its trainer and its level, and Similar strength says it spreads its picks.",
+      "Fixed updating the game on an exFAT or FAT32 drive, such as an SD card or many USB drives: setup stopped with \"EISDIR: illegal operation on a directory\". On such a drive the HD textures now move into the new game version instead of being linked."
     ],
     "game": [
       "Online: each player battles as their own hero in the colours they chose on the launcher's Customize page, in Colosseum and XD and in rooms for both games, and both players and anyone watching see them that way, even when both picked the same hero. Michael shows only in XD: in Colosseum a player who chose him appears as the game's usual trainer, and so does a player on an older launcher.",

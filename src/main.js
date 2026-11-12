@@ -892,6 +892,7 @@ async function build(forceFresh = false) {
   await ensureBuildTools();
   const source = currentSource();
   let root = original;
+  let moved = [], result;
   const sourceMarker = path.join(root, 'launcher-source.json');
   const freshPinnedSource = fs.existsSync(sourceMarker) && !binaryReady(root) && game.matchesSource(root, source);
   if (forceFresh || (!game.isCurrent(root, source) && !freshPinnedSource)) {
@@ -900,70 +901,79 @@ async function build(forceFresh = false) {
     if (!fs.existsSync(root)) await game.checkout(root, { run: launch, capture, env: toolEnv(), source, stopped: wasStopped });
     if (!game.matchesSource(root, source))
       throw new Error('The update folder has changed. Choose another setup location in Settings and try again.');
-    game.carryUserFiles(original, root);
+    moved = game.carryUserFiles(original, root);
+    if (moved.length) log('This drive cannot link folders (it is likely exFAT or FAT32, as SD cards and USB drives often are), ' +
+      'so the HD textures moved into the new game version instead of being shared with the one before.');
   }
-  // A fresh build's folder is longer than the one ensureBuildTools checked.
-  requireBuildablePath(root);
-  // A game that can't link in a folder with letters outside ASCII says so now, not at the end of the build.
-  const nonAscii = port.nonAsciiPathProblem(root, { portable: Boolean(portableRoot),
-    folder: portableRoot || path.dirname(config.installRoot || original) });
-  if (nonAscii) {
-    log(nonAscii.message);
-    throw new Error(nonAscii.message);
-  }
-  if (!hdVisualsReady(root, settings)) await installTextures(root);
-  // A game whose build reads main.dol needs it on every system (games.js needsMainDol; neither does now).
-  if (chosen.needsMainDol) {
-    try { port.placeMainDol(root, rom, chosen.id); }
-    catch (error) { throw new Error(`Could not copy main.dol from your ${chosen.name} disc, which the build needs: ${error.message}`); }
-  } else if (process.platform === 'win32') {
-    // Only the icon needs it, so a build without it goes on without one.
-    try { port.placeMainDol(root, rom, chosen.id); }
-    catch (error) { log(`Could not copy main.dol from your disc for the game's icon: ${error.message}`); }
-  }
-  const env = await withBuildCaches(toolEnv({ ...process.env, NINJA_STATUS: '[%f/%t] ' }), root);
-  const compile = buildEnv => {
-    const cmd = port.buildCommand(root, process.platform, buildEnv, chosen.id);
-    return game.buildSafely(root, saveDirectory,
-      // A build that fails because antivirus deleted or blocked a tool says so instead of the compiler's error.
-      () => launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, `Build ${chosen.name}`)
-        .catch(error => {
-          const userData = app.getPath('userData');
-          throw hintedError(error) || buildTools.deletedToolsError(userData) || buildTools.blockedToolError(userData, error.output) || error;
-        }),
-      { source, toolFolder: toolsStatus().mode === 'own' ? null : buildTools.rootFor(app.getPath('userData')) });
-  };
-  // Windows sometimes can't start one of the build's programs (0xC0000142: build-tools.js dllInitFailedError), more
-  // often with many starting at once. The build runs again with two jobs, up to twice, before the player is told what
-  // usually causes it; the compiler cache keeps what each try compiled.
-  const compileSteadily = async buildEnv => {
-    for (let attempt = 1; ; attempt++) {
-      const triedAt = Date.now();
-      try { return await compile(attempt === 1 ? buildEnv : { ...buildEnv, JOBS: '2' }); }
-      catch (error) {
-        if (error.buildHint !== 'dll-init-failed' || attempt > DLL_INIT_RETRIES || wasStopped(triedAt)) throw error;
-        log('Windows could not start one of the build\'s programs (0xC0000142). Building again with fewer programs at once…');
-      }
+  // Until the new version is saved as the one to play, the one before still is: a
+  // failed update gives back the HD textures it moved (carryUserFiles).
+  try {
+    // A fresh build's folder is longer than the one ensureBuildTools checked.
+    requireBuildablePath(root);
+    // A game that can't link in a folder with letters outside ASCII says so now, not at the end of the build.
+    const nonAscii = port.nonAsciiPathProblem(root, { portable: Boolean(portableRoot),
+      folder: portableRoot || path.dirname(config.installRoot || original) });
+    if (nonAscii) {
+      log(nonAscii.message);
+      throw new Error(nonAscii.message);
     }
-  };
-  const startedAt = Date.now();
-  let result;
-  try { result = await compileSteadily(env); }
-  catch (error) {
-    // A failed build through the caches is tried once more without them, unless the player stopped it, the build
-    // tools lost files, or the drive is full or Windows won't let them fork (which fail the same way again).
-    if (!env.COLO_UNIT_CACHE || wasStopped(startedAt) || error.blockedTool || error.buildHint || buildTools.missingTools(app.getPath('userData'))?.length) throw error;
-    log('The build failed with the compiler cache. Building again without it…');
-    result = await compileSteadily(compilerCache.withoutCaches(env));
+    if (!hdVisualsReady(root, settings)) await installTextures(root);
+    // A game whose build reads main.dol needs it on every system (games.js needsMainDol; neither does now).
+    if (chosen.needsMainDol) {
+      try { port.placeMainDol(root, rom, chosen.id); }
+      catch (error) { throw new Error(`Could not copy main.dol from your ${chosen.name} disc, which the build needs: ${error.message}`); }
+    } else if (process.platform === 'win32') {
+      // Only the icon needs it, so a build without it goes on without one.
+      try { port.placeMainDol(root, rom, chosen.id); }
+      catch (error) { log(`Could not copy main.dol from your disc for the game's icon: ${error.message}`); }
+    }
+    const env = await withBuildCaches(toolEnv({ ...process.env, NINJA_STATUS: '[%f/%t] ' }), root);
+    const compile = buildEnv => {
+      const cmd = port.buildCommand(root, process.platform, buildEnv, chosen.id);
+      return game.buildSafely(root, saveDirectory,
+        // A build that fails because antivirus deleted or blocked a tool says so instead of the compiler's error.
+        () => launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, `Build ${chosen.name}`)
+          .catch(error => {
+            const userData = app.getPath('userData');
+            throw hintedError(error) || buildTools.deletedToolsError(userData) || buildTools.blockedToolError(userData, error.output) || error;
+          }),
+        { source, toolFolder: toolsStatus().mode === 'own' ? null : buildTools.rootFor(app.getPath('userData')) });
+    };
+    // Windows sometimes can't start one of the build's programs (0xC0000142: build-tools.js dllInitFailedError), more
+    // often with many starting at once. The build runs again with two jobs, up to twice, before the player is told what
+    // usually causes it; the compiler cache keeps what each try compiled.
+    const compileSteadily = async buildEnv => {
+      for (let attempt = 1; ; attempt++) {
+        const triedAt = Date.now();
+        try { return await compile(attempt === 1 ? buildEnv : { ...buildEnv, JOBS: '2' }); }
+        catch (error) {
+          if (error.buildHint !== 'dll-init-failed' || attempt > DLL_INIT_RETRIES || wasStopped(triedAt)) throw error;
+          log('Windows could not start one of the build\'s programs (0xC0000142). Building again with fewer programs at once…');
+        }
+      }
+    };
+    const startedAt = Date.now();
+    try { result = await compileSteadily(env); }
+    catch (error) {
+      // A failed build through the caches is tried once more without them, unless the player stopped it, the build
+      // tools lost files, or the drive is full or Windows won't let them fork (which fail the same way again).
+      if (!env.COLO_UNIT_CACHE || wasStopped(startedAt) || error.blockedTool || error.buildHint || buildTools.missingTools(app.getPath('userData'))?.length) throw error;
+      log('The build failed with the compiler cache. Building again without it…');
+      result = await compileSteadily(compilerCache.withoutCaches(env));
+    }
+    // Preferences switch only after a successful build. Closing the app or a
+    // failed download/build leaves the last installation selected and playable.
+    const earlier = { ...config };
+    config = { ...config, repo: root, installRoot: config.installRoot || original, completedSetup: true,
+      previousInstall: root !== original && binaryReady(original)
+        ? { repo: original, settings, rom } : config.previousInstall };
+    try { saveConfig(); }
+    catch (error) { config = earlier; throw error; }
+  } catch (error) {
+    try { game.restoreUserFiles(moved); }
+    catch (restoreError) { log(`Could not move the HD textures back: ${restoreError.message}`); }
+    throw error;
   }
-  // Preferences switch only after a successful build. Closing the app or a
-  // failed download/build leaves the last installation selected and playable.
-  const earlier = { ...config };
-  config = { ...config, repo: root, installRoot: config.installRoot || original, completedSetup: true,
-    previousInstall: root !== original && binaryReady(original)
-      ? { repo: original, settings, rom } : config.previousInstall };
-  try { saveConfig(); }
-  catch (error) { config = earlier; throw error; }
   log(`Game ${source.version} is ready. Your saved games stay in the same folder.`);
   await removeOldVersions();
   await removeOldBuildTools();
