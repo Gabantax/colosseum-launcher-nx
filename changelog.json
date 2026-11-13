@@ -63,7 +63,8 @@
       "Cheats: press F9 while playing for a cheat menu, in Colosseum and XD. It has Infinite HP, One-Hit KO, Infinite PP, EXP and money multipliers, Always Snag, Snag Any Pokémon (snag a trainer's ordinary Pokémon too), Shiny Shadow Pokémon, Fast Purification, Heal Party and Walk Speed. Cheats start off each time you play, aren't saved, and are off in online battles.",
       "Warp: press F8 while playing to pick any place in the game and go straight there, in Colosseum and XD. Save first, as warping ahead of the story can leave it stuck.",
       "Pokémon XD: fixed the game crashing on Macs with Apple silicon as an opponent chose its moves in some double battles, such as at the second turn of the battle with Gorigan.",
-      "Generation 4 rules: fixed the game crashing or freezing when you tried to switch out a Pokémon held in by a foe's Shadow Tag, Arena Trap or Magnet Pull, such as a Wobbuffet's. The game now says the Pokémon can't switch out, in Colosseum and XD."
+      "Generation 4 rules: fixed the game crashing or freezing when you tried to switch out a Pokémon held in by a foe's Shadow Tag, Arena Trap or Magnet Pull, such as a Wobbuffet's. The game now says the Pokémon can't switch out, in Colosseum and XD.",
+      "Fixed setting up the game on Windows stopping with \"'NoneType' object has no attribute 'splitlines'\" when a build tool printed letters Windows' code page couldn't read, such as an accented name in the folder path."
     ]
   },
   "releases": [
