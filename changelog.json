@@ -23,7 +23,8 @@
       "Online: watch other players' battles. A battle under way on the room list has a Watch button, or type a room code and choose Watch. Your game plays the battle from its start, with the players' screens and battle camera but none of their menus, and fast-forwards to catch up if you come in late. You don't need a party to watch, the players see how many are watching, and Stop watching leaves.",
       "TMs by move name: a new switch under Gameplay, on by default, for listing TMs by the moves they teach in the bag and shops. Turn it off to see TM24 and the rest again.",
       "The launcher opens the way you left it: full screen (F11) or maximized, instead of always in a window.",
-      "Fixed Steam's on-screen keyboard popping up on a Steam Deck when the game starts, and when the controller moved onto a text box in the launcher. A text box now waits until you press A on it before the keyboard opens."
+      "Fixed Steam's on-screen keyboard popping up on a Steam Deck when the game starts, and when the controller moved onto a text box in the launcher. A text box now waits until you press A on it before the keyboard opens.",
+      "Randomizer: two new switches, both off to start with. No repeats keeps any evolution family from coming up twice among the Pokémon you start with and the Shadow Pokémon, and with Trainers' Pokémon on, from coming up twice in one trainer's team. First forms only makes your starters and the Shadow Pokémon Pokémon that don't evolve from another, so you can raise and evolve them. Find both under Randomizer in Settings; they apply from your next New Game."
     ],
     "game": [
       "Frame rate: Pokémon XD's overworld and battles run at 60 fps too, where they used to stay at 30, at the original game's speed. Choose 30 or 60 fps under Frame rate in Settings.",
@@ -64,7 +65,8 @@
       "Warp: press F8 while playing to pick any place in the game and go straight there, in Colosseum and XD. Save first, as warping ahead of the story can leave it stuck.",
       "Pokémon XD: fixed the game crashing on Macs with Apple silicon as an opponent chose its moves in some double battles, such as at the second turn of the battle with Gorigan.",
       "Generation 4 rules: fixed the game crashing or freezing when you tried to switch out a Pokémon held in by a foe's Shadow Tag, Arena Trap or Magnet Pull, such as a Wobbuffet's. The game now says the Pokémon can't switch out, in Colosseum and XD.",
-      "Fixed setting up the game on Windows stopping with \"'NoneType' object has no attribute 'splitlines'\" when a build tool printed letters Windows' code page couldn't read, such as an accented name in the folder path."
+      "Fixed setting up the game on Windows stopping with \"'NoneType' object has no attribute 'splitlines'\" when a build tool printed letters Windows' code page couldn't read, such as an accented name in the folder path.",
+      "Randomizer: runs can have no repeated evolution families and first-form starters and Shadow Pokémon. With both off, a seed chooses the same Pokémon as before."
     ]
   },
   "releases": [
