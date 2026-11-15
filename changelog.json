@@ -71,7 +71,7 @@
       "In Colosseum, Generation 4 Pokémon close their eyes when they fall asleep, open them when they wake and blink now and then while they wait, and their eyes and mouths change during moves, hits and fainting, as in Battle Revolution. Press Make assets when the launcher asks, to make their models again.",
       "Under Pokémon Platinum's battle rules, a fainted Pokémon's replacement now comes out at the end of the turn, after the weather and the turn's other effects, as in Diamond, Pearl and Platinum, instead of straight away; a move whose target has fainted by then turns to the other foe in a double battle, or says \"But there was no target...\" and still uses its PP. This is in Colosseum only for now: in Pokémon XD and in online rooms for both games, a replacement still comes out straight away.",
       "Later generations: fixed a Substitute looking like Turtwig, and Castform's rainy, sunny and snowy forms turning into Grotle, Torterra and Chimchar. In XD, Castform's forms and Shadow Lugia no longer turn into Turtwig, Grotle or Torterra.",
-      "Pokémon XD: fixed the game freezing on Windows as a TV's picture changed, such as when NETT hands the DATA ROM over during the raid at ONBS in Pyrite Town, and when you left the HQ lab by its door or elevator."
+      "Pokémon XD: fixed the game freezing on Windows as a TV's picture changed, such as when NETT hands the DATA ROM over during the raid at ONBS in Pyrite Town, and when you left the HQ lab by its door or elevator. If a frame ever fails to finish drawing, XD now skips it after a few seconds and plays on, instead of freezing."
     ]
   },
   "releases": [
