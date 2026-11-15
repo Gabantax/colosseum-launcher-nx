@@ -25,7 +25,8 @@
       "The launcher opens the way you left it: full screen (F11) or maximized, instead of always in a window.",
       "Fixed Steam's on-screen keyboard popping up on a Steam Deck when the game starts, and when the controller moved onto a text box in the launcher. A text box now waits until you press A on it before the keyboard opens.",
       "Randomizer: two new switches, both off to start with. No repeats keeps any evolution family from coming up twice among the Pokémon you start with and the Shadow Pokémon, and with Trainers' Pokémon on, from coming up twice in one trainer's team. First forms only makes your starters and the Shadow Pokémon Pokémon that don't evolve from another, so you can raise and evolve them. Find both under Randomizer in Settings; they apply from your next New Game.",
-      "Settings has a new Sound tab, with Master volume, Music and Sound effects sliders for the game. They are the same sliders as on the game's new Settings screen. Anything you change on that screen, sound or picture, is saved to the launcher's Settings straight away, while you play."
+      "Settings has a new Sound tab, with Master volume, Music and Sound effects sliders for the game. They are the same sliders as on the game's new Settings screen. Anything you change on that screen, sound or picture, is saved to the launcher's Settings straight away, while you play.",
+      "Fixed online rooms on Platinum's rules (Generation 4) starting their battles without Platinum's rules, moves and Pokémon."
     ],
     "game": [
       "Frame rate: Pokémon XD's overworld and battles run at 60 fps too, where they used to stay at 30, at the original game's speed. Choose 30 or 60 fps under Frame rate in Settings.",
