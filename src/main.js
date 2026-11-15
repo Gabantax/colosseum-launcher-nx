@@ -43,6 +43,7 @@ const crossplay = require('./crossplay');
 const pokedexNames = require('./pokedex');
 const heroLook = require('./hero-look');
 const heroBake = require('./hero-bake');
+const xdSave = require('./xd-save');
 const heroColors = require('./hero-colors');
 const pokedexData = pokedexNames.create();
 const pokemonCries = require('./pokemon-cries');
@@ -1539,6 +1540,8 @@ async function play(installation = null, battle = null) {
   const cacheFolder = path.join(app.getPath('userData'), 'game-cache');
   fs.mkdirSync(cacheFolder, { recursive: true });
   const { file: packsFile, own: packPokemon } = preparePlayPacks(rom, cacheFolder, battle);
+  // XD's story played as another hero: their field models, made once for the disc (hero-field.js)
+  const heroFields = chosen.id === 'xd' && supports('playAs') && !battle ? await makeFieldModels(rom) : null;
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks, game: chosen.id }),
@@ -1547,6 +1550,7 @@ async function play(installation = null, battle = null) {
     ...(supports('gbaLink') ? gbaLink.environment(config.gba, settings, gbaBackupFolder()) : {}),
     ...(supports('quickMoves') ? { SMS_BUTTON_PROMPT_DIR: promptDirectory() } : {}),
     ...(supports('randomizer') ? { COLO_RANDOMIZER_LOG: spoilerFile() } : {}),
+    ...(heroFields ? { COLO_HERO_FIELD: heroFields } : {}),
     // The renderer's caches, in the launcher's own folder: its default place is shared with the Sunshine port's.
     // Another game's shaders are its own file.
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
@@ -1968,10 +1972,28 @@ function playerLook() {
 // The hero the player's save plays as (the game's own stamp in it): Colosseum's Wes, or XD's Michael, for a save without
 // one or no save.
 function saveHero() {
-  if (config.game === 'xd') return 'michael';
+  if (config.game === 'xd') {
+    try {
+      const pack = xdSave.newestPack(fs.readFileSync(path.join(currentSaveDirectory(), storyParty.XD_SAVE)));
+      return pack ? heroBake.stampedHero(pack.plain, { at: xdSave.stampAt(pack.plain) + heroBake.XD_HERO_STAMP, none: 'michael' }) : 'michael';
+    } catch (_) { return 'michael'; }
+  }
   if (!supports('customize')) return 'wes';
   try { return heroBake.stampedHero(gciSave.newestPlain(fs.readFileSync(path.join(currentSaveDirectory(), storyParty.SAVE))).plain); }
   catch (_) { return 'wes'; }
+}
+
+// XD's heroes' field models, made in a worker (hero-field-worker.js): their folder, or null (the story is then Michael's).
+function makeFieldModels(rom) {
+  const worker = new Worker(path.join(__dirname, 'hero-field-worker.js'), { workerData: { rom, root: path.join(app.getPath('userData'), 'hero-field') } });
+  return new Promise(resolve => {
+    const done = value => { resolve(value); worker.terminate(); };
+    worker.once('message', ({ folder, error }) => {
+      if (error) log(`The heroes' field models for XD couldn't be made: ${error}`);
+      done(folder || null);
+    });
+    worker.once('error', error => { log(`The heroes' field models for XD couldn't be made: ${error.message}`); done(null); });
+  });
 }
 
 // The players' looks made in a worker (hero-bake-worker.js): [{ file, hd } or null] in the order of `looks`.

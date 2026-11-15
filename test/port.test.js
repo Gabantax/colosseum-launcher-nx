@@ -256,7 +256,7 @@ test('TMs by move name are on unless turned off, and on leaves it to the game', 
   }
 });
 
-test('Choose your hero is on unless turned off, and only Colosseum is told', () => {
+test('Choose your hero is on unless turned off, in both games', () => {
   const env = (settings, game) => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port', { game });
   const saved = { COLO_CHOOSE_HERO: process.env.COLO_CHOOSE_HERO, COLO_PLAYER: process.env.COLO_PLAYER };
   delete process.env.COLO_CHOOSE_HERO;
@@ -266,7 +266,7 @@ test('Choose your hero is on unless turned off, and only Colosseum is told', () 
     assert.equal(env({}).COLO_CHOOSE_HERO, undefined, 'on leaves it to the game, which asks');
     assert.equal(env({ chooseHero: false }).COLO_CHOOSE_HERO, '0');
     assert.equal(env({ chooseHero: false }).COLO_PLAYER, undefined, 'the hero is the save\'s, never the launcher\'s');
-    assert.equal('COLO_CHOOSE_HERO' in env({ chooseHero: false }, 'xd'), false, 'XD has no heroes to choose');
+    assert.equal(env({ chooseHero: false }, 'xd').COLO_CHOOSE_HERO, '0', 'XD asks too');
   } finally {
     for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value;
   }

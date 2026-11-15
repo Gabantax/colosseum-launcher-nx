@@ -129,3 +129,16 @@ test('each game has the heroes its disc has: Michael in XD only, and Wes stands 
   assert.deepEqual(heroBake.onlineLook(looks, 'red', ['wes', 'brendan', 'may', 'red', 'leaf']), { hero: 'red', colors: {} });
   assert.deepEqual(heroBake.lookLines([{ hero: 'michael', colors: {} }, null], [null, null]), ['look 0 5']);
 });
+
+test('an XD save\'s hero is the stamp 0x20 into reserve 1, and Michael without one', () => {
+  const at = 0x400, plain = Buffer.alloc(0x500);
+  plain.writeUInt32BE(0x43504852, at);
+  plain[at + 4] = 1;
+  plain[at + 5] = 4;
+  let check = 0x4e20c0de;
+  for (let i = 0; i < 12; i += 4) check = Math.imul(check ^ plain.readUInt32BE(at + i), 0x01000193) >>> 0;
+  plain.writeUInt32BE(check, at + 12);
+  assert.equal(heroBake.stampedHero(plain, { at, none: 'michael' }), 'leaf');
+  assert.equal(heroBake.stampedHero(plain, { at: at + 1, none: 'michael' }), 'michael');
+  assert.equal(heroBake.stampedHero(Buffer.alloc(0x500), { at, none: 'michael' }), 'michael');
+});

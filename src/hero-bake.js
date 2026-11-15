@@ -177,16 +177,18 @@ function prune(folder, keep) {
   for (const { at, name, time } of dated) if (name.endsWith('.tmp') && Date.now() - time > ABANDONED) fs.rmSync(at, { recursive: true, force: true });
 }
 
-// The hero a save plays as: the stamp the game writes in it (the game's host/player.c, at 0x1DFC0 of the save body, 8
-// bytes into the plain copy), or 'wes' for none, as the game takes a save without one.
-const HERO_STAMP = 8 + 0x1dfc0, HERO_STAMP_MAGIC = 0x43504852, HERO_STAMP_VERSION = 1, HERO_STAMP_CHECK = 0x4e20c0de;
+// The hero a save plays as: the stamp the game writes in it, or the game's own hero for none, as the game takes a save
+// without one. Colosseum's (host/player.c) is at 0x1DFC0 of the save body, 8 bytes into the plain copy (gci-save.js);
+// XD's (host/xd/player.c) 0x20 into reserve 1 of the deciphered pack (xd-save.js stampAt, after the randomizer's), and a
+// save without one is Michael's. Both stamps name one of Colosseum's five.
+const HERO_STAMP = 8 + 0x1dfc0, XD_HERO_STAMP = 0x20, HERO_STAMP_MAGIC = 0x43504852, HERO_STAMP_VERSION = 1, HERO_STAMP_CHECK = 0x4e20c0de;
 const HERO_IDS = Object.keys(HERO_NUMBERS);
-function stampedHero(plain) {
-  if (!plain || plain.length < HERO_STAMP + 16 || plain.readUInt32BE(HERO_STAMP) !== HERO_STAMP_MAGIC || plain[HERO_STAMP + 4] !== HERO_STAMP_VERSION) return 'wes';
+function stampedHero(plain, { at = HERO_STAMP, none = 'wes' } = {}) {
+  if (!plain || at < 0 || plain.length < at + 16 || plain.readUInt32BE(at) !== HERO_STAMP_MAGIC || plain[at + 4] !== HERO_STAMP_VERSION) return none;
   let check = HERO_STAMP_CHECK;
-  for (let i = 0; i < 12; i += 4) check = Math.imul(check ^ plain.readUInt32BE(HERO_STAMP + i), 0x01000193) >>> 0;
-  if (check !== plain.readUInt32BE(HERO_STAMP + 12)) return 'wes';
-  return HERO_IDS[plain[HERO_STAMP + 5]] || 'wes';
+  for (let i = 0; i < 12; i += 4) check = Math.imul(check ^ plain.readUInt32BE(at + i), 0x01000193) >>> 0;
+  if (check !== plain.readUInt32BE(at + 12) || plain[at + 5] > 4) return none;
+  return HERO_IDS[plain[at + 5]];
 }
 
 // The look a player battles online as, from the Customize page's looks: the hero chosen there for online battles when
@@ -202,4 +204,4 @@ function lookLines(looks, made) {
   return looks.flatMap((look, side) => look ? [`look ${side} ${HERO_NUMBERS[look.hero]}${made[side]?.file ? ` ${made[side].file}` : ''}`] : []);
 }
 
-module.exports = { VERSION, HERO_NUMBERS, normalizeLook, painted, encodeRgba8, writePkx, writeXdPkx, bake, makeLook, prune, stampedHero, onlineLook, lookLines };
+module.exports = { VERSION, HERO_NUMBERS, XD_HERO_STAMP, normalizeLook, painted, encodeRgba8, writePkx, writeXdPkx, bake, makeLook, prune, stampedHero, onlineLook, lookLines };
