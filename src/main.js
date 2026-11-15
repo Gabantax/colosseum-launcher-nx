@@ -46,6 +46,7 @@ const heroLook = require('./hero-look');
 const heroBake = require('./hero-bake');
 const xdSave = require('./xd-save');
 const heroColors = require('./hero-colors');
+const heroStory = require('./hero-story');
 const pokedexData = pokedexNames.create();
 const pokemonCries = require('./pokemon-cries');
 const pokedexCries = pokemonCries.create();
@@ -1548,6 +1549,8 @@ async function play(installation = null, battle = null) {
   // the Customize page's hero for the story, played whatever hero the save was made with
   const storyHero = !battle && supports('playAs') ? chosenStoryHero(chosen.id) : null;
   if (storyHero) log(`The story plays as ${heroColors.hero(storyHero).label} (Customize).`);
+  // the heroes in their Customize colours in the story (an online battle has each player's own: hero-bake.js)
+  const storyColors = !battle && supports('customize') ? await makeStoryColors(rom, chosen.id, settings, root) : null;
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
@@ -1568,6 +1571,9 @@ async function play(installation = null, battle = null) {
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
   // an online battle's players in their colours: the HD images made for them, read before the HD pack's
   if (battle?.looks?.length && playEnv.SMS_TEXTURE_PACKS && playEnv.SMS_TEXTURE_PACKS !== '0') playEnv.SMS_TEXTURE_PACKS = [...battle.looks, playEnv.SMS_TEXTURE_PACKS].join(';');
+  // the story's heroes in their colours: their repainted textures, read before any other pack's (with no HD pack too)
+  if (storyColors && playEnv.SMS_TEXTURE_PACKS !== undefined)
+    playEnv.SMS_TEXTURE_PACKS = [storyColors, ...(playEnv.SMS_TEXTURE_PACKS && playEnv.SMS_TEXTURE_PACKS !== '0' ? [playEnv.SMS_TEXTURE_PACKS] : [])].join(';');
   const recordedTools = game.toolRoot(root, undefined, chosen.id);
   const env = recordedTools ? buildTools.environmentAtRoot(recordedTools, playEnv) : toolEnv(playEnv);
   const cmd = port.gameRunCommand(root, rom, process.platform, env, undefined, chosen.id);
@@ -1978,6 +1984,26 @@ function playerLook() {
   const look = heroBake.onlineLook(looks, saveHero(), heroColors.heroesFor(config.game).map(hero => hero.id));
   if (look && heroBake.painted(look) && onlineFeatures(config.repo).looks) makeLooks([look]).catch(() => {});
   return look;
+}
+
+// The story's heroes in their Customize colours (hero-story.js, in a worker): the folder of their repainted textures, or
+// null (none has colours, or they couldn't be made: the story then shows the heroes' own). `settings` and `root` are
+// the launch's, whose texture packs (the HD pack's images) are repainted too.
+function makeStoryColors(rom, game, settings, root) {
+  let looks;
+  try { looks = heroLook.readLooks(app.getPath('userData')); } catch (_) { return Promise.resolve(null); }
+  if (!heroStory.paintedHeroes(looks, game).length) return Promise.resolve(null);
+  const folders = port.texturePackFolders({ ...settings, textures: Boolean(settings.textures && port.texturePackInstalled(root, game)) }, root, customTextureDirectory());
+  const worker = new Worker(path.join(__dirname, 'hero-story-worker.js'), { workerData: { rom, game, looks, folders, root: path.join(app.getPath('userData'), 'story-heroes') } });
+  return new Promise(resolve => {
+    const done = folder => { resolve(folder); worker.terminate(); };
+    worker.once('message', ({ folder, error }) => {
+      if (error) log(`The heroes' colours couldn't be made for the story (${error}); it shows their own.`);
+      else if (folder) log('The story shows the heroes in their Customize colours.');
+      done(error ? null : folder);
+    });
+    worker.once('error', error => { log(`The heroes' colours couldn't be made for the story (${error.message}).`); done(null); });
+  });
 }
 
 // The hero the Customize page says every story save plays as in `game`, or null (each save's own)

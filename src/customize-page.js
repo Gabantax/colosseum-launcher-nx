@@ -1,8 +1,8 @@
 // Customize: each hero's colours, on their model from the player's disc. A colour chosen repaints the
 // model's textures at once (hero-colors.js recolor), from the regions the main process sorted them into
 // (hero-look.js). Online battles show the player as one hero in its colours (src/hero-bake.js): the one chosen here,
-// else their save's. The story can be played as one hero too, whatever each save was made with (COLO_PLAYER); it
-// doesn't use the colours yet. Nothing of it stays on the GPU while the page is hidden.
+// else their save's. The story shows every hero in their colours (src/hero-story.js) and can be played as one hero,
+// whatever each save was made with (COLO_PLAYER). Nothing of it stays on the GPU while the page is hidden.
 import { createViewer } from './model-viewer.js';
 
 const $ = id => document.getElementById(id);
