@@ -30,6 +30,7 @@ const { createActivityLog } = require('./activity-log');
 const { observeProcess, exitDescription, failureMessage, gameStopReason, taskEnvironment } = require('./process-output');
 const { createSessionLog } = require('./session-log');
 const displayScale = require('./display-scale');
+const windowMode = require('./window-mode');
 const steam = require('./steam');
 const crashReports = require('./crash-reports');
 const telemetry = require('./telemetry');
@@ -253,7 +254,9 @@ function loadConfig() {
     // The trainer name, parties and room options of the Online page.
     online: parties.normalize(saved.online),
     // The Game Boy Advance's BIOS, and each socket's Game Pak and save (Settings → Game Boy Advance).
-    gba: gbaLink.normalize(saved.gba)
+    gba: gbaLink.normalize(saved.gba),
+    // Full screen, maximized or normal: the launcher's window opens the way it was left.
+    launcherWindow: windowMode.normalize(saved.launcherWindow)
   };
   if (config.installId !== saved.installId) {
     try { saveConfig(); } catch (error) { log(`Could not save preferences: ${error.message}`); }
@@ -1544,7 +1547,8 @@ async function play(installation = null, battle = null) {
   const heroFields = chosen.id === 'xd' && supports('playAs') && !battle ? await makeFieldModels(rom) : null;
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
-    packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks, game: chosen.id }),
+    packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
+    noRepeats: onlineFeatures(root).randomizerNoRepeats, baseForms: onlineFeatures(root).randomizerBaseForms, game: chosen.id }),
     ...saves.gameDataEnvironment(), ...bindingsEnvironment(settings),
     ...(supports('languagePacks') ? languagePacks.environment(settings, languageFolder()) : {}),
     ...(supports('gbaLink') ? gbaLink.environment(config.gba, settings, gbaBackupFolder()) : {}),
@@ -1595,7 +1599,7 @@ function showPresence() {
   const game = activeGame();
   const online = !isOnline ? null : battle?.role === 'watcher' ? { watching: battle.players?.filter(Boolean) || [] } : { opponent: battle?.opponent || null };
   discordPresence.set(presence.activity(latest, { startedAt, online,
-    gameName: game.name, areaImages: game.id === 'colosseum' }));
+    gameName: game.name, areaImages: game.id === 'colosseum', xdArt: game.id === 'xd' && Boolean(game.discordAppId) }));
 }
 
 function startPresence(startedAt, isOnline) {
@@ -1793,12 +1797,15 @@ function onlineFeatures(root, id = config.game) {
         // the randomizer's fourth generation
         randomizerGenerations: bytes.includes('randomizer: later generations'),
         // and Pokémon packs' own Pokémon
-        randomizerPacks: bytes.includes('randomizer: packs\' Pokemon') };
+        randomizerPacks: bytes.includes('randomizer: packs\' Pokemon'),
+        // no evolution family twice, and starters and Shadow Pokémon of first forms only
+        randomizerNoRepeats: bytes.includes('randomizer: no repeated families'),
+        randomizerBaseForms: bytes.includes('randomizer: base forms only') };
     }
     return onlineBinary;
   } catch (_) {
     return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false,
-      looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false };
+      looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false };
   }
 }
 
@@ -2321,6 +2328,8 @@ function state() {
     randomizerSave: saveRun(currentSaveDirectory(), config.game), randomizerReady: repoReady && randomizerReady(config.repo),
     randomizerGenerations: repoReady && onlineFeatures(config.repo).randomizerGenerations,
     randomizerPacks: repoReady && onlineFeatures(config.repo).randomizerPacks,
+    randomizerNoRepeats: repoReady && onlineFeatures(config.repo).randomizerNoRepeats,
+    randomizerBaseForms: repoReady && onlineFeatures(config.repo).randomizerBaseForms,
     usage: usageCount, online: onlineState(),
     gba: { ...gbaLink.status(config.gba), backupFolder: gbaBackupFolder() }
   };
@@ -2899,8 +2908,20 @@ function createWindow() {
   });
   if (windowsScaling) displayScale.followDisplayScale(window, screen, WINDOW_SIZE, zoom);
   window.setMenuBarVisibility(false);
-  const sendWindowState = () => broadcast('window-state', windowState(window));
-  for (const event of ['enter-full-screen', 'leave-full-screen', 'maximize', 'unmaximize', 'restore']) window.on(event, sendWindowState);
+  if (config?.launcherWindow === 'fullscreen') window.setFullScreen(true);
+  else if (config?.launcherWindow === 'maximized') window.maximize();
+  // The event says which way full screen went: on Linux, isFullScreen() can lag the window manager.
+  const sendWindowState = event => {
+    broadcast('window-state', windowState(window));
+    // A minimized window keeps the mode it had, so it doesn't open minimized next time.
+    if (window.isDestroyed() || window.isMinimized()) return;
+    const mode = event === 'enter-full-screen' ? 'fullscreen'
+      : event === 'leave-full-screen' ? (window.isMaximized() ? 'maximized' : 'normal') : windowMode.modeOf(window);
+    if (!config || mode === config.launcherWindow) return;
+    config.launcherWindow = mode;
+    try { saveConfig(); } catch (error) { log(`Could not save preferences: ${error.message}`); }
+  };
+  for (const event of ['enter-full-screen', 'leave-full-screen', 'maximize', 'unmaximize', 'restore']) window.on(event, () => sendWindowState(event));
   window.loadFile(path.join(__dirname, 'index.html'));
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('console-message', details => {
