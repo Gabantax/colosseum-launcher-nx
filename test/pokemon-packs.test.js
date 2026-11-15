@@ -363,6 +363,47 @@ test('a Pokémon\'s own cry goes to the game in a chunk of its own, after its ro
   assert.equal(packs.compile({ pokemon: [{ id: 254, ...built, assets: {} }] }).includes('CRYS'), false, 'no chunk without a cry');
 });
 
+test('a box icon for XD is the body sprite cut to what shows, in RGB5A3 colours with 0 see-through', () => {
+  // 6x5: see-through but for a 2x2 square at (1,2) of red, white, and two half see-through greens; its shiny one blue
+  const picture = colour => {
+    const rgba = Buffer.alloc(6 * 5 * 4);
+    rgba.set([255, 0, 0, 255], (2 * 6 + 1) * 4); rgba.set(colour, (2 * 6 + 2) * 4);
+    rgba.set([0, 255, 0, 128], (3 * 6 + 1) * 4); rgba.set([0, 255, 0, 128], (3 * 6 + 2) * 4);
+    return pokedex.png(6, 5, rgba);
+  };
+  const icon = packs.boxIcon(picture([255, 255, 255, 255]), picture([0, 0, 255, 255]));
+  assert.equal(icon.width, 2);
+  assert.equal(icon.height, 2);
+  const [normal, shiny] = icon.images;
+  assert.equal(normal.palette[0], 0, 'colour 0 is see-through');
+  assert.deepEqual([...normal.indexes].map(i => normal.palette[i]), [0xFC00, 0xFFFF, 0x40F0, 0x40F0], 'red, white, then green at 4 of 7');
+  assert.deepEqual([...shiny.indexes].map(i => shiny.palette[i]), [0xFC00, 0x801F, 0x40F0, 0x40F0]);
+  assert.equal(packs.boxIcon(pokedex.png(2, 2, Buffer.alloc(16))), null, 'nothing to show');
+  // Bigger than 64: fitted inside it. More than 256 colours: the most used 255, the rest the nearest of them.
+  const big = Buffer.alloc(128 * 32 * 4);
+  for (let i = 0; i < 128 * 32; i++) big.set([i & 255, (i >> 8) * 16, 0, 255], i * 4);
+  const fitted = packs.boxIcon(pokedex.png(128, 32, big));
+  assert.deepEqual([fitted.width, fitted.height], [64, 16]);
+  assert.ok(fitted.images[0].palette.length <= 256);
+  assert.equal(fitted.images[1], null, 'no shiny one of its own');
+});
+
+test('box icons go to the game in a chunk of their own', () => {
+  const game = tables();
+  const built = packs.buildRow({ base: 'Umbreon', name: 'Moonfang' }, game, noTarget);
+  const icon = { width: 3, height: 1, images: [{ palette: [0, 0x8000], indexes: Buffer.from([1, 0, 1]) }, null] };
+  const file = packs.compile({ pokemon: [{ id: 253, ...built, assets: {}, icon }, { id: 254, ...built, assets: {} }] });
+  const chunks = {};
+  for (let at = 16; at < file.length;) {
+    const tag = file.toString('latin1', at, at + 4), size = file.readUInt32BE(at + 4);
+    chunks[tag] = file.subarray(at + 8, at + 8 + size);
+    at += 8 + Math.ceil(size / 4) * 4;
+  }
+  assert.deepEqual(Object.keys(chunks), ['SPEC', 'ICON']);
+  assert.deepEqual([...chunks.ICON], [0, 0, 0, 1, 0, 253, 3, 1, 0, 2, 0, 0, 0, 0, 0x80, 0, 1, 0, 1, 0, 0, 0, 0, 0]);
+  assert.equal(packs.compile({ pokemon: [{ id: 254, ...built, assets: {} }] }).includes('ICON'), false, 'no chunk without an icon');
+});
+
 test('a pack\'s cry.wav and a Battle Revolution one are read beside their Pokémon; a bad one is said, or left out', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-cry-'));
   try {
