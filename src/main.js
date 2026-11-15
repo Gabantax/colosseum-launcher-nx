@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { Worker } = require('node:worker_threads');
 const port = require('./port');
+const gameSettings = require('./game-settings');
 const games = require('./games');
 const pbrDisc = require('./pbr-disc');
 const saves = require('./saves');
@@ -1505,6 +1506,10 @@ async function play(installation = null, battle = null) {
   const cacheFolder = path.join(app.getPath('userData'), 'game-cache');
   fs.mkdirSync(cacheFolder, { recursive: true });
   const { file: packsFile, own: packPokemon } = preparePlayPacks(rom, cacheFolder, battle);
+  // The game's own Settings screen writes its changes here (src/game-settings.js), each as it is made: they are kept as
+  // they come, while the game runs, and one left by a game that crashed is kept now
+  const gameSettingsFile = path.join(cacheFolder, 'game-settings.json');
+  keepGameSettings(gameSettingsFile);
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
@@ -1518,6 +1523,7 @@ async function play(installation = null, battle = null) {
     // Another game's shaders are its own file.
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
     SMS_TEXTURE_PACK_CACHE: path.join(cacheFolder, 'texture-mips'),
+    COLO_SETTINGS_SAVE: gameSettingsFile,
     ...(battle ? { COLO_ONLINE: String(battle.port), COLO_SKIP_MOVIES: '1', COLO_NOCARD: '1' } : {}),
     ...(config.settings.discordPresence && supports('discordPresence') ? { COLO_PRESENCE: '1' } : {}),
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
@@ -1526,6 +1532,7 @@ async function play(installation = null, battle = null) {
   const cmd = port.gameRunCommand(root, rom, process.platform, env, undefined, chosen.id);
   const startedAt = Date.now();
   startPresence(startedAt, Boolean(battle));
+  const settingsWatch = setInterval(() => keepGameSettings(gameSettingsFile), GAME_SETTINGS_POLL_MS);
   try {
     return await launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, playLabel(), true);
   } catch (error) {
@@ -1538,11 +1545,29 @@ async function play(installation = null, battle = null) {
     return { ok: true };
   } finally {
     stopPresence();
+    clearInterval(settingsWatch);
+    keepGameSettings(gameSettingsFile);
     if (!battle) {
       try { makeSaveBackup('after-play'); }
       catch (error) { log(`Save backup failed: ${error.message}`); }
     }
   }
+}
+
+// The changes made on the game's own Settings screen, kept as the player's settings (src/game-settings.js): looked for
+// this often while the game runs, so each is saved, and shows in Settings, moments after it is made.
+const GAME_SETTINGS_POLL_MS = 500;
+function keepGameSettings(file) {
+  if (!fs.existsSync(file)) return;
+  const changes = gameSettings.take(file);
+  const said = gameSettings.describe(config.settings, changes);
+  if (!said) return;
+  config.settings = port.normalizeSettings({ ...config.settings, ...changes });
+  try {
+    saveConfig();
+    log(`Kept the settings changed in the game: ${said}.`);
+  } catch (error) { log(`Could not keep the settings changed in the game: ${error.message}`); }
+  broadcast('settings-changed', null);   // the renderer reads the state again
 }
 
 // --- Discord activity (src/discord.js, src/presence.js): only while the game runs, and only with the setting on.
