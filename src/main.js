@@ -42,6 +42,7 @@ const storyParty = require('./story-party');
 const crossplay = require('./crossplay');
 const pokedexNames = require('./pokedex');
 const heroLook = require('./hero-look');
+const heroBake = require('./hero-bake');
 const pokedexData = pokedexNames.create();
 const pokemonCries = require('./pokemon-cries');
 const pokedexCries = pokemonCries.create();
@@ -1534,6 +1535,8 @@ async function play(installation = null, battle = null) {
     ...(battle ? { COLO_ONLINE: String(battle.port), COLO_SKIP_MOVIES: '1', COLO_NOCARD: '1' } : {}),
     ...(config.settings.discordPresence && supports('discordPresence') ? { COLO_PRESENCE: '1' } : {}),
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
+  // an online battle's players in their colours: the HD images made for them, read before the HD pack's
+  if (battle?.looks?.length && playEnv.SMS_TEXTURE_PACKS && playEnv.SMS_TEXTURE_PACKS !== '0') playEnv.SMS_TEXTURE_PACKS = [...battle.looks, playEnv.SMS_TEXTURE_PACKS].join(';');
   const recordedTools = game.toolRoot(root, undefined, chosen.id);
   const env = recordedTools ? buildTools.environmentAtRoot(recordedTools, playEnv) : toolEnv(playEnv);
   const cmd = port.gameRunCommand(root, rom, process.platform, env, undefined, chosen.id);
@@ -1760,6 +1763,8 @@ function onlineFeatures(root, id = config.game) {
         crossplay: rules && (story || xd),
         // spectators' games, which play a room's battle from both players' lines (config side 2)
         spectate: bytes.includes(xd ? 'online: XD spectating' : 'online: spectating'),
+        // each player's hero in their colours (look lines)
+        looks: !xd && bytes.includes('battles as hero'),
         // the randomizer (host/randomizer.c), which XD's game has once it prints its run
         randomizer: bytes.includes('randomizer: seed '),
         // the randomizer's fourth generation
@@ -1770,7 +1775,7 @@ function onlineFeatures(root, id = config.game) {
     return onlineBinary;
   } catch (_) {
     return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false,
-      randomizer: false, randomizerGenerations: false, randomizerPacks: false };
+      looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false };
   }
 }
 
@@ -1929,6 +1934,51 @@ function gameBuild(cross = false) {
   return { build: cross ? online.crossBuildId(installedBuild) : online.buildId(installedBuild), version, launcher: app.getVersion() };
 }
 
+// Who the player battles online as (src/hero-bake.js): the Customize page's hero for online battles, else their save's,
+// in that hero's colours. Made ahead, so that their own look is ready when a battle starts. Null where there are no
+// heroes to customize (XD's disc has none of Colosseum's).
+function playerLook() {
+  if (!supports('customize')) return null;
+  let looks;
+  try { looks = heroLook.readLooks(app.getPath('userData')); } catch (_) { return null; }
+  const look = heroBake.onlineLook(looks, saveHero());
+  if (look && heroBake.painted(look) && onlineFeatures(config.repo).looks) makeLooks([look]).catch(() => {});
+  return look;
+}
+
+// The hero the player's save plays as (the game's own stamp in it), Wes for a save without one or no save.
+function saveHero() {
+  if (!supports('customize')) return 'wes';
+  try { return heroBake.stampedHero(gciSave.newestPlain(fs.readFileSync(path.join(currentSaveDirectory(), storyParty.SAVE))).plain); }
+  catch (_) { return 'wes'; }
+}
+
+// The players' looks made in a worker (hero-bake-worker.js): [{ file, hd } or null] in the order of `looks`.
+function makeLooks(looks) {
+  const { folders } = heroFolders();
+  const worker = new Worker(path.join(__dirname, 'hero-bake-worker.js'), { workerData: {
+    rom: port.validateRom(config.rom, config.game), folder: path.join(app.getPath('userData'), 'online-heroes'), folders, looks } });
+  return new Promise((resolve, reject) => {
+    worker.once('message', ({ made, error }) => { if (error) reject(new Error(error)); else resolve(made); worker.terminate(); });
+    worker.once('error', reject);
+    worker.once('exit', code => reject(new Error(`The heroes weren't made (${code}).`)));
+  });
+}
+
+// A battle's start, made ready for this game (the Session's dress): each player's hero from their look, those in their
+// own colours made from this disc. A game from before looks gets none.
+async function dressPlayers(start) {
+  if (!supports('customize') || !onlineFeatures(config.repo).looks) return { lines: [], folders: [] };
+  const looks = (start.players || []).slice(0, 2).map(player => heroBake.normalizeLook(player?.look));
+  const painted = looks.map(look => look && heroBake.painted(look) ? look : null);
+  let made = [null, null];
+  if (painted.some(Boolean)) {
+    try { made = await makeLooks(painted); }
+    catch (error) { log(`Online: the players' colours couldn't be made (${error.message}); they battle in their heroes' own.`); }
+  }
+  return { lines: heroBake.lookLines(looks, made), folders: [...new Set(made.flatMap(each => each?.hd ? [each.hd] : []))] };
+}
+
 // The session's view of what the game can do in a room (src/online.js Session features).
 function sessionFeatures(cross) {
   const features = onlineFeatures(config.repo);
@@ -1996,7 +2046,7 @@ async function playBattle(session) {
     // a joiner's game starts once there's a battle: with team preview, after both have picked
     if (session.role === 'host') session.prepareGame();
     else if (!await session.again()) return;
-    do await exclusive(playLabel(), () => play(null, { port: gamePort }), true);
+    do await exclusive(playLabel(), () => play(null, { port: gamePort, looks: session.looks }), true);
     while (await session.again());
   } finally {
     session.close();
@@ -2078,13 +2128,13 @@ async function createRoom() {
   // a game from before timers would play without them: the room says so
   const rules = onlineFeatures(config.repo).timers ? parties.roomRules(setup) : formats.withoutTimers(parties.roomRules(setup));
   const chosen = partyFor(rules, { cross });
-  const session = new online.Session({ features: sessionFeatures(cross) });
+  const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   battleResult = null;
   battle = { session, status: 'connecting', role: 'host', rules, bestOf: setup.bestOf, code: null, opponent: null };
   broadcastOnline();
   watchSession(session);
   try {
-    battle.code = await session.host({ name: setup.trainer, ...gameBuild(cross), ...chosen, rules, bestOf: setup.bestOf, listed: setup.listed });
+    battle.code = await session.host({ name: setup.trainer, ...gameBuild(cross), ...chosen, look: playerLook(), rules, bestOf: setup.bestOf, listed: setup.listed });
   } catch (error) {
     session.close();
     battle = null;
@@ -2108,13 +2158,13 @@ async function joinRoom(input) {
   if (info.status !== 'waiting') throw new Error('That battle has already started.');
   const cross = online.isCrossBuild(info.build);
   if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
-  const session = new online.Session({ features: sessionFeatures(cross) });
+  const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   const rules = formats.normalize(info.rules || {});
   const chosen = partyFor(rules, { cross });
   battle = { session, status: 'connecting', role: 'joiner', rules, bestOf: info.bestOf || 1, code, opponent: info.name };
   broadcastOnline();
   watchSession(session);
-  try { await session.join({ code, name: setup.trainer, ...gameBuild(cross), ...chosen }); }
+  try { await session.join({ code, name: setup.trainer, ...gameBuild(cross), ...chosen, look: playerLook() }); }
   catch (error) {
     session.close();
     battle = null;
@@ -2140,7 +2190,7 @@ async function watchRoom(input) {
   if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
   // the spectator's game plays the players' battle, so it has to be the very same build
   if (gameBuild(cross).build !== info.build) throw new Error(`That battle is on another version of the game (${info.version || 'unknown'}). Watching needs the same version.`);
-  const session = new online.Session({ features: sessionFeatures(cross) });
+  const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   const players = Array.isArray(info.players) ? info.players : [info.name, null];
   battle = { session, status: 'connecting', role: 'watcher', rules: formats.normalize(info.rules || {}), bestOf: info.bestOf || 1, code, opponent: null, players };
   broadcastOnline();
@@ -2473,7 +2523,8 @@ function registerHandlers() {
     return heroAsk({ rom: port.validateRom(config.rom, config.game), hero: String(id), motion: String(motion), wesMoves: Boolean(wesMoves) });
   });
   ipcMain.handle('hero-close', () => heroStopWorker());
-  ipcMain.handle('hero-looks', () => heroLook.readLooks(app.getPath('userData')));
+  // with the hero the save plays as, whom the player battles online as until they choose one
+  ipcMain.handle('hero-looks', () => ({ ...heroLook.readLooks(app.getPath('userData')), saveHero: saveHero() }));
   ipcMain.handle('save-hero-looks', (_event, looks) => heroLook.saveLooks(app.getPath('userData'), looks));
   ipcMain.handle('pokedex-cry', (_event, key) => {
     const own = String(key).startsWith('pack:') ? pokedexPacks.get(String(key).slice('pack:'.length))?.ownCry : null;

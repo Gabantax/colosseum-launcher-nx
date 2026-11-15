@@ -145,4 +145,4 @@ function saveLooks(userData, looks) {
   return kept;
 }
 
-module.exports = { createReader, readLooks, saveLooks, idleOf, slotClips };
+module.exports = { createReader, readFile, readLooks, saveLooks, idleOf, slotClips };

@@ -113,8 +113,9 @@ function readTexture(dat, at, textures, cache) {
     palette = dat.data.subarray(table, table + count * 2);
   }
   const data = dat.data.subarray(pixels, pixels + gx.textureSize(format, width, height)), rgba = gx.decode(format, width, height, data, palette, paletteFormat);
-  // `disc` is the texture as the disc has it, for finding its HD replacement (texture-pack-lookup.js).
-  const index = rgba ? textures.push({ width, height, rgba, wrapS: dat.u32(at + 0x34), wrapT: dat.u32(at + 0x38), disc: { data, format, width, height, palette } }) - 1 : -1;
+  // `disc` is the texture as the disc has it, for finding its HD replacement (texture-pack-lookup.js); `image` is its
+  // HSD_ImageDesc's offset in the model's data (hero-bake.js puts other texels there).
+  const index = rgba ? textures.push({ width, height, rgba, wrapS: dat.u32(at + 0x34), wrapT: dat.u32(at + 0x38), disc: { data, format, width, height, palette, image } }) - 1 : -1;
   cache.set(key, index);
   return index;
 }

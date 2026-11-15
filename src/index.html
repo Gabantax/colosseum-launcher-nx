@@ -200,7 +200,7 @@
         </div>
       </section>
       <section id="page-customize" class="page sheet pokedex-page customize-page" aria-labelledby="customize-title" hidden>
-        <div class="modal-head"><div><h1 id="customize-title">Customize</h1><p>Each hero's colours, on their model from your disc. This is a preview for now: the game doesn't use these colours yet.</p></div></div>
+        <div class="modal-head"><div><h1 id="customize-title">Customize</h1><p>Each hero's colours, on their model from your disc. Online battles show you as your hero in your colours; the story doesn't use them yet.</p></div></div>
         <div class="customize-body">
           <div id="customize-heroes" class="customize-heroes" role="tablist" aria-label="Heroes"></div>
           <div class="pokedex-stage-wrap customize-stage-wrap">
@@ -213,6 +213,8 @@
           </div>
           <div class="customize-panel">
             <div class="customize-heading"><h2 id="customize-name"></h2><small id="customize-from"></small></div>
+            <div class="customize-online-row"><button id="customize-online" class="subtle customize-online" type="button"></button>
+              <p id="customize-online-note" class="helper customize-online-note"></p></div>
             <h3 class="customize-label">Presets</h3>
             <div id="customize-presets" class="pokedex-filters customize-presets" role="group" aria-label="Presets"></div>
             <h3 class="customize-label">Colours</h3>
@@ -280,7 +282,7 @@
               <label data-feature="hdText" class="field"><span>Text<small>HD draws the game's fonts sharp from the Inter typeface. Upscaled keeps their original look, enlarged.</small></span><select id="hdText"><option value="on">HD</option><option value="upscaled">Upscaled</option><option value="off">As on the disc</option></select></label>
               <label data-feature="shiny" class="switch"><span><strong>Show shiny Shadow Pokémon</strong><small id="shiny-shadow-note">A Shadow Pokémon looks shiny in battle if it will be shiny once you snag it. That's decided when you first meet it in battle, and it stays the same if you lose or battle it again. Only resetting to a save from before you met it gives a new chance.</small></span><input id="shinyShadow" type="checkbox"><i></i></label>
               <label data-feature="shinyStarters" class="switch"><span><strong>Shiny starters</strong><small>Espeon and Umbreon can be shiny, at 1 in 8192 as in other Pokémon games; the original never makes them shiny. From your next New Game.</small></span><input id="shinyStarters" type="checkbox"><i></i></label>
-              <label data-feature="playAs" class="switch"><span><strong>Choose your hero</strong><small>A New Game asks who you will play as before you enter your name: Wes, or Brendan, May, Red or Leaf, the Game Boy Advance heroes Mt. Battle shows. Your hero walks the story and battles in Wes's place, and the save remembers who you chose. The opening, the movies, the P★DA's trainer card and online battles still show Wes.</small></span><input id="chooseHero" type="checkbox"><i></i></label>
+              <label data-feature="playAs" class="switch"><span><strong>Choose your hero</strong><small>A New Game asks who you will play as before you enter your name: Wes, or Brendan, May, Red or Leaf, the Game Boy Advance heroes Mt. Battle shows. Your hero walks the story and battles in Wes's place, and the save remembers who you chose. The opening, the movies and the P★DA's trainer card still show Wes. Online, you battle as the hero you choose on the Customize page.</small></span><input id="chooseHero" type="checkbox"><i></i></label>
               <label data-feature="starters" class="switch"><span><strong id="choose-starters-title">Choose starters</strong><small id="choose-starters-note">After you enter your name for a New Game, the game asks whether to begin with Espeon and Umbreon. Say No to pick any two Pokémon instead, at the same levels. A randomized game that randomizes the starters doesn't ask.</small></span><input id="chooseStarters" type="checkbox"><i></i></label>
               <label data-feature="tmNames" class="switch"><span><strong>TMs by move name</strong><small>The bag and shops list a TM by the move it teaches, such as Thunderbolt, instead of TM24. Its number shows above the description box.</small></span><input id="tmNames" type="checkbox"><i></i></label>
               <label data-feature="languagePacks" class="field"><span>Language<small>The game's text, menus and title cards in French, German, Spanish or Italian, from the European release. A language downloads the first time you play with it.</small></span><select id="language"></select></label>

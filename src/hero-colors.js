@@ -161,16 +161,24 @@
     const mask = new Uint8Array(width * height).fill(255);
     if (width * height < SMALLEST) return { mask, face: false };
     const keepSeeds = keep.map(lab), regionSeeds = regions.map(region => region.seeds.map(lab));
+    // a texel's region depends on its colour alone: each colour is worked out once (an HD image repeats them a lot)
     const run = allowed => {
+      const known = new Map();
       for (let i = 0; i < width * height; i++) {
         if (rgba[i * 4 + 3] < 8) { mask[i] = 255; continue; }
-        const c = labOf(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
-        let best = 255, bestDistance = Infinity;
-        for (const region of allowed) for (const seed of regionSeeds[region]) {
-          const d = distance(c, seed);
-          if (d < bestDistance) { bestDistance = d; best = region; }
+        const key = (rgba[i * 4] << 16) | (rgba[i * 4 + 1] << 8) | rgba[i * 4 + 2];
+        let best = known.get(key);
+        if (best === undefined) {
+          const c = labOf(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
+          let bestDistance = Infinity;
+          best = 255;
+          for (const region of allowed) for (const seed of regionSeeds[region]) {
+            const d = distance(c, seed);
+            if (d < bestDistance) { bestDistance = d; best = region; }
+          }
+          for (const seed of keepSeeds) if (distance(c, seed) < bestDistance) { bestDistance = distance(c, seed); best = 255; }
+          known.set(key, best);
         }
-        for (const seed of keepSeeds) if (distance(c, seed) < bestDistance) { bestDistance = distance(c, seed); best = 255; }
         mask[i] = best;
       }
     };
@@ -185,15 +193,21 @@
 
   // Each region's typical colour on the disc: the texel of median lightness across every texture, as #rrggbb, with
   // that lightness (0-100).
+  // (The median by counting: the texel a stable sort by lightness would put in the middle, without sorting millions.)
   function references(heroId, textures) {
-    return hero(heroId).regions.map((_, region) => {
-      const samples = [];
+    const count = hero(heroId).regions.length, histogram = Array.from({ length: count }, () => new Uint32Array(256));
+    for (const { mask, lightness: light } of textures) for (let i = 0; i < mask.length; i++)
+      if (mask[i] < count) histogram[mask[i]][light[i]]++;
+    return histogram.map((levels, region) => {
+      const total = levels.reduce((sum, n) => sum + n, 0);
+      if (!total) return null;
+      let level = 0, before = 0;
+      while (before + levels[level] <= total >> 1) before += levels[level++];
+      let skip = (total >> 1) - before;
       for (const { rgba, mask, lightness: light } of textures) for (let i = 0; i < mask.length; i++)
-        if (mask[i] === region) samples.push([light[i], i, rgba]);
-      if (!samples.length) return null;
-      samples.sort((a, b) => a[0] - b[0]);
-      const [level, i, rgba] = samples[samples.length >> 1];
-      return { color: hex([rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]]), lightness: level / 2.55 };
+        if (mask[i] === region && light[i] === level && !skip--)
+          return { color: hex([rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]]), lightness: level / 2.55 };
+      return null;
     });
   }
 
@@ -289,11 +303,12 @@
       if (rgbOf(colors[id])) out[id] = colors[id].toLowerCase();
     return out;
   }
-  // Every hero's colours: { wes: { coat: '#…' }, … }, and the hero shown last.
+  // Every hero's colours: { wes: { coat: '#…' }, … }, the hero shown last, and the hero the player battles online as
+  // (null: their save's).
   function normalizeLooks(saved) {
     const colors = {};
     for (const { id } of HEROES) colors[id] = normalizeColors(id, saved?.colors?.[id]);
-    return { colors, shown: hero(saved?.shown) ? saved.shown : HEROES[0].id };
+    return { colors, shown: hero(saved?.shown) ? saved.shown : HEROES[0].id, online: hero(saved?.online) ? saved.online : null };
   }
 
   return { HEROES, MOTIONS, hero, motionsOf, modelFor, lab, classify, lightness, references, blendEdges, prepare, ramp, recolor, normalizeColors, normalizeLooks, hex };

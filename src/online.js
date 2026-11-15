@@ -18,6 +18,11 @@
 // same battle as a spectator's (config side 2), from the room's start and both
 // players' messages, which the room keeps from the battle's start and passes it
 // as they come (`from SIDE LINE` to the game). It says nothing to the room.
+//
+// Each player's hero: a hello can say who the player battles as (look: their hero and colours, from the Customize
+// page), and the start passes both on. Before its game starts for the battle, the launcher makes both players' looks
+// from its own disc (src/hero-bake.js, the Session's `dress`) and tells the game (look lines); a launcher before
+// looks passes over the other's, and its game shows its usual trainers.
 
 const net = require('node:net');
 const { EventEmitter } = require('node:events');
@@ -101,13 +106,14 @@ function configLine({ side, rules, code }) {
   return `config ${side} ${rules.level} ${rules.size} ${rules.stage || 0}${code ? ` ${formatRoomCode(code)}` : ''}`;
 }
 
-// The battle's lines for the game: each Story party member, then the start, with a short party filled with 0.
-function startLines({ seed, players }) {
+// The battle's lines for the game: each Story party member, each player's look (`looks`, the lines), then the start,
+// with a short party filled with 0.
+function startLines({ seed, players }, looks = []) {
   const party = player => Array.from({ length: storyParty.PARTY_SIZE }, (_, i) => player.party[i] || 0);
   // a member that isn't a party member's shape stays out, and the game makes that Pokemon from its species, as the other game does
   const members = players.flatMap((player, side) => (Array.isArray(player.members) ? player.members : []).slice(0, storyParty.PARTY_SIZE)
     .flatMap((member, slot) => storyParty.validWireMember(member, player.party[slot]) ? [storyParty.memberLine(side, slot, member)] : []));
-  return [...members, `start ${seed} ${lineName(players[0].name)} ${lineName(players[1].name)} ${[...party(players[0]), ...party(players[1])].join(' ')}`];
+  return [...members, ...looks, `start ${seed} ${lineName(players[0].name)} ${lineName(players[1].name)} ${[...party(players[0]), ...party(players[1])].join(' ')}`];
 }
 
 // The local port the game connects to. Lines sent before it does wait for it.
@@ -181,12 +187,19 @@ const REFUSED = {
 //
 // The game runs once for each battle: playBattle in the main process starts it, and asks again() whether to start it
 // once more, which it does for a host's game that waited in the stadium, and for each game of a set.
+//
+// `dress(start)`, when given, makes the players' looks for a game's start: it resolves with { lines, folders }, the
+// game's look lines and the folders of their HD images (`looks`, for the game's texture folders). The game waits for it,
+// up to DRESS_WAIT; without it the game shows its usual trainers.
+const DRESS_WAIT = 20000;
 class Session extends EventEmitter {
-  constructor({ url = serverUrl(), WebSocket = globalThis.WebSocket, setTimeout: later = global.setTimeout, features = {} } = {}) {
+  constructor({ url = serverUrl(), WebSocket = globalThis.WebSocket, setTimeout: later = global.setTimeout, features = {}, dress = null } = {}) {
     super();
     this.url = url;
     this.WebSocket = WebSocket;
     this.later = later;
+    this.dress = dress;
+    this.dressing = null;   // { game, ready (a promise), lines, folders }: the looks for a game's start
     this.features = features;  // rules: the game takes a rules line, and `close` for a game waiting in the stadium;
                                // picks: its own screen has the players pick, with team preview;
                                // crossplay: the room is for either game (crossBuildId), and the game is told so
@@ -217,22 +230,22 @@ class Session extends EventEmitter {
   get watcher() { return this.role === 'watcher'; }
 
   // A host's room: resolves with the code once the server has made it.
-  async host({ name, build, version, launcher, party, members, rules, bestOf, listed }) {
+  async host({ name, build, version, launcher, party, members, look, rules, bestOf, listed }) {
     this.role = 'host';
     this.rules = { ...rules, stage: Number.isInteger(rules.stage) ? rules.stage : Math.floor(Math.random() * STAGES) };
     await this.connect(`${socketUrl(this.url)}/v1/rooms/new`);
     this.ws.send(JSON.stringify({ type: 'hello', name, build, version, launcher, protocol: PROTOCOL,
-      rules: this.rules, bestOf: bestOf || 1, party, ...(members ? { members } : {}), public: listed !== false,
+      rules: this.rules, bestOf: bestOf || 1, party, ...(members ? { members } : {}), ...(look ? { look } : {}), public: listed !== false,
       ...(this.features.picks ? { gamePicks: true } : {}) }));
     return this.answer('room', () => this.code);
   }
 
   // Into a host's room: resolves with the room's first message (its team preview, or the start), or rejects when refused.
-  async join({ code, name, build, version, launcher, party, members }) {
+  async join({ code, name, build, version, launcher, party, members, look }) {
     this.role = 'joiner';
     this.code = code;
     await this.connect(`${socketUrl(this.url)}/v1/rooms/${code}/join`);
-    this.ws.send(JSON.stringify({ type: 'hello', name, build, version, launcher, protocol: PROTOCOL, party, ...(members ? { members } : {}) }));
+    this.ws.send(JSON.stringify({ type: 'hello', name, build, version, launcher, protocol: PROTOCOL, party, ...(members ? { members } : {}), ...(look ? { look } : {}) }));
     return this.answer(['start', 'preview'], message => message);
   }
 
@@ -308,7 +321,7 @@ class Session extends EventEmitter {
     // a spectator's game is neither side
     if (this.watcher) this.bridge.send(configLine({ ...this.start, side: WATCHING }));
     else this.bridge.send(this.start ? configLine(this.start) : configLine({ side: 0, rules: this.rules, code: this.code }));
-    if (this.start) for (const each of startLines(this.start)) this.bridge.send(each);
+    if (this.start) for (const each of startLines(this.start, this.dressing?.game === this.game ? this.dressing.lines : [])) this.bridge.send(each);
     this.running = this.start ? this.game : 0;
     // the other game's turns that came before this one started
     for (const line of this.pending) this.bridge.send(line);
@@ -319,22 +332,49 @@ class Session extends EventEmitter {
   // battle starts; for a set, once its next game starts (after both players pick, with team preview). Prepares it.
   again() {
     const next = () => {
-      if (this.start && this.game !== this.running && !this.ended) { this.restart = false; this.prepareGame(); return true; }
+      if (this.start && this.game !== this.running && !this.ended) { this.restart = false; return true; }
       return null;
     };
+    // with the players' looks made (or given up on)
+    const go = ready => ready ? this.dressed().then(() => { this.prepareGame(); return true; }) : false;
     const ready = next();
     // nothing to wait for: the room is over, or the game that ran wasn't one to start again
-    if (ready || this.over || this.closing || (this.running !== null && !this.restart && !this.ended)) return Promise.resolve(Boolean(ready));
+    if (ready || this.over || this.closing || (this.running !== null && !this.restart && !this.ended)) return Promise.resolve(go(ready));
     return new Promise(resolve => {
       const check = () => {
-        const go = next();
-        if (go === null && !this.over && !this.closing) return;
+        const ready = next();
+        if (ready === null && !this.over && !this.closing) return;
         for (const name of ['start', 'end', 'set', 'end-session']) this.off(name, check);
-        resolve(Boolean(go));
+        resolve(go(ready));
       };
       for (const name of ['start', 'end', 'set', 'end-session']) this.on(name, check);
     });
   }
+
+  // The players' looks for this game's start, being made as soon as it comes.
+  startDressing(msg) {
+    if (!this.dress) return;
+    const dressing = { game: msg.game || 1, lines: [], folders: [] };
+    let making;
+    try { making = Promise.resolve(this.dress(msg)); } catch (error) { making = Promise.reject(error); }
+    dressing.ready = making.then(made => {
+      dressing.lines = Array.isArray(made?.lines) ? made.lines : [];
+      dressing.folders = Array.isArray(made?.folders) ? made.folders : [];
+    }, () => {});
+    this.dressing = dressing;
+  }
+
+  dressed() {
+    const dressing = this.dressing;
+    if (!dressing || dressing.game !== this.game) return Promise.resolve();
+    return new Promise(resolve => {
+      const timer = this.later(resolve, DRESS_WAIT);
+      dressing.ready.then(() => { clearTimeout(timer); resolve(); });
+    });
+  }
+
+  // The folders of the players' looks' HD images, for the game about to start.
+  get looks() { return this.dressing?.game === this.game ? this.dressing.folders : []; }
 
   // This player's picks for the game: slots of their party, in order.
   pick(order) {
@@ -490,6 +530,7 @@ class Session extends EventEmitter {
     }
     this.newGame(msg);
     this.start = msg;
+    this.startDressing(msg);
     this.preview = null;
     this.side = this.watcher ? null : msg.side;
     this.key = msg.key;

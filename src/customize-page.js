@@ -1,7 +1,7 @@
 // Customize: each hero's colours, on their model from the player's disc. A colour chosen repaints the
 // model's textures at once (hero-colors.js recolor), from the regions the main process sorted them into
-// (hero-look.js). A preview for now: the game doesn't use these colours yet. Nothing of it stays on the GPU while
-// the page is hidden.
+// (hero-look.js). Online battles show the player as one hero in its colours (src/hero-bake.js): the one chosen here,
+// else their save's. The story doesn't use the colours yet. Nothing of it stays on the GPU while the page is hidden.
 import { createViewer } from './model-viewer.js';
 
 const $ = id => document.getElementById(id);
@@ -69,6 +69,19 @@ function setColors(next) {
   paint();
   renderRegions();
   save();
+}
+
+// Who the player battles online as: the hero chosen for it, else their save's (the main process reads it, saveHero).
+const onlineHero = () => looks.online || (colors.hero(looks.saveHero) ? looks.saveHero : 'wes');
+
+function renderOnline() {
+  const hero = colors.hero(looks.shown), current = colors.hero(onlineHero()), button = $('customize-online');
+  const mine = current.id === hero.id;
+  button.disabled = mine;
+  button.textContent = mine ? `You battle online as ${hero.label}` : `Battle online as ${hero.label}`;
+  $('customize-online-note').textContent = mine
+    ? `Other players see you as ${hero.label}${looks.online ? '' : ', your save\'s hero,'} in these colours.`
+    : `Online, you battle as ${current.label}${looks.online ? '' : ', your save\'s hero'}. Other players see you in your colours.`;
 }
 
 function renderHeroes() {
@@ -183,6 +196,7 @@ function showHero(id) {
   markHero(id);
   $('customize-name').textContent = hero.label;
   $('customize-from').textContent = hero.from;
+  renderOnline();
   motion = 'idle';
   renderMotions(id);
   $('customize-wes-moves-field').hidden = id === 'wes';
@@ -215,6 +229,12 @@ $('customize-motion').addEventListener('change', event => {
   if (looks) show(looks.shown, motion);
 });
 $('customize-reset').addEventListener('click', () => { if (shown) setColors({}); });
+$('customize-online').addEventListener('click', () => {
+  if (!looks) return;
+  looks.online = looks.shown;
+  save();
+  renderOnline();
+});
 $('customize-retry').addEventListener('click', () => {
   stopViewer();
   shown = null;
