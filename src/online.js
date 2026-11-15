@@ -10,6 +10,9 @@
 // local port, and the two exchange lines of text (the game's host/online.c
 // lists them).
 //
+// A battle's start and every player line, as this launcher hears them, go out as 'record' events too, for its
+// replay (src/replays.js): ('start', message) and ('line', game, side, line).
+//
 // A room's WebSocket can drop in the middle of a battle. Messages between the
 // games are numbered, each launcher keeps what it sent, and when a connection
 // comes back each side says what it last received.
@@ -401,6 +404,7 @@ class Session extends EventEmitter {
     else if (word === 'timeup') this.timeUp = true;
     else if (word === 'act' || word === 'irekae' || word === 'pick') {
       this.outbox.push(line);
+      this.emit('record', 'line', this.game, this.side, line);
       this.sendJson({ type: 'game', game: this.game, seq: this.outbox.length, line });
     } else if (word === 'desync') this.finish({ reason: 'desync' }, true);
     else if (word === 'end') {
@@ -482,6 +486,7 @@ class Session extends EventEmitter {
     const entry = msg.game === this.game ? this : this.ahead.find(each => each.start.game === msg.game);
     if (!entry || msg.seq !== entry.heard[side] + 1) return;
     entry.heard[side] = msg.seq;
+    this.emit('record', 'line', entry === this ? this.game : entry.start.game || 1, side, msg.line);
     const line = `from ${side} ${msg.line}`;
     if (entry !== this) entry.lines.push(line);
     else if (this.running !== this.game) this.pending.push(line);
@@ -526,8 +531,9 @@ class Session extends EventEmitter {
     if (this.watcher && this.start) {
       if ((msg.game || 1) < this.game || this.ahead.some(each => each.start.game === msg.game)) return;
       // a spectator's game still playing an earlier game of the set: this one waits for it
-      if (!this.ended) { this.ahead.push({ start: msg, lines: [], heard: [0, 0] }); return; }
+      if (!this.ended) { this.emit('record', 'start', msg); this.ahead.push({ start: msg, lines: [], heard: [0, 0] }); return; }
     }
+    this.emit('record', 'start', msg);
     this.newGame(msg);
     this.start = msg;
     this.startDressing(msg);
@@ -557,6 +563,7 @@ class Session extends EventEmitter {
     }
     if (!Number.isInteger(msg.seq) || msg.seq !== this.received + 1 || typeof msg.line !== 'string') return;
     this.received = msg.seq;
+    this.emit('record', 'line', this.game, 1 - this.side, msg.line);
     // this game's process hasn't started yet: its turns wait for it
     if (this.running !== this.game) this.pending.push(msg.line);
     else this.bridge?.send(msg.line);
