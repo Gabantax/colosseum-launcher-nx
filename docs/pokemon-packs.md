@@ -116,6 +116,10 @@ PNG images. Any size works, and each is scaled to the game's size:
 Transparent pixels stay transparent. A shiny Pokémon uses `body-shiny.png` and `face-shiny.png`, or the normal ones when there
 aren't any.
 
+In Pokémon XD, `body.png` is also the PC box's small icon, at its own size (up to 64×64, made smaller if bigger), standing at the
+bottom of its square and bobbing as XD's own icons move. The icon uses up to 256 colours, so a picture with more loses its rarest
+ones to the nearest it keeps.
+
 ## Cry
 
 `cry.wav` is its own cry, which the game plays wherever it plays a Pokémon's cry: when it's sent out, when it faints, in its
