@@ -17,6 +17,7 @@ const hsd = require('./hsd-model');
 const texturePackLookup = require('./texture-pack-lookup');
 const { decodePng } = require('./pokemon-packs');
 const { png } = require('./pokedex');
+const { colosseumPkx } = require('./xd-disc');
 
 const VERSION = 1;          // of what bake makes: a new one makes every look again
 const PKX_HEADER = 0x40;
@@ -25,7 +26,7 @@ const KEPT = 8;             // looks kept made, the newest
 const align32 = n => (n + 31) & ~31;
 
 // The game's numbers for the heroes (host/online.c), in hero-colors.js's ids.
-const HERO_NUMBERS = { wes: 0, brendan: 1, may: 2, red: 3, leaf: 4 };
+const HERO_NUMBERS = { wes: 0, brendan: 1, may: 2, red: 3, leaf: 4, michael: 5 };
 
 // A look as it may travel between launchers: { hero, colors } with a real hero and only its real regions' colours, or
 // null for one that isn't.
@@ -51,11 +52,10 @@ function encodeRgba8(rgba, width, height) {
   return out;
 }
 
-// The pkx with each image (an HSD_ImageDesc's offset in the model's data: { image, data, width, height }) put after the
-// model's data and pointed at as RGBA8 with no mipmaps. The pointers to them are where the disc's pointed, so the
+// A model (`dat`, an HSD archive) with each image (an HSD_ImageDesc's offset in its data: { image, data, width, height })
+// put after its data and pointed at as RGBA8 with no mipmaps. The pointers to them are where the disc's pointed, so the
 // relocation table stays as it is.
-function writePkx(pkx, images) {
-  const size = pkx.readUInt32BE(0), dat = pkx.subarray(PKX_HEADER, PKX_HEADER + size);
+function rebuildDat(dat, images) {
   const dataSize = dat.readUInt32BE(4), data = Buffer.from(dat.subarray(0x20, 0x20 + dataSize)), chunks = [data];
   let end = dataSize;
   for (const { image, data: texels, width, height } of images) {
@@ -71,19 +71,34 @@ function writePkx(pkx, images) {
     data.writeFloatBE(0, image + 0x14);
   }
   const header = Buffer.from(dat.subarray(0, 0x20)), rest = dat.subarray(0x20 + dataSize);
-  const newSize = 0x20 + end + rest.length;
-  header.writeUInt32BE(newSize, 0);
+  header.writeUInt32BE(0x20 + end + rest.length, 0);
   header.writeUInt32BE(end, 4);
+  return Buffer.concat([header, ...chunks, rest]);
+}
+
+// Colosseum's pkx (hsd-model.js readHeader): a 0x40-byte header, the model, the particles, the motion slots.
+function writePkx(pkx, images) {
+  const size = pkx.readUInt32BE(0), model = rebuildDat(pkx.subarray(PKX_HEADER, PKX_HEADER + size), images);
   const top = Buffer.from(pkx.subarray(0, PKX_HEADER));
-  top.writeUInt32BE(newSize, 0);
-  const model = Buffer.concat([header, ...chunks, rest]);
-  return Buffer.concat([top, model, Buffer.alloc(align32(newSize) - newSize), pkx.subarray(PKX_HEADER + align32(size))]);
+  top.writeUInt32BE(model.length, 0);
+  return Buffer.concat([top, model, Buffer.alloc(align32(model.length) - model.length), pkx.subarray(PKX_HEADER + align32(size))]);
+}
+
+// XD's (xd-disc.js colosseumPkx): a 0x84-byte header, the motion slots (0xD0 each, their count at 0x10), the particles
+// (their size at 8), each aligned to 32, then the model (its size at 0). Only the model and its size change.
+const XD_HEADER = 0x84, SLOT_SIZE = 0xd0;
+function xdModelAt(pkx) { return align32(XD_HEADER + pkx.readUInt32BE(0x10) * SLOT_SIZE) + align32(pkx.readUInt32BE(8)); }
+function writeXdPkx(pkx, images) {
+  const at = xdModelAt(pkx), size = pkx.readUInt32BE(0), model = rebuildDat(pkx.subarray(at, at + size), images);
+  const out = Buffer.concat([pkx.subarray(0, at), model, pkx.subarray(at + size)]);
+  out.writeUInt32BE(model.length, 0);
+  return out;
 }
 
 // A look made from its hero's battle model (`pkx`, from the disc): { pkx, hd: [{ name, png }] }. `index` is
-// texture-pack-lookup.js's of the folders the game reads HD textures from, or null.
-function bake(pkx, look, index = null) {
-  const heroId = look.hero, model = hsd.parseModel(pkx), textures = model.textures;
+// texture-pack-lookup.js's of the folders the game reads HD textures from, or null; `xd`, that the pkx is XD's.
+function bake(pkx, look, index = null, { xd = false } = {}) {
+  const heroId = look.hero, model = hsd.parseModel(xd ? colosseumPkx(pkx) : pkx), textures = model.textures;
   const base = colors.prepare(heroId, textures);
   // One image can be several textures (wrapped two ways): each is painted once
   const images = new Map();
@@ -112,15 +127,15 @@ function bake(pkx, look, index = null) {
       hd.push({ name: `${name}.png`, png: png(w, h, colors.recolor(heroId, rgba, sorted.textures[i], sorted.refs, look.colors)) });
     }
   }
-  return { pkx: writePkx(pkx, made), hd };
+  return { pkx: xd ? writeXdPkx(pkx, made) : writePkx(pkx, made), hd };
 }
 
 // The look made in `folder` (the launcher's own): { file, hd }, the model's file and the folder of its HD images (null
 // for none). Made once for the same look of the same model with the same HD images, and kept with the newest few.
 // `pkx` is the hero's battle model from the disc; `index` as bake's.
-function makeLook(folder, look, pkx, index = null) {
+function makeLook(folder, look, pkx, index = null, { xd = false } = {}) {
   const images = [];
-  if (index) for (const texture of hsd.parseModel(pkx).textures) {
+  if (index) for (const texture of hsd.parseModel(xd ? colosseumPkx(pkx) : pkx).textures) {
     const found = texturePackLookup.findReplacement(index, texture.disc);
     if (!found) continue;
     try { const { size, mtimeMs } = fs.statSync(found.file); images.push([found.file, size, mtimeMs]); } catch (_) { /* not there after all */ }
@@ -133,7 +148,7 @@ function makeLook(folder, look, pkx, index = null) {
     try { fs.utimesSync(at, now, now); } catch (_) { /* kept anyway */ }
     return { file, hd: fs.existsSync(hd) ? hd : null };
   }
-  const made = bake(pkx, look, index);
+  const made = bake(pkx, look, index, { xd });
   const temporary = `${at}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.mkdirSync(temporary, { recursive: true });
   fs.writeFileSync(path.join(temporary, 'hero.pkx'), made.pkx);
@@ -174,10 +189,11 @@ function stampedHero(plain) {
   return HERO_IDS[plain[HERO_STAMP + 5]] || 'wes';
 }
 
-// The look a player battles online as, from the Customize page's looks: the hero chosen there for online battles, else
-// their save's hero (`saveHero`), in that hero's colours.
-function onlineLook(looks, saveHero = 'wes') {
-  const hero = looks?.online || (colors.hero(saveHero) ? saveHero : 'wes');
+// The look a player battles online as, from the Customize page's looks: the hero chosen there for online battles when
+// this game has them (`available`, its heroes' ids), else their save's hero (`saveHero`), in that hero's colours.
+function onlineLook(looks, saveHero = 'wes', available = null) {
+  const has = id => colors.hero(id) && (!available || available.includes(id));
+  const hero = has(looks?.online) ? looks.online : has(saveHero) ? saveHero : 'wes';
   return normalizeLook({ hero, colors: looks?.colors?.[hero] || {} });
 }
 
@@ -186,4 +202,4 @@ function lookLines(looks, made) {
   return looks.flatMap((look, side) => look ? [`look ${side} ${HERO_NUMBERS[look.hero]}${made[side]?.file ? ` ${made[side].file}` : ''}`] : []);
 }
 
-module.exports = { VERSION, HERO_NUMBERS, normalizeLook, painted, encodeRgba8, writePkx, bake, makeLook, prune, stampedHero, onlineLook, lookLines };
+module.exports = { VERSION, HERO_NUMBERS, normalizeLook, painted, encodeRgba8, writePkx, writeXdPkx, bake, makeLook, prune, stampedHero, onlineLook, lookLines };

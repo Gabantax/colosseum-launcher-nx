@@ -18,7 +18,7 @@ function patches(list) {
 }
 
 test('every hero has its model file, regions with seeds, and presets of its own regions', () => {
-  assert.deepEqual(colors.HEROES.map(hero => hero.id), ['wes', 'brendan', 'may', 'red', 'leaf']);
+  assert.deepEqual(colors.HEROES.map(hero => hero.id), ['wes', 'brendan', 'may', 'red', 'leaf', 'michael']);
   for (const hero of colors.HEROES) {
     assert.match(hero.battle.file, /^pkx_\w+\.fsys$/);
     const ids = hero.regions.map(region => region.id);
@@ -33,7 +33,7 @@ test('the looks keep only real heroes, real regions and #rrggbb colours', () => 
   const looks = colors.normalizeLooks({ shown: 'ash', colors: { wes: { coat: '#AA0000', cape: '#00ff00', trim: 'red' }, gary: { coat: '#000000' } } });
   assert.equal(looks.shown, 'wes');
   assert.deepEqual(looks.colors.wes, { coat: '#aa0000' });
-  assert.deepEqual(Object.keys(looks.colors), ['wes', 'brendan', 'may', 'red', 'leaf']);
+  assert.deepEqual(Object.keys(looks.colors), ['wes', 'brendan', 'may', 'red', 'leaf', 'michael']);
   assert.deepEqual(colors.normalizeLooks(null).colors.leaf, {});
   assert.equal(colors.normalizeLooks({ shown: 'may' }).shown, 'may');
 });

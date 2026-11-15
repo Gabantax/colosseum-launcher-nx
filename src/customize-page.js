@@ -85,7 +85,7 @@ function renderOnline() {
 }
 
 function renderHeroes() {
-  $('customize-heroes').replaceChildren(...colors.HEROES.map(hero => {
+  $('customize-heroes').replaceChildren(...looks.heroes.map(colors.hero).map(hero => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'customize-hero';
@@ -156,7 +156,7 @@ function renderMotions(id) {
 // The hero playing `motionId`, on the model it's played on: Wes stands as his field model and battles as his battle
 // model, so a motion can bring another model (and its textures, repainted) as well as its clip.
 async function show(id, motionId) {
-  const mine = ++request, hero = colors.hero(id), kind = colors.modelFor(id, motionId);
+  const mine = ++request, hero = colors.hero(id), kind = colors.modelFor(id, motionId, looks.game);
   const sameModel = shown?.id === id && shown.kind === kind && viewer;
   if (!sameModel) {
     $('customize-stage').classList.remove('ready');
@@ -245,10 +245,15 @@ $('customize-retry').addEventListener('click', () => {
 window.coloCustomize = {
   async show() {
     visible = true;
-    if (!$('customize-heroes').children.length) renderHeroes();
-    try { looks ||= await window.colo.heroLooks(); }
+    // the game chosen on the Play page decides whose disc, and so which heroes: its own each time the page shows
+    try {
+      const fresh = await window.colo.heroLooks();
+      looks = looks ? { ...looks, game: fresh.game, heroes: fresh.heroes, saveHero: fresh.saveHero } : fresh;
+    }
     catch (error) { setStatus(message(error), { retry: true }); return; }
-    if (visible) showHero(looks.shown);
+    if (!visible) return;
+    renderHeroes();
+    showHero(looks.heroes.includes(looks.shown) ? looks.shown : looks.heroes[0]);
   },
   hide() {
     visible = false;

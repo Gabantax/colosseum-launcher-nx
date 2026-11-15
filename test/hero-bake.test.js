@@ -94,3 +94,38 @@ test('the game hears each side\'s hero, with the model made in their colours whe
   assert.deepEqual(heroBake.lookLines(looks, [{ file: '/made/a b/hero.pkx' }, null]), ['look 0 3 /made/a b/hero.pkx', 'look 1 4']);
   assert.deepEqual(heroBake.lookLines([null, looks[1]], [null, null]), ['look 1 4']);
 });
+
+test('in XD\'s layout only the model and its size change: the header, slots and particles before it stay', () => {
+  const { pkx } = tinyPkx();
+  const dat = pkx.subarray(0x40, 0x40 + pkx.readUInt32BE(0));
+  // XD's: a 0x84-byte header (the model's size at 0, the particles' at 8, one slot counted at 0x10), the slot, then the model
+  const head = Buffer.alloc(0x84 + 0xd0 + 12);
+  head.writeUInt32BE(dat.length, 0);
+  head.writeUInt32BE(1, 0x10);
+  head.writeUInt16BE(0xc, 0x1a);
+  head.fill(0x5a, 0x84, 0x84 + 0xd0);
+  const xd = Buffer.concat([head, dat]);
+  const texels = heroBake.encodeRgba8(new Uint8Array(64).fill(90), 4, 4);
+  const out = heroBake.writeXdPkx(xd, [{ image: 0, data: texels, width: 4, height: 4 }]);
+  assert.deepEqual(out.subarray(4, head.length), xd.subarray(4, head.length));
+  const model = out.subarray(head.length), data = model.subarray(0x20);
+  assert.equal(out.readUInt32BE(0), model.length);
+  assert.equal(model.readUInt32BE(0), model.length);
+  assert.equal(data.readUInt32BE(8), 6);
+  assert.deepEqual(data.subarray(data.readUInt32BE(0), data.readUInt32BE(0) + texels.length), texels);
+});
+
+test('each game has the heroes its disc has: Michael in XD only, and Wes stands as his battle model there', () => {
+  assert.deepEqual(colors.heroesFor('colosseum').map(hero => hero.id), ['wes', 'brendan', 'may', 'red', 'leaf']);
+  assert.deepEqual(colors.heroesFor('xd').map(hero => hero.id), ['wes', 'brendan', 'may', 'red', 'leaf', 'michael']);
+  assert.equal(colors.heroIn('michael', 'colosseum'), null);
+  assert.equal(colors.heroIn('wes', 'xd').stand, null);
+  assert.ok(colors.heroIn('wes', 'colosseum').stand);
+  assert.equal(colors.modelFor('wes', 'idle', 'xd'), 'battle');
+  assert.equal(colors.modelFor('michael', 'idle', 'xd'), 'stand');
+  // chosen for online battles where the game hasn't them, a player is their save's hero
+  const looks = colors.normalizeLooks({ online: 'michael', colors: { michael: { jacket: '#b02a2a' } } });
+  assert.deepEqual(heroBake.onlineLook(looks, 'michael', ['wes', 'brendan', 'may', 'red', 'leaf', 'michael']), { hero: 'michael', colors: { jacket: '#b02a2a' } });
+  assert.deepEqual(heroBake.onlineLook(looks, 'red', ['wes', 'brendan', 'may', 'red', 'leaf']), { hero: 'red', colors: {} });
+  assert.deepEqual(heroBake.lookLines([{ hero: 'michael', colors: {} }, null], [null, null]), ['look 0 5']);
+});

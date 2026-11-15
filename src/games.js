@@ -58,7 +58,7 @@ const GAMES = {
     // Jukebox read XD's own disc (xd-disc.js: its species, models, streamed cries and streamed music). TMs listed by their
     // moves' names are host/tmnames.c's, with XD's own bag and shop calls
     features: ['online', 'teamBuilder', 'generations', 'widescreen', 'hdText', 'hdTextures', 'fastForward', 'skipMovies', 'gciSaves', 'discordPresence',
-      'battleSpeed', 'quickMoves', 'shiny', 'starters', 'pokemonPacks', 'pbrAssets', 'gbaLink', 'randomizer', 'storyParty', 'pokedex', 'jukebox', 'tmNames']
+      'battleSpeed', 'quickMoves', 'shiny', 'starters', 'pokemonPacks', 'pbrAssets', 'gbaLink', 'randomizer', 'storyParty', 'pokedex', 'jukebox', 'tmNames', 'customize']
   }
 };
 

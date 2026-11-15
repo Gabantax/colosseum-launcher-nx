@@ -8,9 +8,9 @@ const texturePackLookup = require('./texture-pack-lookup');
 const { createReader } = require('./hero-look');
 
 let reader = null, index = { key: null, index: null };
-parentPort.on('message', ({ id, rom, hero, kind, motion, wesMoves, folders, key }) => {
+parentPort.on('message', ({ id, rom, game, hero, kind, motion, wesMoves, folders, key }) => {
   try {
-    if (reader?.rom !== rom) reader = { rom, read: createReader(rom) };
+    if (reader?.rom !== rom || reader.game !== game) reader = { rom, game, read: createReader(rom, game) };
     let result;
     if (motion) result = reader.read.clip(hero, motion, { wesMoves: Boolean(wesMoves) });
     else {

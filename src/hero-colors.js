@@ -18,9 +18,12 @@
   // model: `file` the archive, `entry` the model's id in it, `idle` the clip it stands in. Wes stands as his field
   // model, as on the name screen: his battle model's idle is his battle stance, and the opening's (ken_c1) has his
   // goggles down and no Snag Machine. The Game Boy Advance heroes' battle models stand at ease, with more detail
-  // than their field models.
+  // than their field models. `games` are the games whose disc has the hero (both, unless it says): XD's carries
+  // Colosseum's battle models of all five, the same textures, but not Wes's field model (`xd` changes a hero there).
+  // Michael, XD's hero, is on XD's disc only: his battle model's textures are one atlas, face and all, with his eyes
+  // on a texture of their own.
   const HEROES = [
-    { id: 'wes', label: 'Wes', from: 'Pokémon Colosseum', stand: { file: 'field_common.fsys', entry: 0x00f70400, idle: 1 }, battle: { file: 'pkx_ken_a1.fsys' }, regions: [
+    { id: 'wes', label: 'Wes', from: 'Pokémon Colosseum', stand: { file: 'field_common.fsys', entry: 0x00f70400, idle: 1 }, battle: { file: 'pkx_ken_a1.fsys' }, xd: { stand: null }, regions: [
       { id: 'coat', label: 'Coat', seeds: seeds(['0a3f5f', '0d4f78', '10537e']) },
       { id: 'suit', label: 'Suit', seeds: seeds(['151515', '2b2526', '313131', '1d202e', '292839', '363547']) },
       { id: 'trim', label: 'Trim', seeds: seeds(['731e00', '7f2200', '843000', '421000', '4f1500', '9c2c00', 'ad3800', 'ce5900']) },
@@ -89,8 +92,26 @@
       { id: 'mint', label: 'Mint', colors: { top: '#6ad8b0', skirt: '#2a5a6a' } },
       { id: 'night', label: 'Night', colors: { top: '#2a2f4a', skirt: '#141420', white: '#9aa0b4' } },
     ] },
+    { id: 'michael', label: 'Michael', from: 'Pokémon XD: Gale of Darkness', games: ['xd'], stand: { file: 'people_archive.fsys', entry: 0x16c90400, idle: 3 }, battle: { file: 'pkx_rinto_0101.fsys' }, regions: [
+      { id: 'jacket', label: 'Jacket', seeds: seeds(['e6a519', 'd69914', 'bc8612', '9b6c0f']) },
+      { id: 'jeans', label: 'Jeans', seeds: seeds(['253a64', '1e2f54', '12203a']) },
+      { id: 'dark', label: 'Shirt and gloves', seeds: seeds(['342e2a', '45413f', '5b585a', '13151a']) },
+      { id: 'hair', label: 'Hair and stripes', seeds: seeds(['95412c', '7b2a1d', '8c291e', '9c3129', 'a63729', '7b2017']) },
+      { id: 'skin', label: 'Skin', face: true, body: true, seeds: seeds(['eeb686', 'd6996b', 'ad7a57']) },
+      { id: 'eyes', label: 'Eyes', face: true, body: true, seeds: seeds(['2a5541', '407458', '54916c', '16382a']) },
+    ], keep: seeds(['fefefe', 'c3c0b7', '9c9992', '7b7873', 'a19c95', 'c2bdb2']), presets: [
+      { id: 'crimson', label: 'Crimson', colors: { jacket: '#b02a2a', jeans: '#1c1c24' } },
+      { id: 'sky', label: 'Sky', colors: { jacket: '#3a8ad8', jeans: '#e8e8f0' } },
+      { id: 'shadow', label: 'Shadow', colors: { jacket: '#2a2a33', jeans: '#14141a', hair: '#d8d8e0' } },
+    ] },
   ];
   const hero = id => HEROES.find(each => each.id === id) || null;
+  // The heroes a game's disc has, and a hero as that game has them (its `xd` changes applied)
+  const heroesFor = (game = 'colosseum') => HEROES.filter(each => !each.games || each.games.includes(game));
+  const heroIn = (id, game = 'colosseum') => {
+    const found = heroesFor(game).find(each => each.id === id);
+    return found ? { ...found, ...(found[game] || {}) } : null;
+  };
 
   // What the page can play. `slot` is a trainer's battle motion slot (the game's wazaSequenceTrainerCreate
   // sequence): a hero whose model has none in that slot plays Wes's, moved onto their skeleton (hero-retarget.js).
@@ -111,7 +132,7 @@
   ];
   const motionsOf = id => MOTIONS.filter(motion => !motion.only || motion.only === id);
   // Which model a motion is played on: the battle model, but for a hero's idle when they have a model to stand as
-  const modelFor = (id, motion) => (motion === 'idle' && hero(id)?.stand ? 'stand' : 'battle');
+  const modelFor = (id, motion, game = 'colosseum') => (motion === 'idle' && heroIn(id, game)?.stand ? 'stand' : 'battle');
 
   // CIE Lab, with lightness counted at half weight so shading within a region matters less than its hue.
   const LINEAR = Float64Array.from({ length: 256 }, (_, v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
@@ -311,5 +332,5 @@
     return { colors, shown: hero(saved?.shown) ? saved.shown : HEROES[0].id, online: hero(saved?.online) ? saved.online : null };
   }
 
-  return { HEROES, MOTIONS, hero, motionsOf, modelFor, lab, classify, lightness, references, blendEdges, prepare, ramp, recolor, normalizeColors, normalizeLooks, hex };
+  return { HEROES, MOTIONS, hero, heroesFor, heroIn, motionsOf, modelFor, lab, classify, lightness, references, blendEdges, prepare, ramp, recolor, normalizeColors, normalizeLooks, hex };
 });

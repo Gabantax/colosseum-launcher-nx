@@ -43,6 +43,7 @@ const crossplay = require('./crossplay');
 const pokedexNames = require('./pokedex');
 const heroLook = require('./hero-look');
 const heroBake = require('./hero-bake');
+const heroColors = require('./hero-colors');
 const pokedexData = pokedexNames.create();
 const pokemonCries = require('./pokemon-cries');
 const pokedexCries = pokemonCries.create();
@@ -1782,7 +1783,7 @@ function onlineFeatures(root, id = config.game) {
         // spectators' games, which play a room's battle from both players' lines (config side 2)
         spectate: bytes.includes(xd ? 'online: XD spectating' : 'online: spectating'),
         // each player's hero in their colours (look lines)
-        looks: !xd && bytes.includes('battles as hero'),
+        looks: bytes.includes(xd ? 'online: XD side %d battles as hero' : 'battles as hero'),
         // the randomizer (host/randomizer.c), which XD's game has once it prints its run
         randomizer: bytes.includes('randomizer: seed '),
         // the randomizer's fourth generation
@@ -1959,13 +1960,15 @@ function playerLook() {
   if (!supports('customize')) return null;
   let looks;
   try { looks = heroLook.readLooks(app.getPath('userData')); } catch (_) { return null; }
-  const look = heroBake.onlineLook(looks, saveHero());
+  const look = heroBake.onlineLook(looks, saveHero(), heroColors.heroesFor(config.game).map(hero => hero.id));
   if (look && heroBake.painted(look) && onlineFeatures(config.repo).looks) makeLooks([look]).catch(() => {});
   return look;
 }
 
-// The hero the player's save plays as (the game's own stamp in it), Wes for a save without one or no save.
+// The hero the player's save plays as (the game's own stamp in it): Colosseum's Wes, or XD's Michael, for a save without
+// one or no save.
 function saveHero() {
+  if (config.game === 'xd') return 'michael';
   if (!supports('customize')) return 'wes';
   try { return heroBake.stampedHero(gciSave.newestPlain(fs.readFileSync(path.join(currentSaveDirectory(), storyParty.SAVE))).plain); }
   catch (_) { return 'wes'; }
@@ -1975,7 +1978,7 @@ function saveHero() {
 function makeLooks(looks) {
   const { folders } = heroFolders();
   const worker = new Worker(path.join(__dirname, 'hero-bake-worker.js'), { workerData: {
-    rom: port.validateRom(config.rom, config.game), folder: path.join(app.getPath('userData'), 'online-heroes'), folders, looks } });
+    rom: port.validateRom(config.rom, config.game), game: config.game, folder: path.join(app.getPath('userData'), 'online-heroes'), folders, looks } });
   return new Promise((resolve, reject) => {
     worker.once('message', ({ made, error }) => { if (error) reject(new Error(error)); else resolve(made); worker.terminate(); });
     worker.once('error', reject);
@@ -1987,7 +1990,9 @@ function makeLooks(looks) {
 // own colours made from this disc. A game from before looks gets none.
 async function dressPlayers(start) {
   if (!supports('customize') || !onlineFeatures(config.repo).looks) return { lines: [], folders: [] };
-  const looks = (start.players || []).slice(0, 2).map(player => heroBake.normalizeLook(player?.look));
+  // a hero this game's disc hasn't (XD's Michael, in Colosseum) leaves that player as the game's own trainer
+  const looks = (start.players || []).slice(0, 2).map(player => heroBake.normalizeLook(player?.look))
+    .map(look => look && heroColors.heroIn(look.hero, config.game) ? look : null);
   const painted = looks.map(look => look && heroBake.painted(look) ? look : null);
   let made = [null, null];
   if (painted.some(Boolean)) {
@@ -2534,15 +2539,17 @@ function registerHandlers() {
   // The Customize page: a hero's model with its textures sorted into colour regions, and the colours chosen.
   ipcMain.handle('hero-model', (_event, id, kind) => {
     requireFeature('customize', 'Customize');
-    return heroAsk({ rom: port.validateRom(config.rom, config.game), hero: String(id), kind: kind === 'stand' ? 'stand' : 'battle', ...heroFolders() });
+    return heroAsk({ rom: port.validateRom(config.rom, config.game), game: config.game, hero: String(id), kind: kind === 'stand' ? 'stand' : 'battle', ...heroFolders() });
   });
   ipcMain.handle('hero-clip', (_event, id, motion, wesMoves) => {
     requireFeature('customize', 'Customize');
-    return heroAsk({ rom: port.validateRom(config.rom, config.game), hero: String(id), motion: String(motion), wesMoves: Boolean(wesMoves) });
+    return heroAsk({ rom: port.validateRom(config.rom, config.game), game: config.game, hero: String(id), motion: String(motion), wesMoves: Boolean(wesMoves) });
   });
   ipcMain.handle('hero-close', () => heroStopWorker());
   // with the hero the save plays as, whom the player battles online as until they choose one
-  ipcMain.handle('hero-looks', () => ({ ...heroLook.readLooks(app.getPath('userData')), saveHero: saveHero() }));
+  // and the game whose heroes the page shows (its disc's)
+  ipcMain.handle('hero-looks', () => ({ ...heroLook.readLooks(app.getPath('userData')), saveHero: saveHero(), game: config.game,
+    heroes: heroColors.heroesFor(config.game).map(hero => hero.id) }));
   ipcMain.handle('save-hero-looks', (_event, looks) => heroLook.saveLooks(app.getPath('userData'), looks));
   ipcMain.handle('pokedex-cry', (_event, key) => {
     const own = String(key).startsWith('pack:') ? pokedexPacks.get(String(key).slice('pack:'.length))?.ownCry : null;

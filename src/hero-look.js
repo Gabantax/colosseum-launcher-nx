@@ -14,6 +14,7 @@ const colors = require('./hero-colors');
 const retarget = require('./hero-retarget');
 const texturePackLookup = require('./texture-pack-lookup');
 const { decodePng } = require('./pokemon-packs');
+const { colosseumPkx } = require('./xd-disc');
 
 const PKX_HEADER = 0x40;   // hsd-model.js's
 // A pkx's battle motion slots (sequence.c fn_801DD5E8, as hsd-model.js readHeader reads them)
@@ -41,30 +42,30 @@ function idleOf(model) {
 }
 
 // A model's file: a pkx archive's model, or a people model (an archive's entry), given the pkx header hsd-model.js
-// reads (with no battle motions).
-function readFile(rom, label, { file, entry }) {
+// reads (with no battle motions). XD's pkx are laid out as Colosseum's for it (xd-disc.js colosseumPkx) unless `raw`.
+function readFile(rom, label, { file, entry }, { game = 'colosseum', raw = false } = {}) {
   const disc = new Disc(rom);
   try {
     if (!disc.files.has(file)) throw new Error(`${label}'s model isn't on this disc.`);
     const entries = fsys.entries(disc.file(file)), found = entry === undefined ? entries[0] : entries.find(each => each.id === entry);
     if (!found) throw new Error(`${label}'s model isn't on this disc.`);
     const data = Buffer.from(found.data());
-    if (entry === undefined) return data;
+    if (entry === undefined) return game === 'xd' && !raw ? colosseumPkx(data) : data;
     const pkx = Buffer.concat([Buffer.alloc(PKX_HEADER), data]);
     pkx.writeUInt32BE(data.length, 0);
     return pkx;
   } finally { disc.close(); }
 }
 
-// Reads one disc's heroes; each model's file is read once while the reader lasts.
-function createReader(rom) {
+// Reads one disc's heroes (`game`'s, whose disc it is); each model's file is read once while the reader lasts.
+function createReader(rom, game = 'colosseum') {
   const files = new Map(), models = new Map(), matches = new Map();
   const fileOf = (id, kind) => {
     const key = `${id}:${kind}`;
     if (!files.has(key)) {
-      const hero = colors.hero(id);
+      const hero = colors.heroIn(id, game);
       if (!hero) throw new Error('There\'s no such hero.');
-      files.set(key, readFile(rom, hero.label, hero[kind] || hero.battle));
+      files.set(key, readFile(rom, hero.label, hero[kind] || hero.battle, { game }));
     }
     return files.get(key);
   };
@@ -81,7 +82,7 @@ function createReader(rom) {
   // texture folders, for the HD images (each one found takes its texture's place; one this can't read leaves the
   // disc's).
   function hero(id, kind, index = null) {
-    const hero = colors.hero(id);
+    const hero = colors.heroIn(id, game);
     if (!hero) throw new Error('There\'s no such hero.');
     const model = hsd.parseModel(fileOf(id, kind));
     let hd = 0;
@@ -98,10 +99,12 @@ function createReader(rom) {
     return { id, kind, label: hero.label, model, hd, ...colors.prepare(id, model.textures) };
   }
 
-  // Wes's motion on another hero's model: his standing idle (from his field model) or a battle slot's.
+  // Wes's motion on another hero's model: his standing idle (from his field model, where the disc has it, else his battle
+  // model's stance) or a battle slot's.
   function fromWes(id, kind, motionId, slot) {
-    const sourceKind = motionId === 'idle' ? 'stand' : 'battle', wes = modelOf('wes', sourceKind), own = modelOf(id, kind);
-    const index = motionId === 'idle' ? colors.hero('wes').stand.idle : wes.slots[slot] ?? -1;
+    const stands = motionId === 'idle' && colors.heroIn('wes', game).stand;
+    const sourceKind = stands ? 'stand' : 'battle', wes = modelOf('wes', sourceKind), own = modelOf(id, kind);
+    const index = stands ? colors.heroIn('wes', game).stand.idle : wes.slots[motionId === 'idle' ? 0 : slot] ?? -1;
     if (index < 0) return { clip: null, from: null };
     const key = `${id}:${kind}:${sourceKind}`;
     if (!matches.has(key)) matches.set(key, retarget.matchJoints(wes.model, own.model));
@@ -111,9 +114,9 @@ function createReader(rom) {
   // A motion of a hero's, on the model modelFor says: { clip, from }, `from` 'wes' for one moved over from Wes's
   // (every one, with `wesMoves`, else those the hero hasn't); clip null when there's no such motion.
   function clip(id, motionId, { wesMoves = false } = {}) {
-    const hero = colors.hero(id), motion = colors.MOTIONS.find(each => each.id === motionId);
+    const hero = colors.heroIn(id, game), motion = colors.MOTIONS.find(each => each.id === motionId);
     if (!hero || !motion) throw new Error('There\'s no such motion.');
-    const kind = colors.modelFor(id, motionId), own = modelOf(id, kind);
+    const kind = colors.modelFor(id, motionId, game), own = modelOf(id, kind);
     if (wesMoves && id !== 'wes') return fromWes(id, kind, motionId, motion.slot);
     if (motionId === 'idle') {
       const index = kind === 'stand' ? hero.stand.idle : own.slots[0] ?? idleOf(own.model);
