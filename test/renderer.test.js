@@ -23,7 +23,7 @@ function host(platform) { return { linux: 'linux', macos: 'darwin', windows: 'wi
 
 async function renderer(data = state(), copyError = null, notes = { releases: [], unseen: [], current: '0.1.39' }) {
   const changelogSeen = [], calls = [], elements = new Map(), listeners = {}, gamepad = {}, featured = [];
-  let logCallback, resetCallback, activityCallback;
+  let logCallback, resetCallback, activityCallback, settingsCallback;
   const text = node => typeof node === 'string' ? node : node.textContent + node.children.map(text).join(' ');
   function element(classes = '') {
     const names = new Set(classes.split(' ')), listeners = new Map();
@@ -56,7 +56,7 @@ async function renderer(data = state(), copyError = null, notes = { releases: []
     state: async () => data, windowState: async () => ({}), zoomFactor: () => 1,
     toggleMaximize: async () => { calls.push('toggleMaximize'); return { maximized: calls.filter(call => call === 'toggleMaximize').length % 2 === 1 }; },
     toggleFullScreen: async () => { calls.push('toggleFullScreen'); return { fullscreen: true }; },
-    onLog(callback) { logCallback = callback; }, onActivity(callback) { activityCallback = callback; }, onAppUpdate() {}, onWindowState() {},
+    onLog(callback) { logCallback = callback; }, onActivity(callback) { activityCallback = callback; }, onSettingsChanged(callback) { settingsCallback = callback; }, onAppUpdate() {}, onWindowState() {},
     onLogReset(callback) { resetCallback = callback; },
     saveActivityLog: async () => { calls.push('saveActivityLog'); },
     copyActivityLog: async () => { calls.push('copyActivityLog'); if (copyError) throw copyError; },
@@ -93,6 +93,7 @@ async function renderer(data = state(), copyError = null, notes = { releases: []
     async emitLog(entry) { logCallback(entry); await new Promise(setImmediate); },
     async resetLog(sequence) { resetCallback(sequence); await new Promise(setImmediate); },
     async emitActivity(active) { activityCallback(active); await new Promise(setImmediate); },
+    async emitSettingsChanged() { settingsCallback(); await new Promise(setImmediate); await new Promise(setImmediate); },
     async refresh() { vm.runInContext('refresh(current)', context); },
     run: code => vm.runInContext(code, context),
     async click(id) { elements.get(id).click(); await new Promise(setImmediate); } };
@@ -1049,4 +1050,15 @@ test('a panel coming in the middle of a switch keeps to the switch\'s time, as t
   const carried = stage.animations.filter(animation => animation.playState === 'running');
   assert.ok(carried.some(animation => animation.id === 'game-mark-xd'));
   for (const animation of carried) assert.equal(animation.currentTime, 300, `${animation.id} carries on from 300 ms`);
+});
+
+test('a change on the game\'s Settings screen shows in Settings while the game runs', async () => {
+  const data = state();
+  const ui = await renderer(data);
+  assert.equal(ui.elements.get('volumeMusic').value, '100');
+  data.config = { ...data.config, settings: { ...data.config.settings, volumeMusic: 60, msaa: 4 } };
+  await ui.emitSettingsChanged();
+  assert.equal(ui.elements.get('volumeMusic').value, '60');
+  assert.equal(ui.elements.get('volumeMusic-value').textContent, '60%');
+  assert.equal(ui.elements.get('msaa').value, '4');
 });

@@ -62,7 +62,7 @@ onPage('jukebox', { show: () => window.coloJukebox?.show(), hide: () => window.c
 onPage('online', { show: () => window.coloOnline?.show(), hide: () => window.coloOnline?.hide() });
 
 // Settings is one page with a tab per section; it reopens on the last one shown.
-const settingsTabs = ['gameplay', 'display', 'graphics', 'controls', 'gba', 'manage', 'launcher'];
+const settingsTabs = ['gameplay', 'display', 'graphics', 'sound', 'controls', 'gba', 'manage', 'launcher'];
 let settingsTab = 'gameplay';
 function showSettingsTab(name) {
   if (settingsTab === 'controls' && name !== 'controls') stopCapture();
@@ -105,6 +105,12 @@ $('rumbleStrength').addEventListener('input', () => renderRange('rumbleStrength'
 $('rumbleStrength').addEventListener('change', () => saveSettings());
 $('gbaVolume').addEventListener('input', () => renderRange('gbaVolume', 'Off'));
 $('gbaVolume').addEventListener('change', () => saveSettings());
+// Settings → Sound: the game's volumes (also on the game's own Settings screen, whose changes come back here)
+const VOLUMES = ['volumeMaster', 'volumeMusic', 'volumeEffects'];
+for (const key of VOLUMES) {
+  $(key).addEventListener('input', () => renderRange(key, 'Off'));
+  $(key).addEventListener('change', () => saveSettings());
+}
 
 // Settings → Game Boy Advance: each socket's Gen 3 save (src/gen3-save.js reads it), and, under Advanced,
 // the Game Pak it belongs to and a BIOS, for running the GBA itself (src/gba.js checks them).
@@ -1096,6 +1102,11 @@ function refresh(data) {
   $('gbaVolume').value = String(config.settings.gbaVolume ?? 100);
   renderRange('gbaVolume', 'Off');
   $('gbaVolume').disabled = Boolean(data.active);
+  for (const key of VOLUMES) {
+    $(key).value = String(config.settings[key] ?? 100);
+    renderRange(key, 'Off');
+    $(key).disabled = Boolean(data.active);
+  }
   renderGba(data);
   if (!capture) renderBindings();
   $('reset-bindings').disabled = Boolean(data.active);
@@ -1198,6 +1209,8 @@ $('reset-game-source').addEventListener('click', () => {
 });
 
 async function sync() { refresh(await window.colo.state()); }
+// The game's own Settings screen changed some while it runs (main.js keepGameSettings): show them
+window.colo.onSettingsChanged(() => sync().catch(showError));
 
 function renderMacTools(tools) {
   const requirements = (tools.requirements || []).filter(item => !tools.managed || !item.package);
@@ -1400,6 +1413,7 @@ function renderDependents(busy = false) {
 function settingsValue() {
   const value = { keyBindings, padBindings, stickDeadzone: Number($('stickDeadzone').value),
     triggerClick: Number($('triggerClick').value), rumbleStrength: Number($('rumbleStrength').value), gbaVolume: Number($('gbaVolume').value),
+    ...Object.fromEntries(VOLUMES.map((key) => [key, Number($(key).value)])),
     graphicsPreset: $('graphicsPreset').value };
   for (const key of SELECTS) value[key] = $(key).value;
   for (const key of SWITCHES) value[key] = $(key).checked;
