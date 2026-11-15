@@ -699,6 +699,8 @@ function buildFieldModel(heroBattlePkxXd, michaelPeople, { compact = true } = {}
 
 module.exports = {
   VERSION, CLIP_SLOTS, buildFieldModel, fieldInfo,
+  // for hero-snag.js, which moves Michael's battle clips onto the heroes' battle models as these move his field clips
+  rigFor, fieldClip, addClip, readDat, writeDat, Added, reader, sceneSet, jointOffsets, worlds, restValues, steadyTurns,
   // for the tests
-  fieldDat, compactDat, clipSlots, encodeTrack, keyFrames, steadyTurns, movedChannels, softReach, placeGroups, legJoints, matchPlaces, asPkx, readDat, sceneSet,
+  fieldDat, compactDat, clipSlots, encodeTrack, keyFrames, movedChannels, softReach, placeGroups, legJoints, matchPlaces, asPkx,
 };
