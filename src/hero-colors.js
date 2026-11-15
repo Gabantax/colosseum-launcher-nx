@@ -324,13 +324,17 @@
       if (rgbOf(colors[id])) out[id] = colors[id].toLowerCase();
     return out;
   }
-  // Every hero's colours: { wes: { coat: '#…' }, … }, the hero shown last, and the hero the player battles online as
-  // (null: their save's).
+  // Every hero's colours: { wes: { coat: '#…' }, … }, the hero shown last, the hero the player battles online as, and
+  // the hero every story save plays as (null for each: their save's).
   function normalizeLooks(saved) {
     const colors = {};
     for (const { id } of HEROES) colors[id] = normalizeColors(id, saved?.colors?.[id]);
-    return { colors, shown: hero(saved?.shown) ? saved.shown : HEROES[0].id, online: hero(saved?.online) ? saved.online : null };
+    return { colors, shown: hero(saved?.shown) ? saved.shown : HEROES[0].id, online: hero(saved?.online) ? saved.online : null,
+      story: hero(saved?.story) ? saved.story : null };
   }
+  // The hero the story plays as in `game` whatever its save says, or null for the save's own: the looks' choice, when
+  // that game has the hero (Michael is only XD's)
+  const storyHero = (looks, game = 'colosseum') => (looks?.story && heroIn(looks.story, game) ? looks.story : null);
 
-  return { HEROES, MOTIONS, hero, heroesFor, heroIn, motionsOf, modelFor, lab, classify, lightness, references, blendEdges, prepare, ramp, recolor, normalizeColors, normalizeLooks, hex };
+  return { HEROES, MOTIONS, hero, heroesFor, heroIn, motionsOf, modelFor, lab, classify, lightness, references, blendEdges, prepare, ramp, recolor, normalizeColors, normalizeLooks, storyHero, hex };
 });

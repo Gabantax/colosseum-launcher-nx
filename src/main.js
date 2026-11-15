@@ -1545,6 +1545,9 @@ async function play(installation = null, battle = null) {
   const { file: packsFile, own: packPokemon } = preparePlayPacks(rom, cacheFolder, battle);
   // XD's story played as another hero: their field models, made once for the disc (hero-field.js)
   const heroFields = chosen.id === 'xd' && supports('playAs') && !battle ? await makeFieldModels(rom) : null;
+  // the Customize page's hero for the story, played whatever hero the save was made with
+  const storyHero = !battle && supports('playAs') ? chosenStoryHero(chosen.id) : null;
+  if (storyHero) log(`The story plays as ${heroColors.hero(storyHero).label} (Customize).`);
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
@@ -1555,6 +1558,7 @@ async function play(installation = null, battle = null) {
     ...(supports('quickMoves') ? { SMS_BUTTON_PROMPT_DIR: promptDirectory() } : {}),
     ...(supports('randomizer') ? { COLO_RANDOMIZER_LOG: spoilerFile() } : {}),
     ...(heroFields ? { COLO_HERO_FIELD: heroFields } : {}),
+    ...(storyHero ? { COLO_PLAYER: storyHero } : {}),
     // The renderer's caches, in the launcher's own folder: its default place is shared with the Sunshine port's.
     // Another game's shaders are its own file.
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
@@ -1974,6 +1978,11 @@ function playerLook() {
   const look = heroBake.onlineLook(looks, saveHero(), heroColors.heroesFor(config.game).map(hero => hero.id));
   if (look && heroBake.painted(look) && onlineFeatures(config.repo).looks) makeLooks([look]).catch(() => {});
   return look;
+}
+
+// The hero the Customize page says every story save plays as in `game`, or null (each save's own)
+function chosenStoryHero(game) {
+  try { return heroColors.storyHero(heroLook.readLooks(app.getPath('userData')), game); } catch (_) { return null; }
 }
 
 // The hero the player's save plays as (the game's own stamp in it): Colosseum's Wes, or XD's Michael, for a save without

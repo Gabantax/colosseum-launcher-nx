@@ -1,7 +1,8 @@
 // Customize: each hero's colours, on their model from the player's disc. A colour chosen repaints the
 // model's textures at once (hero-colors.js recolor), from the regions the main process sorted them into
 // (hero-look.js). Online battles show the player as one hero in its colours (src/hero-bake.js): the one chosen here,
-// else their save's. The story doesn't use the colours yet. Nothing of it stays on the GPU while the page is hidden.
+// else their save's. The story can be played as one hero too, whatever each save was made with (COLO_PLAYER); it
+// doesn't use the colours yet. Nothing of it stays on the GPU while the page is hidden.
 import { createViewer } from './model-viewer.js';
 
 const $ = id => document.getElementById(id);
@@ -82,6 +83,19 @@ function renderOnline() {
   $('customize-online-note').textContent = mine
     ? `Other players see you as ${hero.label}${looks.online ? '' : ', your save\'s hero,'} in these colours.`
     : `Online, you battle as ${current.label}${looks.online ? '' : ', your save\'s hero'}. Other players see you in your colours.`;
+}
+
+// The story: every save played as the hero chosen for it (the main process reads it, chosenStoryHero), else as the hero
+// each save was made with
+function renderStory() {
+  const hero = colors.hero(looks.shown), story = colors.storyHero(looks, looks.game), button = $('customize-story');
+  const mine = story === hero.id, saveHero = colors.hero(looks.saveHero) ? colors.hero(looks.saveHero).label : null;
+  button.disabled = mine;
+  button.textContent = mine ? `You play the story as ${hero.label}` : `Play the story as ${hero.label}`;
+  $('customize-story-clear').hidden = !story;
+  $('customize-story-note').textContent = story
+    ? `Every save, new or old, plays as ${colors.hero(story).label}, whoever it was made with. A New Game doesn't ask.`
+    : `Each save plays as the hero it was made with${saveHero ? ` (yours: ${saveHero})` : ''}.`;
 }
 
 function renderHeroes() {
@@ -197,6 +211,7 @@ function showHero(id) {
   $('customize-name').textContent = hero.label;
   $('customize-from').textContent = hero.from;
   renderOnline();
+  renderStory();
   motion = 'idle';
   renderMotions(id);
   $('customize-wes-moves-field').hidden = id === 'wes';
@@ -234,6 +249,18 @@ $('customize-online').addEventListener('click', () => {
   looks.online = looks.shown;
   save();
   renderOnline();
+});
+$('customize-story').addEventListener('click', () => {
+  if (!looks) return;
+  looks.story = looks.shown;
+  save();
+  renderStory();
+});
+$('customize-story-clear').addEventListener('click', () => {
+  if (!looks) return;
+  looks.story = null;
+  save();
+  renderStory();
 });
 $('customize-retry').addEventListener('click', () => {
   stopViewer();

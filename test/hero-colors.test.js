@@ -99,3 +99,14 @@ test('every motion is named once; Idle comes first and is played standing when a
   assert.equal(colors.modelFor('brendan', 'idle'), 'battle');
   assert.ok(colors.MOTIONS.filter(motion => motion.id !== 'idle').every(motion => Number.isInteger(motion.slot)));
 });
+
+test('the story\'s hero is kept when it\'s a hero, and plays only in a game that has them', () => {
+  assert.equal(colors.normalizeLooks({ story: 'red' }).story, 'red');
+  assert.equal(colors.normalizeLooks({ story: 'gary' }).story, null);
+  assert.equal(colors.normalizeLooks({}).story, null);
+  assert.equal(colors.storyHero({ story: 'red' }, 'colosseum'), 'red');
+  assert.equal(colors.storyHero({ story: 'wes' }, 'xd'), 'wes');
+  assert.equal(colors.storyHero({ story: 'michael' }, 'xd'), 'michael');
+  assert.equal(colors.storyHero({ story: 'michael' }, 'colosseum'), null);
+  assert.equal(colors.storyHero({ story: null }, 'xd'), null);
+});
