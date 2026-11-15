@@ -30,6 +30,7 @@ const { createActivityLog } = require('./activity-log');
 const { observeProcess, exitDescription, failureMessage, gameStopReason, taskEnvironment } = require('./process-output');
 const { createSessionLog } = require('./session-log');
 const displayScale = require('./display-scale');
+const windowMode = require('./window-mode');
 const steam = require('./steam');
 const crashReports = require('./crash-reports');
 const telemetry = require('./telemetry');
@@ -45,6 +46,7 @@ const pokedexData = pokedexNames.create();
 const pokemonCries = require('./pokemon-cries');
 const pokedexCries = pokemonCries.create();
 const jukeboxSongs = require('./jukebox-songs');
+const jukeboxPlaylists = require('./jukebox-playlists');
 const { Disc } = require('./disc');
 const texturePackLookup = require('./texture-pack-lookup');
 const { pathToFileURL } = require('node:url');
@@ -52,6 +54,7 @@ const battleData = require('./battle-data').create();
 const teamSets = require('./team-sets');
 const pokemonPacks = require('./pokemon-packs');
 const generations = require('./generations');
+const evolutionWays = require('./evolution-ways');
 const hsdModel = require('./hsd-model');
 const randomizer = require('./randomizer');
 const languagePacks = require('./language-packs');
@@ -247,7 +250,9 @@ function loadConfig() {
     // The trainer name, parties and room options of the Online page.
     online: parties.normalize(saved.online),
     // The Game Boy Advance's BIOS, and each socket's Game Pak and save (Settings → Game Boy Advance).
-    gba: gbaLink.normalize(saved.gba)
+    gba: gbaLink.normalize(saved.gba),
+    // Full screen, maximized or normal: the launcher's window opens the way it was left.
+    launcherWindow: windowMode.normalize(saved.launcherWindow)
   };
   if (config.installId !== saved.installId) {
     try { saveConfig(); } catch (error) { log(`Could not save preferences: ${error.message}`); }
@@ -1332,8 +1337,25 @@ function pokedexList(rom) {
           const into = all.find(each => each.id === row.evolutions.readUInt16BE(i * 6 + 4));
           const target = into && packs.find(entry => entry.key === `pack:${into.key}`);
           if (!row.evolutions[i * 6] || !target || from.evolutions.includes(target.key)) continue;
+          const way = evolutionWays.describeBytes(row.evolutions, i * 6), platinum = evolutionWays.platinumWay(from.national, into.national);
           from.evolutions = [...from.evolutions, target.key];
+          from.evolutionWays = [...from.evolutionWays, platinum ? { ...way, note: [way.note, platinum].filter(Boolean).join(' ') } : way];
           if (['shadow', 'gift', 'evolve'].includes(from.status?.kind)) target.status = { ...target.status, note: `${target.status.note} Evolve ${from.name} to get it.` };
+        }
+      }
+      // Evolutions by level that overlap (Kirlia's into Gardevoir at 30, and Gallade at 35 for a male one)
+      const nameOf = key => (typeof key === 'number' ? species.find(entry => entry.national === key) : packs.find(entry => entry.key === key))?.name;
+      for (const entry of species)
+        if (entry.evolutionWays?.some(way => way.gender)) entry.evolutionWays = evolutionWays.overlappingLevels(entry.evolutionWays, entry.evolutions.map(nameOf));
+      // Platinum's evolutions into a later generation's Pokémon that the game can't make (Eevee's into Leafeon and
+      // Glaceon), shown as such
+      for (const [i, target] of packs.entries()) {
+        if (!all[i].generation) continue;
+        for (const only of evolutionWays.platinumOnly(all[i].national)) {
+          const from = species.find(entry => entry.national === only.from) || packs.find((entry, j) => all[j].generation && all[j].national === only.from);
+          if (!from || from.evolutions.includes(target.key)) continue;
+          from.evolutions = [...from.evolutions, typeof from.key === 'string' ? target.pack.key : target.key];
+          from.evolutionWays = [...from.evolutionWays, only];
         }
       }
     }
@@ -1418,6 +1440,24 @@ function jukeboxTracks() {
   return jukeboxSongList.tracks;
 }
 
+// The player's playlists (jukebox-playlists.js), each game's own, in the data folder. A file that can't be read is a fresh start.
+function jukeboxPlaylistFile() { return path.join(app.getPath('userData'), 'jukebox-playlists.json'); }
+function readJukeboxPlaylists() {
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(jukeboxPlaylistFile(), 'utf8')); } catch (_) { /* none yet */ }
+  return jukeboxPlaylists.normalizeAll(saved, games.ids());
+}
+// The chosen game's playlists, as the page has changed them; saved, and returned as kept.
+function saveJukeboxPlaylists(list) {
+  requireFeature('jukebox', 'The Jukebox');
+  const all = { ...readJukeboxPlaylists(), [config.game]: jukeboxPlaylists.normalize(list) };
+  const file = jukeboxPlaylistFile(), temporary = `${file}.tmp`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(temporary, JSON.stringify(all, null, 2), { mode: 0o600 });
+  fs.renameSync(temporary, file);
+  return all[config.game];
+}
+
 let jukeboxWorker = null, jukeboxRequest = 0;
 const jukeboxPending = new Map();
 function jukeboxStopWorker() {
@@ -1467,7 +1507,8 @@ async function play(installation = null, battle = null) {
   const { file: packsFile, own: packPokemon } = preparePlayPacks(rom, cacheFolder, battle);
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
-    packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks, game: chosen.id }),
+    packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
+    noRepeats: onlineFeatures(root).randomizerNoRepeats, baseForms: onlineFeatures(root).randomizerBaseForms, game: chosen.id }),
     ...saves.gameDataEnvironment(), ...bindingsEnvironment(settings),
     ...(supports('languagePacks') ? languagePacks.environment(settings, languageFolder()) : {}),
     ...(supports('gbaLink') ? gbaLink.environment(config.gba, settings, gbaBackupFolder()) : {}),
@@ -1513,7 +1554,8 @@ function showPresence() {
   if (!presenceSession || !discordPresence) return;
   const { startedAt, game: latest, online: isOnline } = presenceSession;
   const game = activeGame();
-  discordPresence.set(presence.activity(latest, { startedAt, online: isOnline ? { opponent: battle?.opponent || null } : null,
+  const online = !isOnline ? null : battle?.role === 'watcher' ? { watching: battle.players?.filter(Boolean) || [] } : { opponent: battle?.opponent || null };
+  discordPresence.set(presence.activity(latest, { startedAt, online,
     gameName: game.name, areaImages: game.id === 'colosseum', xdArt: game.id === 'xd' && Boolean(game.discordAppId) }));
 }
 
@@ -1648,7 +1690,7 @@ function setupTelemetry() {
 }
 
 // --- Online battles (src/online.js): the room, the game between it and the player.
-let battle = null;     // { session, status, code, role, opponent, rules, bestOf, game, wins, preview }
+let battle = null;     // { session, status, code, role, opponent, rules, bestOf, game, wins, preview, players, watchers }
 let battleResult = null;
 
 function onlineState() {
@@ -1660,9 +1702,12 @@ function onlineState() {
     platinumSupported: !binaryReady() || onlineFeatures(config.repo).platinum, game: games.get(config.game).shortName,
     // and in a room for both games, where both games' Pokémon sets take the fourth generation's under them
     crossPlatinumSupported: binaryReady() && onlineFeatures(config.repo).crossPlatinum,
+    // watching others' battles: this game plays a battle as a spectator's
+    spectateSupported: binaryReady() && onlineFeatures(config.repo).spectate,
     battle: battle && { status: battle.status, code: online.formatRoomCode(battle.code), role: battle.role, rules: battle.rules,
       opponent: battle.opponent, peerLost: Boolean(battle.peerLost), bestOf: battle.bestOf || 1, game: battle.game || 0,
-      wins: battle.wins || [0, 0], side: battle.side ?? null, preview: battle.preview || null } };
+      wins: battle.wins || [0, 0], side: battle.side ?? null, preview: battle.preview || null,
+      players: battle.players || null, watchers: battle.watchers || 0 } };
 }
 
 function broadcastOnline() { broadcast('online', onlineState()); }
@@ -1700,17 +1745,22 @@ function onlineFeatures(root, id = config.game) {
         // rooms for either game's players (online.crossBuildId): XD's knows crossplay=1, and Colosseum's needs nothing
         // more than its rules line and whole Pokémon
         crossplay: rules && (story || xd),
+        // spectators' games, which play a room's battle from both players' lines (config side 2)
+        spectate: bytes.includes(xd ? 'online: XD spectating' : 'online: spectating'),
         // the randomizer (host/randomizer.c), which XD's game has once it prints its run
         randomizer: bytes.includes('randomizer: seed '),
         // the randomizer's fourth generation
         randomizerGenerations: bytes.includes('randomizer: later generations'),
         // and Pokémon packs' own Pokémon
-        randomizerPacks: bytes.includes('randomizer: packs\' Pokemon') };
+        randomizerPacks: bytes.includes('randomizer: packs\' Pokemon'),
+        // no evolution family twice, and starters and Shadow Pokémon of first forms only
+        randomizerNoRepeats: bytes.includes('randomizer: no repeated families'),
+        randomizerBaseForms: bytes.includes('randomizer: base forms only') };
     }
     return onlineBinary;
   } catch (_) {
-    return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false,
-      randomizer: false, randomizerGenerations: false, randomizerPacks: false };
+    return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false,
+      randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false };
   }
 }
 
@@ -1887,6 +1937,28 @@ const BATTLE_OVER = {
   desync: 'The battle stopped: the two games no longer agreed. This is a bug, please report it.'
 };
 
+// How a watched battle ended, as the page says it: by the players' names.
+function watchedOutcome(result, players, set = null) {
+  const name = side => players?.[side] || (side ? 'The challenger' : 'The host');
+  if (result.reason === 'over') {
+    const what = set ? `game ${set.game}` : 'the battle';
+    return { message: result.winner === null ? `${set ? `Game ${set.game}` : 'The battle'} ended in a draw.` : `${name(result.winner)} won ${what}.` };
+  }
+  if (result.reason === 'left') return { message: `${result.side === 0 || result.side === 1 ? name(result.side) : 'A player'} left the battle.` };
+  if (result.reason === 'room-closed') return { message: 'That room closed before its battle began.' };
+  if (result.reason === 'desync') return { message: 'Watching stopped: this game no longer agreed with the players\' games. This is a bug, please report it.' };
+  if (result.reason === 'dropped') return { message: BATTLE_OVER.dropped };
+  return null;
+}
+
+// And how a watched set ended.
+function watchedSetOutcome(set, players) {
+  const [a, b] = set.wins.map(wins => wins || 0);
+  const name = side => players?.[side] || (side ? 'The challenger' : 'The host');
+  if (set.reason === 'disagree') return { message: 'The set stopped: the two players\' games saw different results.' };
+  return { message: a === b ? `The set ended ${a}–${b}.` : `${name(a > b ? 0 : 1)} won the set ${Math.max(a, b)}–${Math.min(a, b)}.` };
+}
+
 function battleOutcome(result, side, set = null) {
   if (result.reason === 'over') {
     const what = set ? `game ${set.game}` : 'the battle';
@@ -1927,7 +1999,8 @@ async function playBattle(session) {
 // Where a set is: which game, and the score so far.
 function noteSet(message) {
   Object.assign(battle, { bestOf: message.bestOf || 1, game: message.game || 1, wins: Array.isArray(message.wins) ? message.wins : [0, 0],
-    side: message.side, rules: message.rules || battle.rules, opponent: message.players[1 - message.side].name });
+    side: message.side ?? null, rules: message.rules || battle.rules, players: message.players.map(player => player.name),
+    opponent: battle.role === 'watcher' ? null : message.players[1 - message.side].name });
 }
 
 function watchSession(session) {
@@ -1944,22 +2017,25 @@ function watchSession(session) {
   session.on('start', message => {
     if (!battle) return;
     noteSet(message);
-    battle.status = 'battling';
+    battle.status = battle.role === 'watcher' ? 'watching' : 'battling';
     battle.preview = null;
     if (battle.bestOf > 1) battleResult = null;
     broadcastOnline();
     showPresence();
   });
-  session.on('peer', peer => { if (battle) { battle.peerLost = peer === 'lost'; broadcastOnline(); } });
+  session.on('peer', (peer, side) => { if (battle) { battle.peerLost = peer === 'lost' ? (side ?? true) : false; broadcastOnline(); } });
+  session.on('watchers', count => { if (battle) { battle.watchers = count; broadcastOnline(); } });
   session.on('end', result => {
     const set = battle && battle.bestOf > 1 && result.reason === 'over' && !session.over ? { game: battle.game } : null;
-    const outcome = battleOutcome(result, session.side, set);
+    // a spectator's game may be a game or more behind the set: each game it plays is named
+    const outcome = session.watcher ? watchedOutcome(result, battle?.players, battle?.bestOf > 1 && result.reason === 'over' ? { game: battle.game } : null)
+      : battleOutcome(result, session.side, set);
     if (outcome) battleResult = { ...outcome, opponent: battle?.opponent || null };
     if (battle) battle.status = set ? 'between' : 'ended';
     broadcastOnline();
   });
   session.on('set', set => {
-    battleResult = { ...setOutcome(set, session.side), opponent: battle?.opponent || null };
+    battleResult = { ...(session.watcher ? watchedSetOutcome(set, battle?.players) : setOutcome(set, session.side)), opponent: battle?.opponent || null };
     if (battle) { battle.wins = set.wins; battle.status = 'ended'; }
     broadcastOnline();
   });
@@ -2039,6 +2115,45 @@ async function joinRoom(input) {
   return { code: online.formatRoomCode(code) };
 }
 
+// Watching a room's battle: this game plays it as a spectator's, from the battle's start, with nobody at its controls.
+// The room can be in battle, or waiting for one (its game starts with the battle).
+async function watchRoom(input) {
+  if (!supports('online')) throw new Error(`Online battles aren't in ${games.get(config.game).shortName} yet. Choose Colosseum on the Play page.`);
+  if (!port.isPort(config.repo, config.game) || !binaryReady()) throw new Error('Set up the game on the Play page first.');
+  if (!onlineFeatures(config.repo).spectate) throw new Error('This version of the game can\'t watch battles yet. Update it from the Play page.');
+  if (active || battle) throw new Error('Finish what the launcher is doing first.');
+  const code = online.parseRoomCode(input);
+  if (!code) throw new Error('A room code looks like KQ7-M2D.');
+  battleResult = null;
+  const info = await online.lookup(code);
+  const cross = online.isCrossBuild(info.build);
+  if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
+  // the spectator's game plays the players' battle, so it has to be the very same build
+  if (gameBuild(cross).build !== info.build) throw new Error(`That battle is on another version of the game (${info.version || 'unknown'}). Watching needs the same version.`);
+  const session = new online.Session({ features: sessionFeatures(cross) });
+  const players = Array.isArray(info.players) ? info.players : [info.name, null];
+  battle = { session, status: 'connecting', role: 'watcher', rules: formats.normalize(info.rules || {}), bestOf: info.bestOf || 1, code, opponent: null, players };
+  broadcastOnline();
+  watchSession(session);
+  try {
+    const answer = await session.watch({ code, ...gameBuild(cross) });
+    // the battle's start may have come with the answer
+    if (battle?.session === session && battle.status === 'connecting') {
+      battle.status = answer.status === 'battling' ? 'watching' : 'watch-waiting';
+      if (Array.isArray(answer.players)) battle.players = answer.players;
+    }
+  } catch (error) {
+    session.close();
+    battle = null;
+    broadcastOnline();
+    throw error;
+  }
+  broadcastOnline();
+  log(`Watching room ${online.formatRoomCode(code)}.`);
+  playBattle(session).catch(error => log(`✕ ${error.message}`));
+  return { code: online.formatRoomCode(code) };
+}
+
 // Stops what the launcher is running, as Stop does.
 function stopActive() {
   if (!active?.child) return false;
@@ -2101,6 +2216,8 @@ function state() {
     randomizerSave: saveRun(currentSaveDirectory(), config.game), randomizerReady: repoReady && randomizerReady(config.repo),
     randomizerGenerations: repoReady && onlineFeatures(config.repo).randomizerGenerations,
     randomizerPacks: repoReady && onlineFeatures(config.repo).randomizerPacks,
+    randomizerNoRepeats: repoReady && onlineFeatures(config.repo).randomizerNoRepeats,
+    randomizerBaseForms: repoReady && onlineFeatures(config.repo).randomizerBaseForms,
     usage: usageCount, online: onlineState(),
     gba: { ...gbaLink.status(config.gba), backupFolder: gbaBackupFolder() }
   };
@@ -2311,6 +2428,7 @@ function registerHandlers() {
   ipcMain.handle('usage-refresh', () => reporter?.refresh());
   ipcMain.handle('online-create', () => createRoom());
   ipcMain.handle('online-join', (_event, code) => joinRoom(code));
+  ipcMain.handle('online-watch', (_event, code) => watchRoom(code));
   ipcMain.handle('online-leave', () => leaveRoom());
   ipcMain.handle('online-pick', (_event, order) => pickPokemon(Array.isArray(order) ? order.map(Number) : []));
   // (the team builder's Pokémon too: Colosseum's disc's, in XD as well)
@@ -2348,6 +2466,8 @@ function registerHandlers() {
   ipcMain.handle('game-logos', () => gameLogos());
   ipcMain.handle('jukebox-render', (_event, id) => jukeboxRender(String(id)));
   ipcMain.handle('jukebox-close', () => jukeboxStopWorker());
+  ipcMain.handle('jukebox-playlists', () => { requireFeature('jukebox', 'The Jukebox'); return readJukeboxPlaylists()[config.game] ?? []; });
+  ipcMain.handle('jukebox-playlists-save', (_event, list) => saveJukeboxPlaylists(list));
   ipcMain.handle('pokedex-clip', (_event, key, form, index) => {
     const look = pokedexLook(key, String(form));
     return look.pkx ? hsdModel.parseClip(look.pkx, Number(index)) : pokedexData.clip(port.validateRom(config.rom, config.game), look.national, String(form), Number(index));
@@ -2661,8 +2781,20 @@ function createWindow() {
   });
   if (windowsScaling) displayScale.followDisplayScale(window, screen, WINDOW_SIZE, zoom);
   window.setMenuBarVisibility(false);
-  const sendWindowState = () => broadcast('window-state', windowState(window));
-  for (const event of ['enter-full-screen', 'leave-full-screen', 'maximize', 'unmaximize', 'restore']) window.on(event, sendWindowState);
+  if (config?.launcherWindow === 'fullscreen') window.setFullScreen(true);
+  else if (config?.launcherWindow === 'maximized') window.maximize();
+  // The event says which way full screen went: on Linux, isFullScreen() can lag the window manager.
+  const sendWindowState = event => {
+    broadcast('window-state', windowState(window));
+    // A minimized window keeps the mode it had, so it doesn't open minimized next time.
+    if (window.isDestroyed() || window.isMinimized()) return;
+    const mode = event === 'enter-full-screen' ? 'fullscreen'
+      : event === 'leave-full-screen' ? (window.isMaximized() ? 'maximized' : 'normal') : windowMode.modeOf(window);
+    if (!config || mode === config.launcherWindow) return;
+    config.launcherWindow = mode;
+    try { saveConfig(); } catch (error) { log(`Could not save preferences: ${error.message}`); }
+  };
+  for (const event of ['enter-full-screen', 'leave-full-screen', 'maximize', 'unmaximize', 'restore']) window.on(event, () => sendWindowState(event));
   window.loadFile(path.join(__dirname, 'index.html'));
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('console-message', details => {

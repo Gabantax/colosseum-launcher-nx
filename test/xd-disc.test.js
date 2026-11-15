@@ -76,10 +76,12 @@ test('an XD model is made Colosseum\'s: header, model, particles, motion slots a
 });
 
 test('song names: the ones known by name, the rest made readable', () => {
-  assert.equal(xdDisc.songTitle('stm_bgm_title.fsys'), 'Title screen');
-  assert.equal(xdDisc.songTitle('stm_me_me_win.fsys'), 'Victory');
-  assert.equal(xdDisc.songTitle('stm_bgm_b_colosseum1.fsys'), 'B colosseum1');
-  assert.equal(xdDisc.songTitle('stm_me_fanfare00.fsys'), 'Jingle fanfare00');
+  assert.equal(xdDisc.songTitle('stm_bgm_title.fsys'), 'Title Screen');
+  assert.equal(xdDisc.songTitle('stm_me_me_win.fsys'), 'Win Battle');
+  assert.equal(xdDisc.songTitle('stm_bgm_b_colosseum1.fsys'), 'Colosseum - 1st Round');
+  assert.equal(xdDisc.songTitle('stm_bgm_b_paira.fsys'), 'Colosseum - 1st Round (Pyrite)');
+  assert.equal(xdDisc.songTitle('stm_bgm_chr_mecha.fsys'), 'Chr mecha');
+  assert.equal(xdDisc.songTitle('stm_me_fanfare00.fsys'), 'VS Battle Fanfare 1');
 });
 
 // --- The real disc: XD_TEST_DISC=/path/to/GXXE01.iso npm test ---------------------------------------------------
@@ -99,6 +101,7 @@ test('XD\'s Pokédex: every Pokémon, each with a model and a sprite, and how XD
   const find = national => list.find(entry => entry.national === national);
   assert.equal(find(133).status.note, 'Your partner from the very start of the game.');
   assert.deepEqual(find(133).evolutions, [135, 134, 136, 196, 197]);
+  assert.deepEqual(find(133).evolutionWays.map(way => way.text).slice(3), ['High friendship, Sun Shard in the bag', 'High friendship, Moon Shard in the bag']);
   assert.equal(find(249).status.kind, 'shadow');
   assert.match(find(27).status.note, /Rock Poké Spot/);
   assert.equal(find(1).height, '2\'04"');

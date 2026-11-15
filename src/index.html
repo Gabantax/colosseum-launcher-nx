@@ -122,7 +122,7 @@
             </div>
             <p id="online-blocked" class="helper" hidden></p>
             <div class="online-heading"><h2 class="group-title">Rooms</h2><button id="online-refresh" class="subtle" title="Check for new rooms and the online count now">Refresh</button>
-              <form id="online-code-form" class="online-code"><input id="online-code" class="online-input" type="text" maxlength="7" placeholder="Room code" spellcheck="false" autocomplete="off" aria-label="Room code"><button id="online-code-join" class="subtle">Join</button></form>
+              <form id="online-code-form" class="online-code"><input id="online-code" class="online-input" type="text" maxlength="7" placeholder="Room code" spellcheck="false" autocomplete="off" aria-label="Room code"><button id="online-code-join" class="subtle">Join</button><button id="online-code-watch" class="subtle" type="button" title="Watch this room's battle">Watch</button></form>
             </div>
             <div id="online-rooms" class="online-room-list" aria-live="polite"></div>
             <p id="online-rooms-empty" class="helper">No rooms are open. Create one and wait for a challenger.</p>
@@ -130,9 +130,39 @@
         </div>
       </section>
       <section id="page-jukebox" class="page sheet jukebox-page" aria-labelledby="jukebox-title" hidden>
-        <div class="modal-head"><div><h1 id="jukebox-title">Jukebox</h1><p id="jukebox-summary">The game's music, played from your disc. It keeps playing while you use the rest of the launcher.</p></div></div>
+        <div class="modal-head"><div><h1 id="jukebox-title">Jukebox</h1><p id="jukebox-summary">The game's music and sound effects, played from your disc. It keeps playing while you use the rest of the launcher.</p></div></div>
+        <div id="jukebox-tabs" class="jukebox-tabs" role="tablist" aria-label="Kind of sound" hidden>
+          <button id="jukebox-tab-music" class="jukebox-tab" role="tab" type="button" aria-selected="true">Music</button>
+          <button id="jukebox-tab-sfx" class="jukebox-tab" role="tab" type="button" aria-selected="false">Sound effects</button>
+          <button id="jukebox-tab-favorites" class="jukebox-tab" role="tab" type="button" aria-selected="false">Favorites</button>
+        </div>
+        <div id="jukebox-tools" class="jukebox-tools">
+          <input id="jukebox-search" class="jukebox-search" type="search" placeholder="Search" aria-label="Search the list" autocomplete="off" spellcheck="false">
+          <div id="jukebox-filters" class="jukebox-filters" role="group" aria-label="Show"></div>
+          <span id="jukebox-count" class="jukebox-count" role="status"></span>
+          <label class="jukebox-sort"><span>Sort</span><select id="jukebox-sort" aria-label="Sort the list">
+            <option value="game">Game order</option><option value="name">Name, A to Z</option><option value="name-desc">Name, Z to A</option>
+            <option value="type">Type</option><option value="length">Shortest first</option><option value="length-desc">Longest first</option>
+          </select></label>
+          <div id="jukebox-views" class="jukebox-views" role="group" aria-label="View">
+            <button type="button" class="jukebox-view" data-view="grid" aria-label="Grid" title="Grid"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
+            <button type="button" class="jukebox-view" data-view="list" aria-label="List" title="List"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="5" r="1.8"/><circle cx="5" cy="10" r="1.8"/><circle cx="5" cy="15" r="1.8"/><path d="M9 5h8M9 10h8M9 15h8"/></svg></button>
+            <button type="button" class="jukebox-view" data-view="compact" aria-label="Compact list" title="Compact list"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14M3 8h14M3 12h14M3 16h14"/></svg></button>
+          </div>
+        </div>
         <div class="jukebox-body">
           <div id="jukebox-list" class="jukebox-list" aria-label="Songs"></div>
+          <div id="jukebox-favorites" class="jukebox-favorites" hidden>
+            <div class="jukebox-pl-head">
+              <h2 class="jukebox-pl-heading">Favorites</h2>
+              <span id="jukebox-pl-count" class="jukebox-count"></span>
+              <button id="jukebox-pl-play" type="button" class="solid">Play</button>
+              <button id="jukebox-pl-shuffle" type="button" class="subtle">Shuffle</button>
+            </div>
+            <ol id="jukebox-pl-songs" class="jukebox-pl-songs"></ol>
+            <p id="jukebox-pl-empty" class="helper">No favorites yet. Press the star beside a song, in Music or Sound effects or in the player, to add it here.</p>
+          </div>
+          <p id="jukebox-nomatch" class="helper" hidden>Nothing matches that search.</p>
           <p id="jukebox-empty" class="helper" hidden>The list of songs isn't available yet.</p>
         </div>
       </section>
@@ -162,8 +192,9 @@
               <div id="pokedex-availability" class="pokedex-availability"><svg class="pokedex-lock" viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5" rx="2"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9"/></svg><div><strong id="pokedex-availability-label"></strong><p id="pokedex-availability-note"></p></div></div>
               <div class="pokedex-facts">
                 <dl id="pokedex-stats" class="pokedex-stats"></dl>
-                <dl class="pokedex-traits"><dt>Height</dt><dd id="pokedex-height"></dd><dt>Weight</dt><dd id="pokedex-weight"></dd><dt>Abilities</dt><dd id="pokedex-abilities"></dd><dt id="pokedex-evolves-from-label">Evolves from</dt><dd id="pokedex-evolves-from"></dd><dt id="pokedex-evolves-label">Evolves into</dt><dd id="pokedex-evolves"></dd></dl>
+                <dl class="pokedex-traits"><dt>Height</dt><dd id="pokedex-height"></dd><dt>Weight</dt><dd id="pokedex-weight"></dd><dt>Abilities</dt><dd id="pokedex-abilities"></dd></dl>
               </div>
+              <section class="pokedex-evolution-section" aria-labelledby="pokedex-evolution-title"><h3 id="pokedex-evolution-title">Evolution</h3><div id="pokedex-chain" class="pokedex-chain"></div><ul id="pokedex-evolution-notes" class="pokedex-evolution-notes"></ul></section>
             </div>
           </div>
         </div>
@@ -227,6 +258,7 @@
               <label data-feature="shiny" class="switch"><span><strong>Show shiny Shadow Pokémon</strong><small id="shiny-shadow-note">A Shadow Pokémon looks shiny in battle if it will be shiny once you snag it. That's decided when you first meet it in battle, and it stays the same if you lose or battle it again. Only resetting to a save from before you met it gives a new chance.</small></span><input id="shinyShadow" type="checkbox"><i></i></label>
               <label data-feature="shinyStarters" class="switch"><span><strong>Shiny starters</strong><small>Espeon and Umbreon can be shiny, at 1 in 8192 as in other Pokémon games; the original never makes them shiny. From your next New Game.</small></span><input id="shinyStarters" type="checkbox"><i></i></label>
               <label data-feature="starters" class="switch"><span><strong id="choose-starters-title">Choose starters</strong><small id="choose-starters-note">After you enter your name for a New Game, the game asks whether to begin with Espeon and Umbreon. Say No to pick any two Pokémon instead, at the same levels. A randomized game that randomizes the starters doesn't ask.</small></span><input id="chooseStarters" type="checkbox"><i></i></label>
+              <label data-feature="tmNames" class="switch"><span><strong>TMs by move name</strong><small>The bag and shops list a TM by the move it teaches, such as Thunderbolt, instead of TM24. Its number shows above the description box.</small></span><input id="tmNames" type="checkbox"><i></i></label>
               <label data-feature="languagePacks" class="field"><span>Language<small>The game's text, menus and title cards in French, German, Spanish or Italian, from the European release. A language downloads the first time you play with it.</small></span><select id="language"></select></label>
               <p id="language-note" class="row-note" data-feature="languagePacks" hidden></p>
               <div data-feature="languagePacks" class="field"><span>Other languages<small>A fan translation is a folder with a pack.json and a text.txt: put it in the languages folder and it shows in the list above.</small></span><button class="subtle" id="open-languages" type="button">Open languages folder</button></div>
@@ -251,6 +283,8 @@
                 <label id="randomizer-packs-row" class="switch"><span><strong>Pokémon packs</strong><small id="randomizer-packs-note"></small></span><input id="randomizerPacks" type="checkbox"><i></i></label>
                 <label class="switch"><span><strong>Similar strength</strong><small>Picks Pokémon about as strong as the ones they replace, so early trainers stay beatable.</small></span><input id="randomizerSimilar" type="checkbox"><i></i></label>
                 <label class="switch"><span><strong>No legendaries</strong><small>Leaves legendary and mythical Pokémon out.</small></span><input id="randomizerNoLegendaries" type="checkbox"><i></i></label>
+                <label class="switch"><span><strong>No repeats</strong><small id="randomizer-no-repeats-note"></small></span><input id="randomizerNoRepeats" type="checkbox"><i></i></label>
+                <label class="switch"><span><strong>First forms only</strong><small id="randomizer-base-forms-note"></small></span><input id="randomizerBaseForms" type="checkbox"><i></i></label>
               </div>
               <div class="field randomizer-save"><span>Your save<small id="randomizer-save-note"></small></span><button id="randomizer-spoilers" class="subtle" type="button" hidden>Show spoilers</button></div>
             </div>
@@ -312,7 +346,7 @@
               <label data-feature="hdTextures" class="field sub"><span>HD texture loading<small id="texture-loading-hint">Before each area: an area's HD textures load with it, so they don't pop in while you play.</small></span><select id="textureLoading"><option value="stage">Before each area</option><option value="all">Whole pack</option><option value="play">While playing</option></select></label>
               <div data-feature="hdTextures" class="field"><span>Custom textures<small>Put texture packs made for Dolphin here: they replace the HD textures where both change the same texture, and work with HD textures off too.</small></span><button class="subtle" id="open-custom-textures">Open custom textures folder</button></div>
               <label data-feature="hdModels" class="switch"><span><strong>HD models</strong><small>People in the field use their detailed models.</small></span><input id="hdModels" type="checkbox"><i></i></label>
-              <label class="switch"><span><strong>Shader warm-up</strong><small>Builds an area's effects while it loads, so the first moments in it don't stutter.</small></span><input id="shaderWarmup" type="checkbox"><i></i></label>
+              <label class="switch"><span><strong>Shader warm-up</strong><small>Builds the game's effects ahead of time, from the moment it starts, so new places and battles don't stutter the first time you see them.</small></span><input id="shaderWarmup" type="checkbox"><i></i></label>
             </div>
           </section>
 
@@ -396,14 +430,18 @@
       </section>
     </main>
     <section id="jukebox-dock" class="jukebox-dock" aria-label="Music player" hidden>
-      <div class="jukebox-now"><strong id="jukebox-now">Nothing playing</strong><span id="jukebox-status" role="status"></span></div>
+      <div class="jukebox-title"><span id="jukebox-disc" class="jukebox-disc" aria-hidden="true"></span><div class="jukebox-now"><strong id="jukebox-now">Nothing playing</strong><span id="jukebox-status" role="status"></span></div></div>
       <div class="jukebox-controls">
         <button id="jukebox-previous" class="subtle" aria-label="Previous song" title="Previous song"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4v12M16 4.5v11l-8-5.5z"/></svg></button>
-        <button id="jukebox-toggle" class="solid" aria-label="Play" title="Play or pause">Play</button>
+        <button id="jukebox-toggle" class="solid" aria-label="Play" title="Play or pause"></button>
         <button id="jukebox-stop" class="subtle" aria-label="Stop" title="Stop"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1"/></svg></button>
         <button id="jukebox-next" class="subtle" aria-label="Next song" title="Next song"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15 4v12M4 4.5v11l8-5.5z"/></svg></button>
-        <label class="jukebox-loop"><input id="jukebox-loop" type="checkbox"><span>Loop</span></label>
-        <label class="jukebox-volume"><span>Volume</span><input id="jukebox-volume" type="range" min="0" max="100" value="100" aria-label="Volume"></label>
+        <button id="jukebox-star" class="subtle jukebox-star" aria-label="Favorite" title="Favorite" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l2.3 4.9 5.3.6-3.9 3.6 1.1 5.3L10 14.3 5.2 17l1.1-5.3-3.9-3.6 5.3-.6z"/></svg></button>
+      </div>
+      <div class="jukebox-progress"><span id="jukebox-time" class="jukebox-clock">0:00</span><input id="jukebox-seek" type="range" min="0" max="1000" value="0" aria-label="Position in the song" disabled><span id="jukebox-length" class="jukebox-clock">0:00</span></div>
+      <div class="jukebox-extras">
+        <label class="jukebox-loop" title="Loop"><input id="jukebox-loop" type="checkbox"><span>Loop</span></label>
+        <label class="jukebox-volume" title="Volume"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h3l4-3.5v11L6 12H3z"/><path d="M13 7.5q1.6 2.5 0 5M15.5 5.5q3.2 4.5 0 9"/></svg><input id="jukebox-volume" type="range" min="0" max="100" value="100" aria-label="Volume"></label>
         <button id="jukebox-close" class="subtle jukebox-close" aria-label="Close the music player" title="Close the music player (stops the music)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
       </div>
     </section>
@@ -528,6 +566,8 @@
   <script src="formats.js"></script>
   <script src="team-builder.js"></script>
   <script src="online-page.js"></script>
+  <script src="jukebox-cover.js"></script>
+  <script src="jukebox-playlists.js"></script>
   <script src="jukebox-page.js"></script>
 </body>
 </html>

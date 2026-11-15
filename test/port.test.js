@@ -241,6 +241,21 @@ test('choosing starters is on unless turned off, and on leaves it to the game', 
   }
 });
 
+test('TMs by move name are on unless turned off, and on leaves it to the game', () => {
+  const env = settings => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port');
+  const saved = process.env.COLO_TM_NAMES;
+  delete process.env.COLO_TM_NAMES;
+  try {
+    assert.equal(port.normalizeSettings({}).tmNames, true);
+    assert.equal(env({}).COLO_TM_NAMES, undefined);
+    assert.equal(env({ tmNames: true }).COLO_TM_NAMES, undefined);
+    assert.equal(env({ tmNames: false }).COLO_TM_NAMES, '0');
+    assert.equal(port.buildEnvironment(port.normalizeSettings({ tmNames: false }), 'disc', '/port', { game: 'xd' }).COLO_TM_NAMES, '0', 'XD has them too');
+  } finally {
+    if (saved !== undefined) process.env.COLO_TM_NAMES = saved;
+  }
+});
+
 test('HD models are on unless turned off, and on leaves it to the game', () => {
   const env = hdModels => port.buildEnvironment(port.normalizeSettings({ hdModels }), 'disc', '/port').COLO_HD_MODELS;
   const saved = process.env.COLO_HD_MODELS;
@@ -418,4 +433,16 @@ test('a playable install is the one with a game built', t => {
   fs.writeFileSync(port.binaryPath(root), 'game');
   assert.equal(port.playableInstall({ repo: root, settings: {} }).repo, root);
   assert.equal(port.playableInstall({}), null);
+});
+
+test('the game starts without Steam\'s on-screen keyboard, unless the player asks for it', () => {
+  const settings = port.normalizeSettings({});
+  assert.equal(port.buildEnvironment(settings, '/disc.iso', '/game').SDL_ENABLE_SCREEN_KEYBOARD, '0');
+  const saved = process.env.SDL_ENABLE_SCREEN_KEYBOARD;
+  process.env.SDL_ENABLE_SCREEN_KEYBOARD = '1';
+  try {
+    assert.equal(port.buildEnvironment(settings, '/disc.iso', '/game').SDL_ENABLE_SCREEN_KEYBOARD, '1');
+  } finally {
+    if (saved === undefined) delete process.env.SDL_ENABLE_SCREEN_KEYBOARD; else process.env.SDL_ENABLE_SCREEN_KEYBOARD = saved;
+  }
 });
