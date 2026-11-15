@@ -39,9 +39,9 @@ const GAMES = {
     texturePack: require('./xd-texture-pack.json'),
     // XD's port builds without the game's files too (its extracted data is only ever read from the disc's DOL)
     needsMainDol: false,
-    // XD's own Discord application, once it is made: paste its Application ID here as a string. Until then XD's
-    // activity goes through Colosseum's application (discordAppId below), so Discord says "Playing Pokémon Colosseum"
-    discordAppId: null,
+    // XD's own Discord application ("Playing Pokémon XD"), with XD's pictures (presence.XD_PLACE_IMAGES,
+    // docs/discord-art.md). Set to null, XD's activity would go through Colosseum's application instead
+    discordAppId: '1571332810449621023',
     // fast-forward is the port's shared input code, XD skips its own movies, and its cameras widen with the frame (its
     // 2D stays 4:3, centred); its save goes to and from Dolphin as a .gci (gci-save.js); it prints its [presence] lines
     // (host/xd/presence.c); its text goes through HD text (host/hdtext.c); its online battles (host/xd/online.c) speak

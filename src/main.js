@@ -1556,7 +1556,7 @@ function showPresence() {
   const game = activeGame();
   const online = !isOnline ? null : battle?.role === 'watcher' ? { watching: battle.players?.filter(Boolean) || [] } : { opponent: battle?.opponent || null };
   discordPresence.set(presence.activity(latest, { startedAt, online,
-    gameName: game.name, areaImages: game.id === 'colosseum' }));
+    gameName: game.name, areaImages: game.id === 'colosseum', xdArt: game.id === 'xd' && Boolean(game.discordAppId) }));
 }
 
 function startPresence(startedAt, isOnline) {
