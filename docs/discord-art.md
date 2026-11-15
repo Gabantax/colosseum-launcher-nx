@@ -34,9 +34,9 @@ square. The towns are the game's own camera sweep on a first visit: start the ga
 
 ## Pokémon XD
 
-XD has a Discord application of its own once its ID is in `src/games.js` (`discordAppId` in the `xd` entry); until
-then XD's activity goes through Colosseum's application, with Colosseum's pictures for the places both games share
-and XD's title for the rest. Upload these to XD's application, 1024 × 1024. Like Colosseum's, they are frames of the
+XD has a Discord application of its own, "Pokemon XD Gale of Darkness", whose ID is `discordAppId` in the `xd` entry
+of `src/games.js`. (Set to null, XD's activity would go through Colosseum's application, with Colosseum's pictures for
+the places both games share and XD's title for the rest.) These are its art assets, 1024 × 1024. Like Colosseum's, they are frames of the
 port at 4x with XD's HD texture pack and 16:9 widescreen, cropped square; `logo` is XD's title screen.
 
 | Key | Shown for |
