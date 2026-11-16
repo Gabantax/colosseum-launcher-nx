@@ -479,6 +479,32 @@ function pathCharacterProblem(root, { platform = process.platform, portable = fa
       `${characters.length === 1 ? 'it' : 'them'} as part of a command. ${fix}` };
 }
 
+// A Windows game folder whose path has letters outside ASCII (E:\Games\Pokémon Colosseum). The game's last
+// build step hands the linker a list of its files, which the linker reads in Windows' older code page: a game
+// that names them by their full paths there (one whose tools/link.py doesn't link from the game folder) fails
+// with "ld.exe: cannot find ...". Only such a game, once its files are there, is stopped.
+const NON_ASCII = /[^\x00-\x7F]/gu;
+function linksFromGameFolder(root) {
+  try { return fs.readFileSync(path.join(root, 'tools', 'link.py'), 'utf8').includes('link_cwd'); }
+  catch { return true; }   // nothing to read yet: nothing to say
+}
+
+function nonAsciiPathProblem(root, { platform = process.platform, portable = false,
+  folder = path.win32.dirname(root) } = {}) {
+  if (platform !== 'win32' || !root || !root.match(NON_ASCII) || linksFromGameFolder(root)) return null;
+  const characters = [...new Set(root.match(NON_ASCII))];
+  if (!folder || !characters.some(character => folder.includes(character))) folder = root;
+  const listed = characters.join(' or ');
+  const name = folder === root ? 'The game folder'
+    : portable ? 'The Colosseum-Launcher-Portable folder' : 'The folder holding the setup files';
+  const fix = portable
+    ? `Move the launcher and its Colosseum-Launcher-Portable folder together to a folder whose path has only plain letters (A to Z), digits and spaces, such as C:\\Games, and open it from there.`
+    : 'Choose a folder whose path has only plain letters (A to Z), digits and spaces for Setup files in Settings, such as C:\\Games.';
+  return { kind: 'non-ascii', folder, characters, portable, name,
+    message: `${name}'s path has ${listed} in it, and this version of the game can't be built there on Windows: ` +
+      `its last step would fail with "cannot find". ${fix}` };
+}
+
 function playableInstall(saved, platform = process.platform, game = games.DEFAULT) {
   if (!saved.repo || !saved.settings) return null;
   const settings = normalizeSettings(saved.settings, platform);
@@ -634,5 +660,5 @@ function gameRuntimeFolders(environment = process.env) {
 
 module.exports = { PORT_URL, TEXTURE_PACK, texturePack, gameArch, platformInfo, dependencyPaths, isPort, placeMainDol, validateRom, normalizeSettings, moveToMetal, turnOnQuickBattles,
   texturePackDirectory, texturePackInstalled, hdVisualsInstalled, dropLeftOutTextures, customTextureDirectory, customTexturesPresent, texturePackFolders,
-  buildEnvironment, binaryPath, longPathProblem, pathCharacterProblem, playableInstall, useLauncherScripts, launcherScript,
+  buildEnvironment, binaryPath, longPathProblem, pathCharacterProblem, nonAsciiPathProblem, playableInstall, useLauncherScripts, launcherScript,
   gameBuildEnvironment, buildCommand, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };

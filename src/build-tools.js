@@ -193,6 +193,31 @@ function forkFailedError(error, platform = process.platform) {
     'back to "Use default (Off)". Then restart the computer and try again.'), { buildHint: 'mandatory-aslr' });
 }
 
+// A program the build started that Windows couldn't start: STATUS_DLL_INIT_FAILED, which Ninja, Python and the
+// game's tools print as 3221225794 (or -1073741502, or 0xC0000142). One of its DLLs refused to start in that
+// process, which comes and goes: other programs, often security software, overlays or screen recorders, that load
+// their own DLLs into every program, or too many programs starting at once.
+//   FAILED: [code=3221225794] build/obj/game/gba/gba_misc.o
+//   cxxnames: c++filt -n exited with code 3221225794 (0xC0000142: Windows could not start it) on 3 tries ...
+// Game versions before that said only that c++filt printed nothing, which on Windows is the same failure:
+//   cxxnames: c++filt -n did not demangle _ZN4colo5probeEPKcl (it printed '')
+const DLL_INIT_FAILED = /\b(?:3221225794|0xC0000142)\b|-1073741502\b|STATUS_DLL_INIT_FAILED|application was unable to start correctly|did not demangle \S+ \(it printed ''\)/i;
+
+function dllInitFailed(error, platform = process.platform) {
+  return platform === 'win32' && Boolean(saidLine(DLL_INIT_FAILED, error));
+}
+
+// The error to show for a Windows step whose programs Windows couldn't start (0xC0000142), or null.
+function dllInitFailedError(error, platform = process.platform) {
+  if (error?.buildHint || !dllInitFailed(error, platform)) return null;
+  return Object.assign(new Error('Windows could not start some of the build\'s programs ' +
+    `(${saidLine(DLL_INIT_FAILED, error)}; 0xC0000142 means a DLL failed to start inside them). Programs that put ` +
+    'their own DLLs into every other program usually cause this: antivirus, overlays and screen recorders (such as ' +
+    'MSI Afterburner or RivaTuner, Razer Synapse or Cortex, Nahimic, OBS) or custom Exploit protection settings. ' +
+    'Close those programs, or add the launcher\'s folder to your antivirus\'s exclusions, restart the computer, and ' +
+    'try again.'), { buildHint: 'dll-init-failed' });
+}
+
 // Whether two folders are on one drive: by device when both exist, otherwise
 // by drive letter (Windows) or root.
 function sameDrive(a, b, platform) {
@@ -225,7 +250,8 @@ function outOfSpaceError(error, { dataFolder, gameFolder, platform = process.pla
 
 // A clearer error for a failed step whose cause the player can fix, or null.
 function hintedError(error, { dataFolder, gameFolder, platform = process.platform } = {}) {
-  return outOfSpaceError(error, { dataFolder, gameFolder, platform }) || forkFailedError(error, platform);
+  return outOfSpaceError(error, { dataFolder, gameFolder, platform }) || forkFailedError(error, platform) ||
+    dllInitFailedError(error, platform);
 }
 
 function commandWorks(command, args = [], env = process.env) {
@@ -669,5 +695,5 @@ async function pruneToolsets(userData, keep = [], { platform = process.platform,
 }
 
 module.exports = { TOOLSET, toolsetFor, platformId, rootFor, legacyRootFor, privateReady, missingTools, deletedToolsError, blockedToolError,
-  outOfSpace, forkFailed, outOfSpaceError, forkFailedError, hintedError, status, environment, environmentAtRoot, check,
+  outOfSpace, forkFailed, outOfSpaceError, forkFailedError, dllInitFailed, dllInitFailedError, hintedError, status, environment, environmentAtRoot, check,
   fetchVerified, hashFile, assetFor, prepare, pruneToolsets, unpackNative, nativeUnpackArgs, renameRetrying, hardLinksWork, unpackScript };

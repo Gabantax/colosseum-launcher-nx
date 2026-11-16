@@ -506,6 +506,29 @@ test('a Windows step whose MSYS2 programs cannot fork() points to Mandatory ASLR
   assert.equal(tools.forkFailedError(undefined, 'win32'), null);
 });
 
+test('a Windows build whose programs fail to start with 0xC0000142 says what usually causes it', () => {
+  // jo41297's build (issue 189): Ninja's failed step, and XD's c++filt check.
+  const output = ['[483/3264] IR C:/Users/olive/AppData/Roaming/colosseum-launcher/game.releases/3932e64-594f/build/mirror/src/game/gba/gba_misc_r51_800896E8_o2.c',
+    'FAILED: [code=3221225794] C:/Users/olive/AppData/Roaming/colosseum-launcher/game.releases/3932e64-594f/build/ir/gba_misc.ll',
+    'ninja: build stopped: subcommand failed.'];
+  const failed = Object.assign(new Error('Build Pokémon Colosseum exited with code 127: ninja: build stopped: subcommand failed. See the activity log.'), { output });
+  const hint = tools.dllInitFailedError(failed, 'win32');
+  assert.match(hint.message, /^Windows could not start some of the build's programs \(FAILED: \[code=3221225794\] .+; 0xC0000142 means a DLL failed to start inside them\)\. /);
+  assert.match(hint.message, /antivirus, overlays and screen recorders/);
+  assert.equal(hint.buildHint, 'dll-init-failed');
+  assert.equal(tools.hintedError(failed, { dataFolder: 'C:\\Users\\olive\\AppData\\Roaming\\colosseum-launcher', platform: 'win32' }).buildHint, 'dll-init-failed');
+  for (const line of ["cxxnames: c++filt -n exited with code 3221225794 (0xC0000142: Windows could not start it) and printed ''",
+    'clang exited -1073741502', "cxxnames: c++filt -n did not demangle _ZN4colo5probeEPKcl (it printed '')", 'The application was unable to start correctly (0xc0000142). Click OK to close the application.'])
+    assert.ok(tools.dllInitFailed([line], 'win32'), line);
+  // Numbers that only contain it, other errors, other systems, and an error that already says this, are left as they are.
+  assert.equal(tools.dllInitFailed(['[13221225794/9] IR x', 'offset 0x0C00001420',
+    "cxxnames: c++filt -n did not demangle _ZN4colo5probeEPKcl (it printed 'ZN4colo5probeEPKcl')"], 'win32'), false);
+  assert.equal(tools.dllInitFailedError({ message: 'x', output: ["gx_fifo.cpp:12:3: error: expected ';' before '}' token"] }, 'win32'), null);
+  assert.equal(tools.dllInitFailedError(failed, 'linux'), null);
+  assert.equal(tools.dllInitFailedError(hint, 'win32'), null);
+  assert.equal(tools.dllInitFailedError(undefined, 'win32'), null);
+});
+
 test('a step that runs out of disk space says which drive is full instead of blaming antivirus', () => {
   const dataFolder = 'C:\\Users\\me\\AppData\\Roaming\\colosseum-launcher';
   // dewarq's and gustavo_07288's: the port source download, as Node reports it.

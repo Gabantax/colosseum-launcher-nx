@@ -435,6 +435,32 @@ test('a Windows folder with an & in its path is found before the build, with wha
   assert.match(portable.message, /^The Colosseum-Launcher-Portable folder's path/);
 });
 
+test('a Windows game folder with letters outside ASCII stops a game that cannot link there, before the build', t => {
+  // gamerkyle123's (issue 215): the portable launcher in E:\Recomps\Gamecube\Pokémon Colosseum.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'colo-non-ascii-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const folder = path.join(base, 'Pokémon Colosseum', 'Colosseum-Launcher-Portable');
+  const root = path.join(folder, 'game');
+  fs.mkdirSync(path.join(root, 'tools'), { recursive: true });
+  const linkPy = path.join(root, 'tools', 'link.py');
+  // Not checked out yet, or not Windows: nothing to say.
+  assert.equal(port.nonAsciiPathProblem(root, { platform: 'win32', folder, portable: true }), null);
+  fs.writeFileSync(linkPy, "r = subprocess.run(['g++', '@' + L + '/cmd.rsp'], capture_output=True)\n");
+  assert.equal(port.nonAsciiPathProblem(root, { platform: 'linux', folder, portable: true }), null);
+  const problem = port.nonAsciiPathProblem(root, { platform: 'win32', folder, portable: true });
+  assert.equal(problem.kind, 'non-ascii');
+  assert.deepEqual(problem.characters, ['é']);
+  assert.match(problem.message, /^The Colosseum-Launcher-Portable folder's path has é in it, and this version of the game can't be built there on Windows/);
+  assert.match(problem.message, /Move the launcher and its Colosseum-Launcher-Portable folder together to .+ C:\\Games/);
+  assert.match(port.nonAsciiPathProblem(root, { platform: 'win32', folder: root }).message, /^The game folder's path has é/);
+  assert.match(port.nonAsciiPathProblem(root, { platform: 'win32', folder: path.join(base, 'Pokémon Colosseum') }).message,
+    /^The folder holding the setup files's path has é in it.+Setup files in Settings/);
+  // A game that links from its own folder builds there; so does any game in a plain folder.
+  fs.writeFileSync(linkPy, "link_cwd = P\nr = subprocess.run(['g++', '@' + L + '/cmd.rsp'], cwd=link_cwd)\n");
+  assert.equal(port.nonAsciiPathProblem(root, { platform: 'win32', folder, portable: true }), null);
+  assert.equal(port.nonAsciiPathProblem('C:\\Games\\Colosseum Game', { platform: 'win32' }), null);
+});
+
 test('launcher updates stay on Stable unless a known channel is chosen', () => {
   assert.equal(port.normalizeSettings({}).updateChannel, 'stable');
   assert.equal(port.normalizeSettings({ updateChannel: 'beta' }).updateChannel, 'beta');
