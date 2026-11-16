@@ -35,7 +35,8 @@
       "Windows: when Windows can't start one of the build's programs (error 0xC0000142), the launcher builds again with fewer programs at once, and if that fails too it says what usually causes it: antivirus, overlays or screen recorders that load themselves into every program.",
       "Windows: if the game folder has an accented letter in its path, such as the é in Pokémon Colosseum, and the game version being set up can't be built there, setup now stops at once and says to move it to a folder like C:\\Games, instead of failing at the end of the build.",
       "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, your hero throws Poké Balls with Michael's throw, so the ball leaves their hand and flies over their head, where it used to come out of their chest.",
-      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the Snag Ball now flashes into your hero's palm as it does in Michael's hand, where it used to sit inside their fist from the start."
+      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the Snag Ball now flashes into your hero's palm as it does in Michael's hand, where it used to sit inside their fist from the start.",
+      "Later generations: in Pokémon XD, Generation 4 and pack Pokémon icons in Pokémon Storage and the Purification Chamber are now as big as XD's own Pokémon beside them, instead of noticeably smaller."
     ],
     "game": [
       "Online: each player battles as their own hero in the colours they chose on the launcher's Customize page, in Colosseum and XD and in rooms for both games, and both players and anyone watching see them that way, even when both picked the same hero. Michael shows only in XD: in Colosseum a player who chose him appears as the game's usual trainer, and so does a player on an older launcher.",
@@ -102,7 +103,9 @@
       "Online battles in Pokémon XD use the same battle menus as the story: choose with the cursor and A, with no more picking moves with the right stick to hide them from your opponent.",
       "Online team preview has a cursor in Colosseum and XD: move it with the D-pad, stick or arrow keys, press A to pick the Pokémon under it, B to take back your last pick and R to see its summary, instead of a different button for each Pokémon.",
       "Later generations: Lava Plume and Discharge hit every Pokémon around the user in a double battle, both foes and its partner, as in Pokémon Platinum, in Colosseum and in XD. Under Colosseum's own battle rules they used to hit only one foe.",
-      "Later generations: fixed Shedinja taking no recoil from Struggle under Platinum's battle rules, which could leave a battle with no way to end. Struggle's recoil now always takes at least 1 HP, as in Pokémon Platinum."
+      "Later generations: fixed Shedinja taking no recoil from Struggle under Platinum's battle rules, which could leave a battle with no way to end. Struggle's recoil now always takes at least 1 HP, as in Pokémon Platinum.",
+      "Pokémon XD: in widescreen, the new P★DA mail, Poké Snack and ready-to-purify notices and the Miror Radar's icon keep their shape at the left edge of the screen, as on a 4:3 screen, instead of drawing their bar stretched far across it.",
+      "Later generations: in Pokémon XD, Generation 4 and pack Pokémon faces are round like XD's own, so an ear or the corners no longer stick out of the round portrait frame, such as Luxio's in the battle panel."
     ]
   },
   "releases": [

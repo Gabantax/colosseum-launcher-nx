@@ -317,7 +317,9 @@ function battleRevolutionFace(png) {
 }
 
 // A Pokémon's PC box icon for XD, whose box shows small animated icons of its own (host/xd/packs.c makes them from
-// these): the body sprite at its own size (fitted inside 64x64 if bigger), cut to what isn't see-through (the shiny
+// these): the body sprite at the size Colosseum shows it, fitted to 64x64 as spriteFile does (XD's icons are 64x64
+// frames, and show the Pokémon as big as Colosseum's 64x64 body sprites do; Battle Revolution's are 54x54, so at
+// their own size they came out smaller than XD's own beside them), cut to what isn't see-through (the shiny
 // one to the same square), in at most 256 colours as XD's are: RGB5A3, colour 0 see-through. A colour is the 16 bits
 // the game would make of it anyway, so Battle Revolution's icons (fewer than 256 colours each) lose nothing; past 256,
 // the 255 most used stay and the rest take the nearest of those. { width, height, images: [normal, shiny or null] },
@@ -333,10 +335,8 @@ function fromRgb5a3(v) {
 }
 function boxIcon(png, shinyPng = null) {
   let normal = decodePng(png);
-  if (normal.width > ICON_MAX || normal.height > ICON_MAX) {
-    const scale = ICON_MAX / Math.max(normal.width, normal.height);
-    normal = resize(normal, Math.max(1, Math.round(normal.width * scale)), Math.max(1, Math.round(normal.height * scale)));
-  }
+  const scale = ICON_MAX / Math.max(normal.width, normal.height);
+  normal = resize(normal, Math.max(1, Math.round(normal.width * scale)), Math.max(1, Math.round(normal.height * scale)));
   const shiny = shinyPng ? resize(decodePng(shinyPng), normal.width, normal.height) : null;
   const colours = image => {
     const out = new Uint16Array(image.width * image.height);

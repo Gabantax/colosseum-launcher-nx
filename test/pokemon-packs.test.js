@@ -364,12 +364,12 @@ test('a Pokémon\'s own cry goes to the game in a chunk of its own, after its ro
 });
 
 test('a box icon for XD is the body sprite cut to what shows, in RGB5A3 colours with 0 see-through', () => {
-  // 6x5: see-through but for a 2x2 square at (1,2) of red, white, and two half see-through greens; its shiny one blue
+  // 64x64: see-through but for a 2x2 square at (1,2) of red, white, and two half see-through greens; its shiny one blue
   const picture = colour => {
-    const rgba = Buffer.alloc(6 * 5 * 4);
-    rgba.set([255, 0, 0, 255], (2 * 6 + 1) * 4); rgba.set(colour, (2 * 6 + 2) * 4);
-    rgba.set([0, 255, 0, 128], (3 * 6 + 1) * 4); rgba.set([0, 255, 0, 128], (3 * 6 + 2) * 4);
-    return pokedex.png(6, 5, rgba);
+    const rgba = Buffer.alloc(64 * 64 * 4);
+    rgba.set([255, 0, 0, 255], (2 * 64 + 1) * 4); rgba.set(colour, (2 * 64 + 2) * 4);
+    rgba.set([0, 255, 0, 128], (3 * 64 + 1) * 4); rgba.set([0, 255, 0, 128], (3 * 64 + 2) * 4);
+    return pokedex.png(64, 64, rgba);
   };
   const icon = packs.boxIcon(picture([255, 255, 255, 255]), picture([0, 0, 255, 255]));
   assert.equal(icon.width, 2);
@@ -379,6 +379,12 @@ test('a box icon for XD is the body sprite cut to what shows, in RGB5A3 colours 
   assert.deepEqual([...normal.indexes].map(i => normal.palette[i]), [0xFC00, 0xFFFF, 0x40F0, 0x40F0], 'red, white, then green at 4 of 7');
   assert.deepEqual([...shiny.indexes].map(i => shiny.palette[i]), [0xFC00, 0x801F, 0x40F0, 0x40F0]);
   assert.equal(packs.boxIcon(pokedex.png(2, 2, Buffer.alloc(16))), null, 'nothing to show');
+  // Smaller than 64 (Battle Revolution's icons are 54x54): made as big as Colosseum shows it, its body sprite 64x64,
+  // so it is as big as XD's own icons beside it.
+  const small = Buffer.alloc(54 * 54 * 4);
+  for (let y = 0; y < 54; y++) for (let x = 8; x < 46; x++) small.set([0, 0, 255, 255], (y * 54 + x) * 4);
+  const grown = packs.boxIcon(pokedex.png(54, 54, small));
+  assert.deepEqual([grown.width, grown.height], [45, 64], 'a 38x54 picture in its 54x54 square: 45x64');
   // Bigger than 64: fitted inside it. More than 256 colours: the most used 255, the rest the nearest of them.
   const big = Buffer.alloc(128 * 32 * 4);
   for (let i = 0; i < 128 * 32; i++) big.set([i & 255, (i >> 8) * 16, 0, 255], i * 4);
