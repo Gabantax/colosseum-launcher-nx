@@ -193,17 +193,29 @@ function modelFiles(disc) {
   return files;
 }
 
-// The looks a species has on the disc: its own model, then the others.
+// A look's shiny one: its own shiny model when it has one (fn_801DE190's table of them: rare_<stem>, and XD's <stem>_c for
+// Deoxys's forms); the rest are drawn with the colour filter in the model's own file (fn_801DCE0C).
+function shinyLook(stem, disc, label) {
+  const has = name => disc.files.has(`pkx_${name}.fsys`);
+  const id = has(`rare_${stem}`) ? `rare_${stem}` : has(`${stem}_c`) ? `${stem}_c` : `${SHINY_FILTER}${stem}`;
+  return { id, label };
+}
+
+// The looks a species has on the disc: its own model, its shiny one, then the others (Unown's letters, each with its shiny
+// one as well).
 function formsOf(entry, file, disc) {
   const has = stem => disc.files.has(`pkx_${stem}.fsys`);
-  if (entry.national === NATIONAL_UNOWN) return UNOWN_FORMS.filter(([stem]) => has(stem)).map(([stem, label]) => ({ id: stem, label }));
+  if (entry.national === NATIONAL_UNOWN) return withShiny(UNOWN_FORMS.filter(([stem]) => has(stem)).map(([stem, label]) => ({ id: stem, label })), disc);
   if (!file) return [];
-  const stem = file.slice('pkx_'.length, -'.fsys'.length), forms = [{ id: stem, label: 'Normal' }];
+  const stem = file.slice('pkx_'.length, -'.fsys'.length), forms = [{ id: stem, label: 'Normal' }, shinyLook(stem, disc, 'Shiny')];
+  // Castform's weather models have no shiny filter: the game draws them the same when it's shiny
   if (entry.national === NATIONAL_CASTFORM) forms.push(...CASTFORM.filter(([form]) => has(form)).map(([id, label]) => ({ id, label })));
-  // Its shiny model when it has one (fn_801DE190's table of them); the rest are drawn with the colour filter in the
-  // model's own file (fn_801DCE0C)
-  forms.splice(1, 0, has(`rare_${stem}`) ? { id: `rare_${stem}`, label: 'Shiny' } : { id: `${SHINY_FILTER}${stem}`, label: 'Shiny' });
   return forms;
+}
+
+// Looks, then the shiny one of each: Unown's letters, and Deoxys's forms in XD (xd-disc.js).
+function withShiny(looks, disc) {
+  return [...looks, ...looks.map(({ id, label }) => shinyLook(id, disc, `Shiny ${label}`))];
 }
 
 // A small PNG, for a sprite the page can show as an image.
@@ -240,7 +252,7 @@ function readPokedex(rom, discSprites = null) {
   try {
     // Pokémon XD's disc: its own tables, read with these same helpers (xd-disc.js)
     if (xdDisc.isXd(disc))
-      return xdDisc.readPokedex(disc, discSprites, { readMessages, displayName, TYPES, ABILITY_MESSAGES, readDol, dolOffset, modelFiles, spritesOf, formsOf, nationalEvolutions });
+      return xdDisc.readPokedex(disc, discSprites, { readMessages, displayName, TYPES, ABILITY_MESSAGES, readDol, dolOffset, modelFiles, spritesOf, formsOf, withShiny, nationalEvolutions });
     const rel = fsys.entries(disc.file('common.fsys')).find(entry => entry.name === 'common_rel');
     if (!rel) throw new Error('The game disc has no Pokémon data.');
     const data = relData(rel.data()), messages = readMessages(data), species = readSpecies(data, messages);

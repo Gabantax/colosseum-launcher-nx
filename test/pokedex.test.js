@@ -270,6 +270,12 @@ test('a material reads its colours, its texture layers and how they mix, and how
   assert.deepEqual([material.pe.blendType, material.pe.srcFactor, material.pe.dstFactor, material.pe.alphaCompare0], [1, 4, 1, 7]);
 });
 
+test('a layer\'s blend factor is cut to 0-1, as the game\'s constant colour is (Mankey\'s eyes say 5)', () => {
+  const factor = value => hsd.parseModel(pkx((data, pointer) => { const root = texturedModel(data, pointer); data.writeFloatBE(value, 0x2e0 + 0x44); return root; }))
+    .materials[0].layers[0].blending;
+  assert.deepEqual([factor(5), factor(2), factor(0.25), factor(-1)], [1, 1, 0.25, 0]);
+});
+
 // A pkx's own header around a model: the game's load mode, its sleep, wake and blink animations, a motion slot for
 // each `slots` entry ([motion type, animation] pairs), and its shiny filter.
 function withHeader(file, { refs = [-1, -1, -1], slots = [], shiny = null }) {
@@ -420,7 +426,9 @@ test('the disc holds every Pokémon, each with a model', withDisc, () => {
   assert.equal(count('gift'), 4);
   const find = name => list.find(entry => entry.name === name);
   assert.equal(find('Haunter').forms[0].id, 'ghost');  // its row's name key is wrong in the game
-  assert.equal(find('Unown').forms.length, 28);
+  // Unown's letters, then each letter's shiny look (its colour filter)
+  assert.equal(find('Unown').forms.length, 56);
+  assert.deepEqual(find('Unown').forms[28], { id: 'shiny:unknown_a', label: 'Shiny A' });
   assert.deepEqual(find('Castform').forms.map(form => form.label), ['Normal', 'Shiny', 'Sunny', 'Rainy', 'Snowy']);
   // A shiny look: Charizard's own model, Bulbasaur's colour filter
   assert.equal(find('Charizard').forms[1].id, 'rare_lizardon');
