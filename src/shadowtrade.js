@@ -41,7 +41,8 @@ const gameOfPool = pool => pool.split('-')[0];
 
 // What the player sees of a Pokémon in a trade.
 function summary(pokemon) {
-  return { species: pokemon.species, shadowId: pokemon.shadowId, level: pokemon.level, nickname: pokemon.nickname, shiny: Boolean(pokemon.shiny) };
+  // a traded-in one by the story id it travels as
+  return { species: pokemon.species, shadowId: pokemon.storyId || pokemon.shadowId, level: pokemon.level, nickname: pokemon.nickname, shiny: Boolean(pokemon.shiny) };
 }
 
 // Reads a received Pokémon's bytes as the game would (save-pokemon.js), and checks it is one this game can take:
