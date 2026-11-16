@@ -23,7 +23,7 @@ const FIRST_PAST_GAP = 1100, LAST_ID_PAST_GAP = 4000;
 const REGISTRY_FILE = 'pokemon-packs.json';
 const ENTRY_FILE = 'pokemon.json', PACK_FILE = 'pack.json';
 const FILES = { model: 'model.pkx', modelShiny: 'model-shiny.pkx', body: 'body.png', bodyShiny: 'body-shiny.png', face: 'face.png', faceShiny: 'face-shiny.png',
-  cry: 'cry.wav' };
+  cry: 'cry.wav', formModel: 'model-form1.pkx', formModelShiny: 'model-form1-shiny.pkx' };
 const ASSETS = ['model', 'modelShiny', 'body', 'bodyShiny', 'face', 'faceShiny'];
 const SPRITE_SIZE = { body: [64, 64], face: [42, 42] };
 const MAX_MODEL = 8 << 20, MAX_PNG = 4 << 20, MAX_JSON = 256 << 10, MAX_WAV = 2 << 20;
@@ -721,6 +721,19 @@ function compile(contents) {
     }
     chunk('CRYS', parts);
   }
+  const forming = pokemon.filter(each => each.forms?.length);
+  if (forming.length) {
+    // the models of the forms Pokémon change into in battle (host/pokemonpacks.c read_forms): u32 count, then each:
+    // u16 species, u16 form, then its model and its shiny model as SPEC's blobs
+    const parts = [u32(forming.reduce((n, each) => n + each.forms.length, 0))];
+    for (const each of forming) for (const form of each.forms) {
+      const head = Buffer.alloc(4);
+      head.writeUInt16BE(each.id, 0); head.writeUInt16BE(form.form, 2);
+      parts.push(head);
+      for (const data of [form.model, form.modelShiny || Buffer.alloc(0)]) parts.push(u32(data.length), padded(data));
+    }
+    chunk('FORM', parts);
+  }
   const icons = pokemon.filter(each => each.icon);
   if (icons.length) {
     // PC box icons, for XD's (host/xd/packs.c read_icons): u32 count, then each: u16 species, u8 width, u8 height, then
@@ -756,7 +769,11 @@ function ownLooks(folder, tables) {
   if (!model) return { assets: {}, images: {}, cry };
   const body = file(FILES.body), bodyShiny = file(FILES.bodyShiny), face = file(FILES.face), faceShiny = file(FILES.faceShiny);
   const sprite = make => { try { return make(); } catch (_) { return undefined; } };
+  // the form it changes into in battle (Cherrim's Sunshine Form: the game's host/gen4.c), where the conversion made it
+  const formModel = file(FILES.formModel), formModelShiny = file(FILES.formModelShiny);
+  const forms = formModel && formModel.length >= 0x100 ? [{ form: 1, model: formModel, modelShiny: formModelShiny || null }] : [];
   return {
+    forms,
     assets: { model, modelShiny: file(FILES.modelShiny) || undefined,
       body: body ? sprite(() => spriteFile('body', tables.headers.body, body)) : undefined,
       bodyShiny: bodyShiny ? sprite(() => spriteFile('body', tables.headers.body, bodyShiny)) : undefined,
