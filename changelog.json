@@ -1,6 +1,9 @@
 {
   "beta": {
-    "launcher": [],
+    "launcher": [
+      "Pokémon: a new tab shows the party and every PC box of the save you play, with each Pokémon's sprite, level, HP and, for a Shadow Pokémon, its heart gauge. While the game runs it shows them live from the game.",
+      "Shadowtrade: send a Shadow Pokémon from the Pokémon tab and get back a Shadow Pokémon another player sent, still to be purified. Yours leaves your save at once (backed up first); when no one has sent one yet, it comes back later, and you can cancel until it goes. You can't trade away your last Pokémon that can battle, and with the game running it makes the trade and saves while you walk around in the field."
+    ],
     "game": []
   },
   "releases": [

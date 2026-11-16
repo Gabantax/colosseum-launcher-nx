@@ -1483,3 +1483,57 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
   .jukebox-dock .jukebox-title { flex: 1 1 160px; }
 }
 
+/* The Pokémon page: the save's party and boxes, and Shadowtrade beside them. */
+.pokemon-page { --shadow-ink: #5b2c83; --shadow-glow: #8a4fc4; }
+.dark .pokemon-page { --shadow-ink: #d5b3ff; --shadow-glow: #b58cff; }
+.pokemon-head-actions { display: flex; align-items: center; gap: 8px; }
+.pokemon-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); }
+.pokemon-browse { min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; overflow-y: auto; border-right: 1px solid var(--dex-line); }
+.pokemon-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--dex-line); }
+.pokemon-tab { padding: 8px 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--dex-muted); font-size: 13px; font-weight: 650; margin-bottom: -1px; }
+.pokemon-tab:hover { background: var(--dex-hover); }
+.pokemon-tab[aria-selected="true"] { color: inherit; background: var(--dex-panel); border-color: var(--dex-line); box-shadow: inset 0 -2px 0 var(--dex-accent); }
+.pokemon-box-bar { display: flex; align-items: center; gap: 6px; }
+.pokemon-box-bar select { flex: 0 1 260px; padding: 7px 10px; border: 1px solid var(--dex-line); border-radius: 8px; background: var(--dex-panel); color: inherit; }
+.pokemon-box-bar button { padding: 5px 11px; font-size: 16px; line-height: 1; }
+.pokemon-notice, .pokemon-status { padding: 8px 11px; border-radius: 9px; background: var(--dex-locked); color: var(--dex-locked-text); font-size: 12px; line-height: 1.4; }
+.pokemon-status { background: var(--dex-selected); color: inherit; }
+.pokemon-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.pokemon-grid.party { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.pokemon-slot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 84px; padding: 6px 4px; border: 1px solid var(--dex-line); border-radius: 10px; background: var(--dex-panel); color: inherit; font-weight: 600; }
+.pokemon-grid.party .pokemon-slot { flex-direction: row; justify-content: flex-start; gap: 10px; min-height: 76px; padding: 8px 12px; text-align: left; }
+.pokemon-slot:hover:not(:disabled) { background: var(--dex-hover); }
+.pokemon-slot.selected { border-color: var(--dex-accent); background: var(--dex-selected); }
+.pokemon-slot.empty { border-style: dashed; background: transparent; opacity: .55; cursor: default; }
+.pokemon-slot.shadow { box-shadow: inset 0 0 0 1px var(--shadow-glow), inset 0 -18px 26px -20px var(--shadow-glow); }
+.pokemon-slot img, .pokemon-slot .pokedex-no-sprite { flex: none; }
+.pokemon-slot-label { min-width: 0; max-width: 100%; display: grid; gap: 1px; text-align: center; }
+.pokemon-grid.party .pokemon-slot-label { text-align: left; }
+.pokemon-slot-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+.pokemon-grid.party .pokemon-slot-label strong { font-size: 13.5px; }
+.pokemon-slot-label small { color: var(--dex-muted); font-size: 10px; font-weight: 700; }
+.pokemon-shadow-mark { position: absolute; top: 4px; right: 5px; padding: 1px 5px; border-radius: 999px; background: var(--shadow-ink); color: #fff; font-size: 9px; font-weight: 750; letter-spacing: .04em; }
+.pokemon-shiny-mark { position: absolute; top: 3px; left: 6px; color: #d39b1a; font-size: 12px; }
+.pokemon-side { min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; overflow-y: auto; background: var(--dex-panel); }
+.pokemon-detail { display: grid; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--dex-line); }
+.pokemon-detail-head { display: flex; align-items: center; gap: 12px; }
+.pokemon-detail-sprite { flex: none; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 14px; background: var(--dex-stage); }
+.pokemon-detail-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.badge.shadow-badge { background: var(--shadow-ink); color: #fff; }
+.pokemon-heart { display: grid; gap: 4px; }
+.pokemon-heart-bar { height: 8px; border-radius: 999px; background: var(--dex-hover); overflow: hidden; }
+.pokemon-heart-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6d3aa8, #b07cf0); }
+.pokemon-heart small { color: var(--dex-muted); font-size: 11px; }
+.pokemon-trade { justify-self: start; }
+.shadowtrade-panel { display: grid; gap: 8px; align-content: start; }
+.shadowtrade-trades { display: grid; gap: 6px; }
+.shadowtrade-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--dex-line); border-radius: 9px; }
+.shadowtrade-row div { display: grid; gap: 2px; min-width: 0; }
+.shadowtrade-row strong { font-size: 12.5px; }
+.shadowtrade-row small { color: var(--dex-muted); font-size: 11px; line-height: 1.35; }
+.shadowtrade-history-title { margin-top: 4px; font-size: 12px; }
+.shadowtrade-history { margin: 0; padding-left: 16px; color: var(--dex-muted); font-size: 11.5px; line-height: 1.5; }
+.shadowtrade-confirm { width: min(520px, calc(100vw - 40px)); }
+.shadowtrade-confirm .modal-body { display: grid; gap: 12px; padding: 18px 24px 20px; }
+.shadowtrade-confirm-body { display: flex; align-items: center; gap: 14px; font-size: 13px; line-height: 1.45; }
+.shadowtrade-confirm .actions { display: flex; justify-content: flex-end; gap: 8px; }

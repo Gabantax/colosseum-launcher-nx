@@ -72,6 +72,13 @@ contextBridge.exposeInMainWorld('colo', {
   // a dropped file's path, for replays dropped on the Online page
   droppedPath: file => { try { return webUtils.getPathForFile(file) || null; } catch (_) { return null; } },
   onReplays: callback => ipcRenderer.on('replays', () => callback()),
+  pokemonPage: () => ipcRenderer.invoke('pokemon-page'),
+  shadowtradeOffer: place => ipcRenderer.invoke('shadowtrade-offer', place),
+  shadowtradeSync: () => ipcRenderer.invoke('shadowtrade-sync'),
+  shadowtradeCancel: id => ipcRenderer.invoke('shadowtrade-cancel', id),
+  onPokemonChanged: callback => ipcRenderer.on('pokemon-changed', (_event, game) => callback(game)),
+  onShadowtrade: callback => ipcRenderer.on('shadowtrade', (_event, view) => callback(view)),
+  onShadowtradeWaiting: callback => ipcRenderer.on('shadowtrade-waiting', (_event, game) => callback(game)),
   pokedex: () => ipcRenderer.invoke('pokedex'),
   battleData: () => ipcRenderer.invoke('battle-data'),
   pokedexModel: (key, form) => ipcRenderer.invoke('pokedex-model', key, form),
