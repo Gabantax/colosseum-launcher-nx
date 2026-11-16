@@ -116,7 +116,8 @@
       "Colosseum's Battle Mode in widescreen: the Pokémon selection screen and the VS screen before it fill the whole window instead of a 4:3 picture with black bars, their backdrop carried out to the sides at its own shape, and the title bars along the top of Battle Mode's menus, such as Battle Now, reach both edges.",
       "The overlay the backtick key (`) opens is now a button guide, in Colosseum and XD: it lists your own keyboard keys and controller buttons for each GameCube button, the stick, the C-Stick, the D-pad, half tilt, fast-forward and the Game Boy Advance, including any you changed under Controls, with the frame rate below. It no longer lists mouse controls, Esc or F7, which did nothing in this game, and nothing in it is named after Super Mario Sunshine any more.",
       "Pokémon XD: fixed the lightning on top of Kaminko's house stretching across the yard and following you to the door. It stays between the poles on his roof again.",
-      "Pokémon XD: the controller now rumbles wherever the game rumbles on a GameCube, such as when you use a scent on a Shadow Pokémon or turn on Rumble Feature in Options. Before, XD never rumbled."
+      "Pokémon XD: the controller now rumbles wherever the game rumbles on a GameCube, such as when you use a scent on a Shadow Pokémon or turn on Rumble Feature in Options. Before, XD never rumbled.",
+      "Fixed the game's sound crackling on Windows with headphones and other sound devices set to 44.1 kHz, clearest on high sounds such as a text box's A-press and the \"is fast asleep\" sound in battle. The game now converts its sound to your device's own rate, which also keeps a Bluetooth headset with its microphone on from turning the highest sounds into harsh noise."
     ]
   },
   "releases": [
