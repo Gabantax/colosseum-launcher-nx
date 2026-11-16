@@ -176,6 +176,8 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     shinyStarters: input.shinyStarters !== false,
     // A New Game asks whether to begin with Espeon and Umbreon, or two Pokémon the player picks. On unless turned off.
     chooseStarters: input.chooseStarters !== false,
+    // The bag and shops list a TM by its move (Thunderbolt), its number in a tab over the description. On unless turned off.
+    tmNames: input.tmNames !== false,
     // The frame-time overlay at start.
     overlay: Boolean(input.overlay),
     // The fonts drawn sharp from the Inter typeface (on), the game's own upscaled, or as on the disc.
@@ -224,6 +226,11 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     // would rather; and its sound, in percent.
     gbaAutoPower: input.gbaAutoPower !== false,
     gbaVolume: numberSetting(input.gbaVolume, 100, 0, 100),
+    // The game's volumes in percent (Settings → Sound, or the game's own Settings screen): everything, its music, and its
+    // sound effects (cries and the sounds around you too).
+    volumeMaster: numberSetting(input.volumeMaster, 100, 0, 100),
+    volumeMusic: numberSetting(input.volumeMusic, 100, 0, 100),
+    volumeEffects: numberSetting(input.volumeEffects, 100, 0, 100),
     // What a new save randomizes (randomizer.js): a save keeps the seed it starts with.
     ...randomizer.normalize(input),
     // Later generations (generations.js): whose battle rules, and whose Pokémon are added. generation<N>Pokemon is the
@@ -322,6 +329,7 @@ const FEATURE_ENVIRONMENT = {
   shiny: ['COLO_SHINY_SHADOW'],
   shinyStarters: ['COLO_SHINY_STARTERS'],
   starters: ['COLO_CHOOSE_STARTERS'],
+  tmNames: ['COLO_TM_NAMES'],
   battleSpeed: ['COLO_BATTLE_SPEED'],
   quickMoves: ['COLO_QUICK_MOVES', 'COLO_FAST_STATUS', 'SMS_BUTTON_PROMPTS', 'SMS_BUTTON_PROMPT_PAD'],
   hdText: ['COLO_HD_TEXT']
@@ -330,9 +338,13 @@ const FEATURE_ENVIRONMENT = {
 // What the game reads when it starts, as run.sh and run.cmd set it up. `customTextures` is the custom
 // textures folder, for playing (texturePackFolders). `game` is which game (games.js): its renderer, display
 // and input settings are every game's, the rest only where the game has that feature.
-function buildEnvironment(settings, disc, root, { customTextures = null, laterGenerations = false, packPokemon = false, game = games.DEFAULT } = {}) {
+function buildEnvironment(settings, disc, root, { customTextures = null, laterGenerations = false, packPokemon = false, noRepeats = false, baseForms = false,
+  game = games.DEFAULT } = {}) {
   if (!root) throw new Error('The port folder is required to configure texture packs.');
   const env = {
+    // The game never takes typed text, but SDL starts text input with its window, and on a Steam Deck
+    // that opens Steam's on-screen keyboard over the game. A player's own setting stands.
+    SDL_ENABLE_SCREEN_KEYBOARD: '0',
     ...process.env,
     COLO_DISC: disc,
     SMS_GX_BACKEND: settings.renderer,
@@ -369,13 +381,14 @@ function buildEnvironment(settings, disc, root, { customTextures = null, laterGe
   // Unset is hold at 4x, as in a game built before these settings.
   if (settings.fastForward === 'toggle') env.COLO_FAST_FORWARD = 'toggle';
   if (settings.fastForwardSpeed && settings.fastForwardSpeed !== 4) env.COLO_FAST_FORWARD_SPEED = String(settings.fastForwardSpeed);
-  const run = randomizer.environmentValue(settings, { laterGenerations, packPokemon });
+  const run = randomizer.environmentValue(settings, { laterGenerations, packPokemon, noRepeats, baseForms });
   if (run) env.COLO_RANDOMIZER = run;
   if (settings.hdModels === false) env.COLO_HD_MODELS = '0';
   // Unset is on in the game, as it is in a game built before these settings.
   if (settings.shinyShadow === false) env.COLO_SHINY_SHADOW = '0';
   if (settings.shinyStarters === false) env.COLO_SHINY_STARTERS = '0';
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
+  if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.skipBattleAnimations) env.COLO_BATTLE_SPEED = 'skip';
   else if (settings.battleSpeed !== 1) env.COLO_BATTLE_SPEED = String(settings.battleSpeed);
   if (settings.quickMoves) env.COLO_QUICK_MOVES = '1';
@@ -385,6 +398,9 @@ function buildEnvironment(settings, disc, root, { customTextures = null, laterGe
   env.SMS_BUTTON_PROMPT_PAD = prompts.normalizePad(settings.promptPad);
   // Unset is the default; any other value would name a glyph file.
   if (settings.hdText !== 'on') env.COLO_HD_TEXT = settings.hdText === 'off' ? '0' : 'upscaled';
+  // The volumes, when not as the game plays (host/settings.c)
+  for (const [key, name] of [['volumeMaster', 'COLO_VOLUME'], ['volumeMusic', 'COLO_MUSIC_VOLUME'], ['volumeEffects', 'COLO_SFX_VOLUME']])
+    if (settings[key] !== undefined && settings[key] !== 100) env[name] = String(settings[key]);
   if (/^\d+x\d+$/.test(settings.exclusiveResolution || '')) env.SMS_FULLSCREEN_MODE = settings.exclusiveResolution;
   if (settings.display === 'primary') env.SMS_DISPLAY = '0';
   else if (/^monitor\d+$/.test(settings.display || '')) env.SMS_DISPLAY = String(Number(settings.display.slice(7)) - 1);

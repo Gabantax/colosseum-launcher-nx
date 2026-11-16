@@ -62,7 +62,7 @@ onPage('jukebox', { show: () => window.coloJukebox?.show(), hide: () => window.c
 onPage('online', { show: () => window.coloOnline?.show(), hide: () => window.coloOnline?.hide() });
 
 // Settings is one page with a tab per section; it reopens on the last one shown.
-const settingsTabs = ['gameplay', 'display', 'graphics', 'controls', 'gba', 'manage', 'launcher'];
+const settingsTabs = ['gameplay', 'display', 'graphics', 'sound', 'controls', 'gba', 'manage', 'launcher'];
 let settingsTab = 'gameplay';
 function showSettingsTab(name) {
   if (settingsTab === 'controls' && name !== 'controls') stopCapture();
@@ -105,6 +105,12 @@ $('rumbleStrength').addEventListener('input', () => renderRange('rumbleStrength'
 $('rumbleStrength').addEventListener('change', () => saveSettings());
 $('gbaVolume').addEventListener('input', () => renderRange('gbaVolume', 'Off'));
 $('gbaVolume').addEventListener('change', () => saveSettings());
+// Settings → Sound: the game's volumes (also on the game's own Settings screen, whose changes come back here)
+const VOLUMES = ['volumeMaster', 'volumeMusic', 'volumeEffects'];
+for (const key of VOLUMES) {
+  $(key).addEventListener('input', () => renderRange(key, 'Off'));
+  $(key).addEventListener('change', () => saveSettings());
+}
 
 // Settings → Game Boy Advance: each socket's Gen 3 save (src/gen3-save.js reads it), and, under Advanced,
 // the Game Pak it belongs to and a BIOS, for running the GBA itself (src/gba.js checks them).
@@ -1096,6 +1102,11 @@ function refresh(data) {
   $('gbaVolume').value = String(config.settings.gbaVolume ?? 100);
   renderRange('gbaVolume', 'Off');
   $('gbaVolume').disabled = Boolean(data.active);
+  for (const key of VOLUMES) {
+    $(key).value = String(config.settings[key] ?? 100);
+    renderRange(key, 'Off');
+    $(key).disabled = Boolean(data.active);
+  }
   renderGba(data);
   if (!capture) renderBindings();
   $('reset-bindings').disabled = Boolean(data.active);
@@ -1108,7 +1119,7 @@ function refresh(data) {
 
 // The settings that are a list or a range, and the ones that are a switch: each saves under its element's id.
 const SELECTS = ['buttonPrompts', 'promptPad', 'battleRules', 'widescreen', 'resolution', 'frameRate', 'vsync', 'fullscreenMode', 'exclusiveResolution', 'display', 'msaa', 'anisotropic', 'sharpen', 'brightness', 'aspect', 'presentFilter', 'fsrMode', 'textureLoading', 'renderer', 'hdText', 'language', 'battleSpeed', 'fastForward', 'fastForwardSpeed', 'padMode', 'updateChannel', 'randomizerSeed'];
-const SWITCHES = ['randomizer', 'randomizerStarters', 'randomizerShadow', 'randomizerTrainers', 'randomizerGifts', 'randomizerGen1', 'randomizerGen2', 'randomizerGen3', 'randomizerGen4', 'randomizerPacks', 'randomizerSimilar', 'randomizerNoLegendaries', 'generation4Pokemon', 'fullscreen', 'hudEdges', 'skipMovies', 'skipBattleAnimations', 'quickMoves', 'quickStatus', 'shinyShadow', 'shinyStarters', 'chooseStarters', 'overlay', 'backgroundInput', 'gbaAutoPower', 'fxaa', 'textures', 'hdModels', 'shaderWarmup', 'autoUpdate', 'autoBackups', 'shareUsage', 'discordPresence', 'darkMode'];
+const SWITCHES = ['randomizer', 'randomizerStarters', 'randomizerShadow', 'randomizerTrainers', 'randomizerGifts', 'randomizerGen1', 'randomizerGen2', 'randomizerGen3', 'randomizerGen4', 'randomizerPacks', 'randomizerSimilar', 'randomizerNoLegendaries', 'randomizerNoRepeats', 'randomizerBaseForms', 'generation4Pokemon', 'fullscreen', 'hudEdges', 'skipMovies', 'skipBattleAnimations', 'quickMoves', 'quickStatus', 'shinyShadow', 'shinyStarters', 'chooseStarters', 'tmNames', 'overlay', 'backgroundInput', 'gbaAutoPower', 'fxaa', 'textures', 'hdModels', 'shaderWarmup', 'autoUpdate', 'autoBackups', 'shareUsage', 'discordPresence', 'darkMode'];
 
 // The languages: English, the launcher's packs and any found in the languages folder. One chosen and then
 // removed from the folder stays listed, as the game plays in English without it.
@@ -1198,6 +1209,8 @@ $('reset-game-source').addEventListener('click', () => {
 });
 
 async function sync() { refresh(await window.colo.state()); }
+// The game's own Settings screen changed some while it runs (main.js keepGameSettings): show them
+window.colo.onSettingsChanged(() => sync().catch(showError));
 
 function renderMacTools(tools) {
   const requirements = (tools.requirements || []).filter(item => !tools.managed || !item.package);
@@ -1400,6 +1413,7 @@ function renderDependents(busy = false) {
 function settingsValue() {
   const value = { keyBindings, padBindings, stickDeadzone: Number($('stickDeadzone').value),
     triggerClick: Number($('triggerClick').value), rumbleStrength: Number($('rumbleStrength').value), gbaVolume: Number($('gbaVolume').value),
+    ...Object.fromEntries(VOLUMES.map((key) => [key, Number($(key).value)])),
     graphicsPreset: $('graphicsPreset').value };
   for (const key of SELECTS) value[key] = $(key).value;
   for (const key of SWITCHES) value[key] = $(key).checked;
@@ -1537,6 +1551,14 @@ function renderRandomizer(data) {
   $('randomizerPacks').disabled = !packsGame;
   $('randomizer-packs-note').textContent = !packsGame ? 'Update your game to have your Pokémon packs\' Pokémon in a randomized run.'
     : 'Your Pokémon packs\' Pokémon can be chosen too, whichever generations are ticked. Keep the same packs for the whole run: adding or removing one changes what it chooses. Anyone you share the seed with needs them too.';
+  // No repeats and first forms only, which a run can have once the game knows them
+  const noRepeatsGame = data.randomizerNoRepeats !== false, baseFormsGame = data.randomizerBaseForms !== false;
+  $('randomizerNoRepeats').disabled = !noRepeatsGame;
+  $('randomizer-no-repeats-note').textContent = !noRepeatsGame ? 'Update your game to keep evolution families from repeating in a randomized run.'
+    : 'No evolution family comes up twice among the Pokémon you start with and the Shadow Pokémon: start with Raichu and no Pichu or Pikachu is a Shadow Pokémon. With Trainers\' Pokémon on, no trainer\'s team has two of one family either.';
+  $('randomizerBaseForms').disabled = !baseFormsGame;
+  $('randomizer-base-forms-note').textContent = !baseFormsGame ? 'Update your game to start from first forms in a randomized run.'
+    : 'The Pokémon you start with and the Shadow Pokémon are only ones that don\'t evolve from another, such as Charmander or Tauros, so you can raise and evolve them. Trainers\' Pokémon and gifts are chosen as usual.';
   $('randomizer-save-note').textContent = !ready ? 'Update your game to use the randomizer. This version of the game plays every save as normal.'
     : run && (run.options & 64) ? `A randomized run with your Pokémon packs' Pokémon, seed ${run.seed}. Keep the packs it started with to play it as it was made; a New Game uses the settings above.`
     : run && (run.generations & 8) && !gen4Pokemon ? `A randomized run with Gen 4 Pokémon, seed ${run.seed}. Turn on Generation 4 Pokémon, under Later generations, to play it as it was made.`

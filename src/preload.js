@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('colo', {
   usageRefresh: () => ipcRenderer.invoke('usage-refresh'),
   onlineCreate: () => ipcRenderer.invoke('online-create'),
   onlineJoin: code => ipcRenderer.invoke('online-join', code),
+  onlineWatch: code => ipcRenderer.invoke('online-watch', code),
   onlineLeave: () => ipcRenderer.invoke('online-leave'),
   onlinePick: order => ipcRenderer.invoke('online-pick', order),
   pokedex: () => ipcRenderer.invoke('pokedex'),
@@ -69,6 +70,8 @@ contextBridge.exposeInMainWorld('colo', {
   jukeboxTracks: () => ipcRenderer.invoke('jukebox-tracks'),
   jukeboxRender: id => ipcRenderer.invoke('jukebox-render', id),
   jukeboxClose: () => ipcRenderer.invoke('jukebox-close'),
+  jukeboxPlaylists: () => ipcRenderer.invoke('jukebox-playlists'),
+  jukeboxSavePlaylists: list => ipcRenderer.invoke('jukebox-playlists-save', list),
   onJukeboxStop: callback => ipcRenderer.on('jukebox-stop', () => callback()),
   openPokemonPacks: () => ipcRenderer.invoke('open-pokemon-packs'),
   changelog: () => ipcRenderer.invoke('changelog'),
@@ -95,4 +98,5 @@ contextBridge.exposeInMainWorld('colo', {
   onAppUpdate: callback => ipcRenderer.on('app-update', (_event, value) => callback(value)),
   onUsage: callback => ipcRenderer.on('usage', (_event, value) => callback(value)),
   onOnline: callback => ipcRenderer.on('online', (_event, value) => callback(value)),
+  onSettingsChanged: callback => ipcRenderer.on('settings-changed', () => callback()),
 });

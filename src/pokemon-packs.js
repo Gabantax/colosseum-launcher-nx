@@ -316,6 +316,77 @@ function battleRevolutionFace(png) {
   return { width, height, rgba: out };
 }
 
+// A Pokémon's PC box icon for XD, whose box shows small animated icons of its own (host/xd/packs.c makes them from
+// these): the body sprite at its own size (fitted inside 64x64 if bigger), cut to what isn't see-through (the shiny
+// one to the same square), in at most 256 colours as XD's are: RGB5A3, colour 0 see-through. A colour is the 16 bits
+// the game would make of it anyway, so Battle Revolution's icons (fewer than 256 colours each) lose nothing; past 256,
+// the 255 most used stay and the rest take the nearest of those. { width, height, images: [normal, shiny or null] },
+// each image { palette (RGB5A3 numbers), indexes (a byte a pixel) }, or null for a picture with nothing to show.
+const ICON_MAX = 64;
+function rgb5a3(r, g, b, a) {
+  if (a >= 0xE0) return 0x8000 | (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3);
+  return (a >> 5) << 12 | (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4);
+}
+function fromRgb5a3(v) {
+  if (v & 0x8000) return [(v >> 10 & 31) * 255 / 31, (v >> 5 & 31) * 255 / 31, (v & 31) * 255 / 31, 255];
+  return [(v >> 8 & 15) * 17, (v >> 4 & 15) * 17, (v & 15) * 17, (v >> 12 & 7) * 255 / 7];
+}
+function boxIcon(png, shinyPng = null) {
+  let normal = decodePng(png);
+  if (normal.width > ICON_MAX || normal.height > ICON_MAX) {
+    const scale = ICON_MAX / Math.max(normal.width, normal.height);
+    normal = resize(normal, Math.max(1, Math.round(normal.width * scale)), Math.max(1, Math.round(normal.height * scale)));
+  }
+  const shiny = shinyPng ? resize(decodePng(shinyPng), normal.width, normal.height) : null;
+  const colours = image => {
+    const out = new Uint16Array(image.width * image.height);
+    for (let i = 0; i < out.length; i++) {
+      const o = i * 4, a = image.rgba[o + 3];
+      out[i] = a >> 5 ? rgb5a3(image.rgba[o], image.rgba[o + 1], image.rgba[o + 2], a) : 0;
+    }
+    return out;
+  };
+  const pictures = [normal, shiny].filter(Boolean).map(colours);
+  let left = normal.width, top = normal.height, right = -1, bottom = -1;
+  for (const picture of pictures) for (let y = 0; y < normal.height; y++) for (let x = 0; x < normal.width; x++) {
+    if (!picture[y * normal.width + x]) continue;
+    left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+  }
+  if (right < 0) return null;
+  const width = right - left + 1, height = bottom - top + 1;
+  const paletted = picture => {
+    const counts = new Map();
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+      const v = picture[y * normal.width + x];
+      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    const palette = [0, ...[...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a - b).slice(0, 255)];
+    const index = new Map(palette.map((v, i) => [v, i])), kept = palette.slice(1).map(fromRgb5a3);
+    const nearest = v => {
+      const c = fromRgb5a3(v);
+      let best = 1, distance = Infinity;
+      kept.forEach((k, i) => {
+        const d = (k[0] - c[0]) ** 2 + (k[1] - c[1]) ** 2 + (k[2] - c[2]) ** 2 + (k[3] - c[3]) ** 2;
+        if (d < distance) { distance = d; best = i + 1; }
+      });
+      index.set(v, best);
+      return best;
+    };
+    const indexes = Buffer.alloc(width * height);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const v = picture[(top + y) * normal.width + left + x];
+      indexes[y * width + x] = !v ? 0 : index.has(v) ? index.get(v) : nearest(v);
+    }
+    return { palette, indexes };
+  };
+  return { width, height, images: [paletted(pictures[0]), pictures[1] ? paletted(pictures[1]) : null] };
+}
+// boxIcon, or none if the picture can't be read: the box then shows the Pokémon its looks stand in for
+function boxIconOrNone(png, shinyPng) {
+  if (!png) return null;
+  try { return boxIcon(png, shinyPng); } catch { return null; }
+}
+
 // --- Reading a pack -------------------------------------------------------------------------
 
 function readJson(file) {
@@ -557,7 +628,8 @@ function loadPacks(dir, tables, registry) {
         face: files.face && sprite(files.faceShiny ? 'faceShiny' : 'face', () => spriteFile('face', tables.headers.face, files.face, files.faceShiny)) };
       // Images the Pokédex shows, as they are
       const images = { body: files.body || null, bodyShiny: files.bodyShiny || null, face: files.face || null };
-      pokemon.push({ ...each, id: assigned.ids.get(each.key), ...built, assets, images, cry,
+      const icon = boxIconOrNone(files.body, files.bodyShiny);
+      pokemon.push({ ...each, id: assigned.ids.get(each.key), ...built, assets, images, icon, cry,
         packName: typeof each.about.name === 'string' ? each.about.name.slice(0, 80) : each.pack,
         author: typeof each.about.author === 'string' ? each.about.author.slice(0, 80) : '',
         credits: typeof each.about.credits === 'string' ? each.about.credits.slice(0, 300) : '' });
@@ -649,6 +721,26 @@ function compile(contents) {
     }
     chunk('CRYS', parts);
   }
+  const icons = pokemon.filter(each => each.icon);
+  if (icons.length) {
+    // PC box icons, for XD's (host/xd/packs.c read_icons): u32 count, then each: u16 species, u8 width, u8 height, then
+    // two images, normal and shiny: u16 colours (0: none), u16 0, the colours (RGB5A3) padded to 4, then the pixels'
+    // colours (a byte each) padded to 4
+    const parts = [u32(icons.length)];
+    for (const each of icons) {
+      const head = Buffer.alloc(4);
+      head.writeUInt16BE(each.id, 0); head[2] = each.icon.width; head[3] = each.icon.height;
+      parts.push(head);
+      for (const image of each.icon.images) {
+        if (!image) { parts.push(Buffer.alloc(4)); continue; }
+        const palette = Buffer.alloc(4 + image.palette.length * 2);
+        palette.writeUInt16BE(image.palette.length, 0);
+        image.palette.forEach((v, i) => palette.writeUInt16BE(v, 4 + i * 2));
+        parts.push(padded(palette), padded(image.indexes));
+      }
+    }
+    chunk('ICON', parts);
+  }
   const header = Buffer.alloc(16);
   header.writeUInt32BE(MAGIC, 0); header.writeUInt32BE(VERSION, 4); header.writeUInt32BE(chunks.length / 3, 8);
   return Buffer.concat([header, ...chunks]);
@@ -669,7 +761,7 @@ function ownLooks(folder, tables) {
       body: body ? sprite(() => spriteFile('body', tables.headers.body, body)) : undefined,
       bodyShiny: bodyShiny ? sprite(() => spriteFile('body', tables.headers.body, bodyShiny)) : undefined,
       face: face ? sprite(() => spriteFile('face', tables.headers.face, face, faceShiny, battleRevolutionFace)) : undefined },
-    images: { body, bodyShiny, face }, cry, converted: true
+    images: { body, bodyShiny, face }, icon: boxIconOrNone(body, bodyShiny), cry, converted: true
   };
 }
 
@@ -754,6 +846,30 @@ function generationNote(each) {
   return `${start}. ${each.base.name} stands in for its looks and cry until its Battle Revolution assets are made. ${end}`;
 }
 
+// A row's evolutions as the Pokédex names them: what each evolves into (a loaded Pokémon's key, else the game's
+// Pokémon's National Pokédex number), and how (evolution-ways.js, with how Platinum differs for a later generation's).
+// `from`: the National Pokédex number of the Pokémon the row is, for Platinum's way: given for a later generation's
+// Pokémon, and for the game's own Pokémon's evolutions into one.
+function rowEvolutions(row, start, pokemon, tables, from) {
+  const evolutionWays = require('./evolution-ways');
+  const speciesName = id => pokemon.find(each => each.id === id)?.name || tables.species.find(each => each.id === id)?.name;
+  const out = { evolutions: [], evolutionWays: [] }, names = [];
+  for (let i = 0; i < EVOLUTIONS; i++) {
+    const at = start + i * 6, id = row.readUInt16BE(at + 4);
+    if (!row[at] || !id) continue;
+    const loaded = pokemon.find(each => each.id === id), national = loaded ? loaded.national : tables.species.find(each => each.id === id)?.national;
+    const into = loaded?.key || national;
+    if (!into) continue;
+    const way = evolutionWays.describeBytes(row, at, { speciesName: name => speciesName(name) && pokedex.displayName(speciesName(name)) });
+    const platinum = from && national ? evolutionWays.platinumWay(from, national) : null;
+    out.evolutions.push(into);
+    out.evolutionWays.push(platinum ? { ...way, note: [way.note, platinum].filter(Boolean).join(' ') } : way);
+    names.push(pokedex.displayName(speciesName(id) || ''));
+  }
+  out.evolutionWays = evolutionWays.overlappingLevels(out.evolutionWays, names);
+  return out;
+}
+
 // What the Pokédex shows of each: as its own entries do (pokedex.js), and where it's from.
 function pokedexEntries(pokemon, tables) {
   const TYPES = pokedex.TYPES;
@@ -762,18 +878,14 @@ function pokedexEntries(pokemon, tables) {
     const height = row.readUInt16BE(ROW.height);
     const abilities = [row[ROW.abilities], row[ROW.abilities + 1]].filter(Boolean)
       .map(id => [...tables.abilities].find(([, value]) => value === id)?.[0] ?? laterAbility(id)).filter(Boolean).map(pokedex.displayName);
-    const evolutions = [];
-    for (let i = 0; i < EVOLUTIONS; i++) {
-      const into = row.readUInt16BE(ROW.evolutions + i * 6 + 4);
-      if (row[ROW.evolutions + i * 6] && into) evolutions.push(into);
-    }
+    const { evolutions, evolutionWays } = rowEvolutions(row, ROW.evolutions, pokemon, tables, each.generation ? each.national : null);
     return { pack: { id: each.pack, name: each.packName, author: each.author, credits: each.credits, folder: each.folder, key: each.key },
       packId: each.id, national: each.national || each.base.national, base: each.base.name, form: each.form,
       name: each.form ? `${pokedex.displayName(each.name)} (${each.form})` : pokedex.displayName(each.name), description: each.description,
       types: types[0] === types[1] ? types.slice(0, 1) : types, abilities: [...new Set(abilities)],
       height: `${Math.floor(height / 100)}'${String(height % 100).padStart(2, '0')}"`, weight: `${(row.readUInt16BE(ROW.weight) / 10).toFixed(1)} lbs`,
       catchRate: row[ROW.catchRate], stats: STATS.map((_, i) => row.readUInt16BE(ROW.stats + i * 2)),
-      evolutions: evolutions.map(id => pokemon.find(other => other.id === id)?.key || tables.species.find(s => s.id === id)?.national).filter(Boolean),
+      evolutions, evolutionWays,
       hasModel: Boolean(each.assets.model), hasShinyModel: Boolean(each.assets.modelShiny),
       status: each.generation
         ? { kind: 'generation', label: `Generation ${each.generation}`, locked: false,
@@ -785,6 +897,6 @@ function pokedexEntries(pokemon, tables) {
 }
 
 module.exports = { FIRST_ID, LAST_ID, FIRST_PAST_GAP, REGISTRY_FILE, FILES, packsDirectory, readGameTables, readRegistry, writeRegistry, assignIds,
-  decodePng, resize, encodeRgba8, spriteFile, battleRevolutionFace, buildRow, evolutionBytes, loadPacks, compile, generationPokemon, ownRows, pokedexEntries, readCry,
+  decodePng, resize, encodeRgba8, spriteFile, battleRevolutionFace, boxIcon, buildRow, evolutionBytes, loadPacks, compile, generationPokemon, ownRows, pokedexEntries, readCry,
   // A species the original game hasn't: a pack's, or a later generation's
   isPackSpecies: id => (id >= FIRST_ID && id <= LAST_ID) || id >= 413 };
