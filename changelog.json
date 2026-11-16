@@ -118,7 +118,8 @@
       "Pokémon XD: fixed the lightning on top of Kaminko's house stretching across the yard and following you to the door. It stays between the poles on his roof again.",
       "Pokémon XD: the controller now rumbles wherever the game rumbles on a GameCube, such as when you use a scent on a Shadow Pokémon or turn on Rumble Feature in Options. Before, XD never rumbled.",
       "Fixed the game's sound crackling on Windows with headphones and other sound devices set to 44.1 kHz, clearest on high sounds such as a text box's A-press and the \"is fast asleep\" sound in battle. The game now converts its sound to your device's own rate, which also keeps a Bluetooth headset with its microphone on from turning the highest sounds into harsh noise.",
-      "Pokémon packs: a Pokémon with its own eye and mouth animations goes back to its usual face after a move, where it used to keep the move's expression in XD or show no eyes or mouth at all in Colosseum, and it blinks and closes its eyes asleep in XD too."
+      "Pokémon packs: a Pokémon with its own eye and mouth animations goes back to its usual face after a move, where it used to keep the move's expression in XD or show no eyes or mouth at all in Colosseum, and it blinks and closes its eyes asleep in XD too.",
+      "Fixed a Pokémon's picture showing black in your party at the Outskirt Stand at the start of a New Game, and a summary opened there leaving the screen black while the music played on. It happened after the Choose starters question, until the first battle."
     ]
   },
   "releases": [
