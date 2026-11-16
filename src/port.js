@@ -229,6 +229,11 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     // would rather; and its sound, in percent.
     gbaAutoPower: input.gbaAutoPower !== false,
     gbaVolume: numberSetting(input.gbaVolume, 100, 0, 100),
+    // The game's volumes in percent (Settings → Sound, or the game's own Settings screen): everything, its music, and its
+    // sound effects (cries and the sounds around you too).
+    volumeMaster: numberSetting(input.volumeMaster, 100, 0, 100),
+    volumeMusic: numberSetting(input.volumeMusic, 100, 0, 100),
+    volumeEffects: numberSetting(input.volumeEffects, 100, 0, 100),
     // What a new save randomizes (randomizer.js): a save keeps the seed it starts with.
     ...randomizer.normalize(input),
     // Later generations (generations.js): whose battle rules, and whose Pokémon are added. generation<N>Pokemon is the
@@ -398,6 +403,9 @@ function buildEnvironment(settings, disc, root, { customTextures = null, laterGe
   env.SMS_BUTTON_PROMPT_PAD = prompts.normalizePad(settings.promptPad);
   // Unset is the default; any other value would name a glyph file.
   if (settings.hdText !== 'on') env.COLO_HD_TEXT = settings.hdText === 'off' ? '0' : 'upscaled';
+  // The volumes, when not as the game plays (host/settings.c)
+  for (const [key, name] of [['volumeMaster', 'COLO_VOLUME'], ['volumeMusic', 'COLO_MUSIC_VOLUME'], ['volumeEffects', 'COLO_SFX_VOLUME']])
+    if (settings[key] !== undefined && settings[key] !== 100) env[name] = String(settings[key]);
   if (/^\d+x\d+$/.test(settings.exclusiveResolution || '')) env.SMS_FULLSCREEN_MODE = settings.exclusiveResolution;
   if (settings.display === 'primary') env.SMS_DISPLAY = '0';
   else if (/^monitor\d+$/.test(settings.display || '')) env.SMS_DISPLAY = String(Number(settings.display.slice(7)) - 1);

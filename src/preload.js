@@ -103,4 +103,5 @@ contextBridge.exposeInMainWorld('colo', {
   onAppUpdate: callback => ipcRenderer.on('app-update', (_event, value) => callback(value)),
   onUsage: callback => ipcRenderer.on('usage', (_event, value) => callback(value)),
   onOnline: callback => ipcRenderer.on('online', (_event, value) => callback(value)),
+  onSettingsChanged: callback => ipcRenderer.on('settings-changed', () => callback()),
 });
