@@ -36,6 +36,7 @@ const steam = require('./steam');
 const crashReports = require('./crash-reports');
 const telemetry = require('./telemetry');
 const online = require('./online');
+const replays = require('./replays');
 const discord = require('./discord');
 const presence = require('./presence');
 const parties = require('./parties');
@@ -1632,7 +1633,8 @@ function showPresence() {
   if (!presenceSession || !discordPresence) return;
   const { startedAt, game: latest, online: isOnline } = presenceSession;
   const game = activeGame();
-  const online = !isOnline ? null : battle?.role === 'watcher' ? { watching: battle.players?.filter(Boolean) || [] } : { opponent: battle?.opponent || null };
+  // a replay is watched as a battle is (src/replays.js)
+  const online = !isOnline ? null : battle?.role === 'watcher' || battle?.role === 'replay' ? { watching: battle.players?.filter(Boolean) || [] } : { opponent: battle?.opponent || null };
   discordPresence.set(presence.activity(latest, { startedAt, online,
     gameName: game.name, areaImages: game.id === 'colosseum', xdArt: game.id === 'xd' && Boolean(game.discordAppId) }));
 }
@@ -1782,10 +1784,13 @@ function onlineState() {
     crossPlatinumSupported: binaryReady() && onlineFeatures(config.repo).crossPlatinum,
     // watching others' battles: this game plays a battle as a spectator's
     spectateSupported: binaryReady() && onlineFeatures(config.repo).spectate,
+    // replays of online battles (src/replays.js): the game plays a saved battle
+    replaysSupported: binaryReady() && onlineFeatures(config.repo).replays,
     battle: battle && { status: battle.status, code: online.formatRoomCode(battle.code), role: battle.role, rules: battle.rules,
       opponent: battle.opponent, peerLost: Boolean(battle.peerLost), bestOf: battle.bestOf || 1, game: battle.game || 0,
       wins: battle.wins || [0, 0], side: battle.side ?? null, preview: battle.preview || null,
-      players: battle.players || null, watchers: battle.watchers || 0 } };
+      players: battle.players || null, watchers: battle.watchers || 0,
+      replay: battle.role === 'replay' ? { ...battle.replay, ...battle.session.progress() } : null } };
 }
 
 function broadcastOnline() { broadcast('online', onlineState()); }
@@ -1825,6 +1830,8 @@ function onlineFeatures(root, id = config.game) {
         crossplay: rules && (story || xd),
         // spectators' games, which play a room's battle from both players' lines (config side 2)
         spectate: bytes.includes(xd ? 'online: XD spectating' : 'online: spectating'),
+        // replays (host/replay.c, both games): a spectator's game plays a saved battle, and goes to a turn
+        replays: bytes.includes('replay: a saved battle of'),
         // each player's hero in their colours (look lines)
         looks: bytes.includes(xd ? 'online: XD side %d battles as hero' : 'battles as hero'),
         // the randomizer (host/randomizer.c), which XD's game has once it prints its run
@@ -1839,7 +1846,7 @@ function onlineFeatures(root, id = config.game) {
     }
     return onlineBinary;
   } catch (_) {
-    return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false,
+    return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false, replays: false,
       looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false };
   }
 }
@@ -2247,6 +2254,7 @@ async function createRoom() {
   battle = { session, status: 'connecting', role: 'host', rules, bestOf: setup.bestOf, code: null, opponent: null };
   broadcastOnline();
   watchSession(session);
+  recordReplay(session, 'host', cross);
   try {
     battle.code = await session.host({ name: setup.trainer, ...gameBuild(cross), ...chosen, look: playerLook(), rules, bestOf: setup.bestOf, listed: setup.listed });
   } catch (error) {
@@ -2278,6 +2286,7 @@ async function joinRoom(input) {
   battle = { session, status: 'connecting', role: 'joiner', rules, bestOf: info.bestOf || 1, code, opponent: info.name };
   broadcastOnline();
   watchSession(session);
+  recordReplay(session, 'joiner', cross);
   try { await session.join({ code, name: setup.trainer, ...gameBuild(cross), ...chosen, look: playerLook() }); }
   catch (error) {
     session.close();
@@ -2309,6 +2318,7 @@ async function watchRoom(input) {
   battle = { session, status: 'connecting', role: 'watcher', rules: formats.normalize(info.rules || {}), bestOf: info.bestOf || 1, code, opponent: null, players };
   broadcastOnline();
   watchSession(session);
+  recordReplay(session, 'watcher', cross);
   try {
     const answer = await session.watch({ code, ...gameBuild(cross) });
     // the battle's start may have come with the answer
@@ -2328,6 +2338,101 @@ async function watchRoom(input) {
   return { code: online.formatRoomCode(code) };
 }
 
+// --- Replays of online battles (src/replays.js): each battle played or watched is saved in the replays folder, the
+// last replays.KEEP of them unless the player keeps one, and a replay plays as a watched battle does.
+const replaysFolder = () => path.join(app.getPath('userData'), 'replays');
+
+function broadcastReplays() { broadcast('replays', null); }
+
+function recordReplay(session, role, cross) {
+  const build = gameBuild(cross);
+  const recorder = new replays.Recorder({ game: config.game, cross, build: build.build, version: build.version, launcher: build.launcher, role });
+  session.on('record', (kind, ...args) => { if (kind === 'start') recorder.start(args[0]); else recorder.line(...args); });
+  // saved at each game's end, and once more as the session ends (a battle left partway is kept as far as it went)
+  const keep = () => {
+    try { if (replays.save(replaysFolder(), recorder)) broadcastReplays(); }
+    catch (error) { log(`The battle's replay wasn't saved: ${error.message}`); }
+  };
+  session.on('end', result => { recorder.end(session.game, result); keep(); });
+  session.on('set', set => { recorder.finishSet(set); keep(); });
+  session.on('end-session', keep);
+}
+
+function replaysState() {
+  return { folder: replaysFolder(), keep: replays.KEEP, replays: replays.list(replaysFolder()),
+    build: binaryReady() ? gameBuild().build : null, crossBuild: binaryReady() && onlineFeatures(config.repo).crossplay ? gameBuild(true).build : null,
+    game: config.game };
+}
+
+// How a replay's game ended, as the page says it
+function replayOutcome(result, replay, sameBuild) {
+  const name = side => replay.players[side] || (side ? 'The challenger' : 'The host');
+  const set = replay.games.length > 1 ? `game ${result.game}` : null;
+  if (result.reason === 'over') return { message: result.winner === null ? `${set ? `Game ${result.game}` : 'The battle'} ended in a draw.` : `${name(result.winner)} won ${set || 'the battle'}.` };
+  if (result.reason === 'desync') return { message: sameBuild
+    ? `The replay stopped at turn ${result.turn}: the game no longer agreed with it. This is a bug, please report it.`
+    : `The replay stopped at turn ${result.turn}: it was saved with another version of the game (${replay.version || 'unknown'}), which plays this battle differently.` };
+  return null;
+}
+
+async function watchReplay(file) {
+  if (!supports('online')) throw new Error(`Online battles aren't in ${games.get(config.game).shortName} yet. Choose Colosseum on the Play page.`);
+  if (!port.isPort(config.repo, config.game) || !binaryReady()) throw new Error('Set up the game on the Play page first.');
+  if (!onlineFeatures(config.repo).replays) throw new Error('This version of the game can\'t play replays yet. Update it from the Play page.');
+  if (active || battle) throw new Error('Finish what the launcher is doing first.');
+  const replay = replays.read(file);
+  if (!replay.cross && replay.game !== config.game)
+    throw new Error(`That replay is of a battle in ${games.get(replay.game)?.shortName || 'another game'}. Choose that game on the Play page to watch it.`);
+  if (replay.cross && !onlineFeatures(config.repo).crossplay) throw new Error('That replay is of a room for both games, which this version of the game can\'t play. Update it from the Play page.');
+  const sameBuild = gameBuild(replay.cross).build === replay.build;
+  const session = new replays.ReplaySession(replay, { features: sessionFeatures(replay.cross), dress: dressPlayers });
+  battleResult = null;
+  battle = { session, status: 'replay', role: 'replay', rules: replay.rules, bestOf: replay.games.length > 1 ? replay.bestOf : 1, code: null, opponent: null,
+    players: replay.players, game: replay.games[0].game, wins: [0, 0],
+    replay: { file, name: path.basename(file), version: replay.version, sameBuild, set: replay.set } };
+  session.on('progress', () => broadcastOnline());
+  session.on('start', message => { if (battle?.session === session) { battle.game = message.game; battleResult = null; broadcastOnline(); showPresence(); } });
+  session.on('end', result => {
+    const outcome = replayOutcome(result, replay, sameBuild);
+    if (outcome) battleResult = { ...outcome, opponent: null };
+    broadcastOnline();
+  });
+  broadcastOnline();
+  log(`Watching the replay ${path.basename(file)}${sameBuild ? '' : `, saved with another version of the game (${replay.version || 'unknown'})`}.`);
+  playBattle(session).catch(error => log(`✕ ${error.message}`));
+  return onlineState();
+}
+
+// The page's controls for the replay that plays: seek (a turn, and the game of a set), speed (tenths), pause
+function replayControl(control) {
+  const session = battle?.role === 'replay' ? battle.session : null;
+  if (!session) return onlineState();
+  if (control?.action === 'seek') session.seek(Number(control.turn) || 0, Number.isInteger(control.index) ? control.index : session.index);
+  else if (control?.action === 'speed') session.setSpeed(Number(control.value));
+  else if (control?.action === 'pause') session.setPaused(Boolean(control.value));
+  return onlineState();
+}
+
+// Replays from elsewhere: chosen in a dialog (paths null) or dropped on the page
+async function importReplays(paths) {
+  let chosen = paths;
+  if (!chosen) {
+    const answer = await dialog.showOpenDialog(window, { title: 'Open a replay', properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Replays', extensions: [replays.EXTENSION.slice(1)] }] });
+    if (answer.canceled) return { files: [], ...replaysState() };
+    chosen = answer.filePaths;
+  }
+  const files = [], problems = [];
+  let added = 0;
+  for (const source of [].concat(chosen).filter(each => typeof each === 'string').slice(0, 50)) {
+    try { const done = replays.importFile(replaysFolder(), source); files.push(done.file); added += done.added; }
+    catch (error) { problems.push(`${path.basename(source)}: ${error.message}`); }
+  }
+  if (added) log(`Added ${added === 1 ? 'a replay' : `${added} replays`} to the replays folder.`);
+  if (problems.length && !files.length) throw new Error(problems.join(' '));
+  return { files, problems, ...replaysState() };
+}
+
 // Stops what the launcher is running, as Stop does.
 function stopActive() {
   if (!active?.child) return false;
@@ -2340,6 +2445,8 @@ function stopActive() {
 // Leaving a room closes its game, and the room with it.
 function leaveRoom() {
   if (!battle) return;
+  // a replay starting its game again for a seek doesn't, once it's stopped
+  if (battle.role === 'replay') battle.session.closing = true;
   if (isPlayLabel(active?.label)) stopActive();
   else {
     battle.session.close();
@@ -2605,6 +2712,17 @@ function registerHandlers() {
   ipcMain.handle('online-watch', (_event, code) => watchRoom(code));
   ipcMain.handle('online-leave', () => leaveRoom());
   ipcMain.handle('online-pick', (_event, order) => pickPokemon(Array.isArray(order) ? order.map(Number) : []));
+  ipcMain.handle('replays-list', () => replaysState());
+  ipcMain.handle('replays-watch', (_event, file) => watchReplay(String(file)));
+  ipcMain.handle('replays-control', (_event, control) => replayControl(control));
+  ipcMain.handle('replays-keep', (_event, file, kept) => { replays.setKept(replaysFolder(), String(file), kept); return replaysState(); });
+  ipcMain.handle('replays-delete', (_event, file) => { replays.remove(replaysFolder(), String(file)); return replaysState(); });
+  ipcMain.handle('replays-import', (_event, paths) => importReplays(Array.isArray(paths) ? paths.map(String) : null));
+  ipcMain.handle('replays-show', (_event, file) => {
+    const at = file ? replays.inFolder(replaysFolder(), String(file)) : null;
+    if (at) shell.showItemInFolder(at);
+    else { fs.mkdirSync(replaysFolder(), { recursive: true }); shell.openPath(replaysFolder()); }
+  });
   // (the team builder's Pokémon too: Colosseum's disc's, in XD as well)
   ipcMain.handle('pokedex', () => {
     if (!supports('teamBuilder')) requireFeature('pokedex', 'The Pokédex');

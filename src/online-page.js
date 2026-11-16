@@ -398,8 +398,10 @@
   function renderBanner() {
     const battle = state.battle;
     $('online-banner').hidden = !battle;
+    renderPlayer();
     if (!battle) return;
     if (battle.role === 'watcher') { renderWatching(battle); renderPick(); return; }
+    if (battle.role === 'replay') { renderReplayBanner(battle); renderPick(); return; }
     $('online-leave').textContent = 'Leave';
     const set = battle.bestOf > 1, game = set && battle.game ? ` · game ${battle.game} of ${battle.bestOf}` : '';
     const title = { connecting: 'Connecting…', waiting: `Room ${battle.code}`, picking: `Choosing for ${battle.opponent || 'a player'}${game}`,
@@ -455,6 +457,212 @@
     };
     tick();
     if (!preview.picked) pickTimer = setInterval(tick, 500);
+  }
+
+  // --- Replays (src/replays.js): the saved battles, and the player for the one that plays
+
+  const PLAY_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4l10 6-10 6z"/></svg>';
+  const PAUSE_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="4" width="3.5" height="12" rx="1"/></svg>';
+  const STAR_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l2.3 4.9 5.3.6-3.9 3.6 1.1 5.3L10 14.3 5.2 17l1.1-5.3-3.9-3.6 5.3-.6z"/></svg>';
+  const FOLDER_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.5h5l1.5 2h8.5v8h-15z"/></svg>';
+  const DELETE_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10"/></svg>';
+  let replayList = null, tab = 'rooms';
+
+  const vsText = players => `${players?.[0] || 'Trainer'} vs ${players?.[1] || 'Trainer'}`;
+  const whenText = iso => {
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+  function resultText(replay) {
+    if (replay.set && replay.games.length > 1) {
+      const [a, b] = replay.set.wins;
+      return a === b ? `Set ${a}–${b}` : `${replay.players[a > b ? 0 : 1]} won the set ${Math.max(a, b)}–${Math.min(a, b)}`;
+    }
+    const result = replay.result;
+    if (!result) return 'Saved partway';
+    if (result.reason === 'over') return result.winner === null ? 'A draw' : `${replay.players[result.winner]} won`;
+    if (result.reason === 'left') return 'A player left';
+    return 'Saved partway';
+  }
+  // the game this one is: a replay plays in the game that saved it, or in either for a room for both games
+  function replayProblem(replay) {
+    if (!state.replaysSupported) return 'Update the game from the Play page to watch replays.';
+    if (!replay.cross && replay.game !== replayList.game) return `Saved in ${replay.game === 'xd' ? 'Pokémon XD' : 'Pokémon Colosseum'}: choose it on the Play page to watch.`;
+    return null;
+  }
+
+  function setTab(next) {
+    tab = next;
+    $('online-tab-rooms').setAttribute('aria-selected', String(tab === 'rooms'));
+    $('online-tab-replays').setAttribute('aria-selected', String(tab === 'replays'));
+    $('online-rooms-panel').hidden = tab !== 'rooms';
+    $('online-replays-panel').hidden = tab !== 'replays';
+    document.querySelector('.online-rooms-tools').hidden = tab !== 'rooms';
+    document.querySelector('.online-replays-tools').hidden = tab !== 'replays';
+    if (tab === 'replays') loadReplays();
+  }
+
+  async function loadReplays() {
+    try { replayList = await window.colo.replaysList(); renderReplays(); }
+    catch (error) { showResult(message(error)); }
+  }
+
+  function iconButton(icon, label, onClick) {
+    const button = Object.assign(document.createElement('button'), { type: 'button', className: 'subtle replay-icon', innerHTML: icon, title: label });
+    button.setAttribute('aria-label', label);
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  function renderReplays() {
+    if (!replayList) return;
+    const list = replayList.replays;
+    // the whole story while there are none, then a line
+    $('replays-empty').textContent = list.length ? `The last ${replayList.keep} are kept. Star one to keep it for good. To share one, send its file.`
+      : `Each online battle you play or watch is saved here, the last ${replayList.keep} of them. Star one to keep it for good. To share a replay, send its file: Show folder finds it, and Open replay adds one someone sent you. You can drop a replay file on this page too.`;
+    $('replays-empty').hidden = false;
+    $('replays-list').replaceChildren(...list.map(replay => {
+      const row = Object.assign(document.createElement('div'), { className: 'online-room replay-row' });
+      if (replay.error) {
+        row.append(Object.assign(document.createElement('span'), { textContent: replay.name }));
+        row.append(Object.assign(document.createElement('small'), { textContent: replay.error }));
+        const actions = Object.assign(document.createElement('span'), { className: 'replay-actions' });
+        actions.append(iconButton(DELETE_ICON, 'Delete this file', () => deleteReplay(replay)));
+        row.append(actions);
+        return row;
+      }
+      const title = Object.assign(document.createElement('span'), { className: 'replay-title', textContent: vsText(replay.players) });
+      const sameBuild = replay.build === (replay.cross ? replayList.crossBuild : replayList.build);
+      const parts = [whenText(replay.savedAt), rulesText(replay.rules), replay.games.length > 1 ? `${replay.games.length} games` : `${replay.turns} turn${replay.turns === 1 ? '' : 's'}`,
+        resultText(replay), replay.role === 'watcher' ? 'watched' : '', replay.cross ? (replay.game === 'xd' ? 'from XD' : 'from Colosseum') : replay.game === 'xd' ? 'Pokémon XD' : ''].filter(Boolean);
+      const detail = Object.assign(document.createElement('small'), { textContent: parts.join(' · ') });
+      if (!sameBuild) {
+        const warn = Object.assign(document.createElement('em'), { className: 'replay-version', textContent: ` · saved with ${replay.version ? `game ${replay.version}` : 'another version of the game'}` });
+        warn.title = 'Saved with another version of the game. It plays as long as this version plays the battle the same way, and stops if it doesn\'t.';
+        detail.append(warn);
+      }
+      const actions = Object.assign(document.createElement('span'), { className: 'replay-actions' });
+      const star = iconButton(STAR_ICON, replay.kept ? 'Kept: it stays until you delete it. Press to let it go with the oldest.' : `Keep: it stays when newer battles push out the oldest of the ${replayList.keep}`, () => keepReplay(replay, !replay.kept));
+      star.classList.add('replay-star');
+      star.setAttribute('aria-pressed', String(Boolean(replay.kept)));
+      const problem = replayProblem(replay);
+      const watch = Object.assign(document.createElement('button'), { type: 'button', className: 'solid', textContent: 'Watch' });
+      watch.disabled = Boolean(state.battle) || Boolean(problem);
+      watch.title = problem || (state.battle ? 'Finish the battle first.' : `Watch ${vsText(replay.players)}`);
+      watch.addEventListener('click', () => watchReplay(replay));
+      actions.append(star, iconButton(FOLDER_ICON, 'Show the file, to send it to someone', () => window.colo.replaysShow(replay.file)),
+        iconButton(DELETE_ICON, 'Delete this replay', () => deleteReplay(replay)), watch);
+      row.append(title, detail, actions);
+      return row;
+    }));
+  }
+
+  async function watchReplay(replay) {
+    showResult('');
+    try { state = await window.colo.replaysWatch(replay.file); render(); }
+    catch (error) { showResult(message(error)); render(); }
+  }
+
+  async function keepReplay(replay, kept) {
+    try { replayList = await window.colo.replaysKeep(replay.file, kept); renderReplays(); }
+    catch (error) { showResult(message(error)); }
+  }
+
+  async function deleteReplay(replay) {
+    const what = replay.error ? replay.name : `the replay of ${vsText(replay.players)}`;
+    if (!window.confirm(`Delete ${what}?`)) return;
+    try { replayList = await window.colo.replaysDelete(replay.file); renderReplays(); }
+    catch (error) { showResult(message(error)); }
+  }
+
+  async function importReplays(paths) {
+    showResult('');
+    try {
+      const answer = await window.colo.replaysImport(paths);
+      replayList = answer;
+      if (answer.files.length || paths) setTab('replays');
+      renderReplays();
+      if (answer.problems?.length) showResult(answer.problems.join(' '));
+    } catch (error) { showResult(message(error)); }
+  }
+
+  function renderReplayBanner(battle) {
+    const replay = battle.replay;
+    const game = replay.games.length > 1 ? ` · game ${replay.index + 1} of ${replay.games.length}` : '';
+    $('online-banner-title').textContent = `Replay: ${vsText(battle.players)}${game}`;
+    $('online-banner-detail').textContent = `${rulesText(battle.rules)}.${replay.restarting ? ' Starting the game again…' : ''}`;
+    $('online-leave').textContent = 'Stop replay';
+  }
+
+  // The player: where the replay is, with a mark for each turn and each faint, and its controls
+  function renderPlayer() {
+    const replay = state.battle?.role === 'replay' ? state.battle.replay : null;
+    $('replay-player').hidden = !replay;
+    if (!replay) return;
+    const game = replay.games[replay.index], turns = Math.max(1, game.turns);
+    const seeking = replay.seekTo > replay.turn;
+    const shown = replay.ended ? game.turns : replay.turn;
+    $('replay-fill').style.width = `${(Math.min(shown, turns) / turns) * 100}%`;
+    $('replay-seeking').style.width = `${(Math.min(seeking ? replay.seekTo : shown, turns) / turns) * 100}%`;
+    const timeline = $('replay-timeline');
+    timeline.setAttribute('aria-valuemax', String(game.turns));
+    timeline.setAttribute('aria-valuenow', String(shown));
+    timeline.setAttribute('aria-valuetext', `Turn ${shown} of ${game.turns}`);
+    const key = `${replay.index}:${game.turns}:${game.faints.length}`;
+    if ($('replay-marks').dataset.key !== key) {
+      $('replay-marks').dataset.key = key;
+      const marks = [];
+      // a line between turns while there's room for them, and a dot after a turn a Pokémon fainted in
+      if (game.turns <= 120) for (let k = 1; k < game.turns; k++) marks.push(Object.assign(document.createElement('i'), { className: 'replay-tick', style: `left: ${(k / turns) * 100}%` }));
+      for (const faint of game.faints) {
+        const dot = Object.assign(document.createElement('b'), { className: `replay-faint side${faint.side}`, style: `left: ${(Math.min(faint.turn, turns) / turns) * 100}%` });
+        dot.title = `Turn ${faint.turn}: ${state.battle.players?.[faint.side] || 'a trainer'}'s Pokémon fainted`;
+        marks.push(dot);
+      }
+      $('replay-marks').replaceChildren(...marks);
+    }
+    $('replay-turn').textContent = replay.restarting ? `Going to turn ${replay.seekTo}…` : seeking ? `Going to turn ${replay.seekTo}…`
+      : replay.ended && replay.next !== null ? `Game ${replay.index + 1} over · game ${replay.next + 1} next`
+      : replay.ended ? (game.result?.reason === 'over' || !game.result ? 'The end' : 'Saved up to here')
+      : replay.turn ? `Turn ${replay.turn} of ${game.turns}${replay.paused ? ' · paused' : ''}` : `${game.turns} turns${replay.paused ? ' · paused' : ''}`;
+    const toggle = $('replay-toggle'), action = replay.paused ? 'Play' : 'Pause';
+    if (toggle.dataset.action !== action) {
+      toggle.innerHTML = replay.paused ? PLAY_ICON : PAUSE_ICON;
+      toggle.dataset.action = action;
+      toggle.setAttribute('aria-label', action);
+      toggle.title = action;
+    }
+    toggle.disabled = !replay.running || replay.ended || seeking || replay.restarting;
+    $('replay-previous').disabled = replay.restarting;
+    $('replay-restart').disabled = replay.restarting;
+    $('replay-next').disabled = replay.restarting || replay.ended || Math.max(replay.turn, replay.seekTo) >= game.turns;
+    if (document.activeElement !== $('replay-speed')) $('replay-speed').value = String(replay.speed);
+    $('replay-games').hidden = replay.games.length < 2;
+    if (replay.games.length > 1) $('replay-games').replaceChildren(...replay.games.map((each, index) => {
+      const button = Object.assign(document.createElement('button'), { type: 'button', className: 'subtle', textContent: `Game ${index + 1}` });
+      button.setAttribute('aria-pressed', String(index === replay.index));
+      button.title = `${each.turns} turns`;
+      button.addEventListener('click', () => replayControl({ action: 'seek', turn: 0, index }));
+      return button;
+    }));
+    $('replay-note').textContent = `${replay.sameBuild ? '' : `Saved with another version of the game${replay.version ? ` (${replay.version})` : ''}: if this version plays the battle differently, the replay stops there. `}In the game: Start pauses, left and right go back or on a turn, and up and down change the speed.`;
+  }
+
+  function replayControl(control) {
+    window.colo.replaysControl(control).then(next => { state = next; render(); }).catch(error => showResult(message(error)));
+  }
+  const replayNow = () => state.battle?.replay;
+  function stepTurn(step) {
+    const replay = replayNow();
+    if (!replay) return;
+    const at = Math.max(replay.turn, replay.seekTo);
+    replayControl({ action: 'seek', turn: step < 0 ? Math.max(0, replay.turn - 1) : at + 1 });
+  }
+  function timelineTurn(event) {
+    const replay = replayNow();
+    const box = $('replay-timeline').getBoundingClientRect();
+    const turns = replay.games[replay.index].turns;
+    return Math.max(1, Math.min(turns, Math.ceil(((event.clientX - box.left) / box.width) * turns)));
   }
 
   function sendPick(order) {
@@ -530,10 +738,51 @@
     if ($('online-code').value.trim()) watchRoom($('online-code').value);
   });
 
+  // Replays
+  $('online-tab-rooms').addEventListener('click', () => setTab('rooms'));
+  $('online-tab-replays').addEventListener('click', () => setTab('replays'));
+  $('replays-open').addEventListener('click', () => importReplays(null));
+  $('replays-folder').addEventListener('click', () => window.colo.replaysShow(null));
+  $('replay-toggle').addEventListener('click', () => replayControl({ action: 'pause', value: !replayNow()?.paused }));
+  $('replay-previous').addEventListener('click', () => stepTurn(-1));
+  $('replay-next').addEventListener('click', () => stepTurn(1));
+  $('replay-restart').addEventListener('click', () => replayControl({ action: 'seek', turn: 0 }));
+  $('replay-speed').addEventListener('change', event => replayControl({ action: 'speed', value: Number(event.target.value) }));
+  $('replay-timeline').addEventListener('click', event => { if (replayNow()) replayControl({ action: 'seek', turn: timelineTurn(event) }); });
+  $('replay-timeline').addEventListener('mousemove', event => {
+    if (!replayNow()) return;
+    const turn = timelineTurn(event), box = $('replay-timeline').getBoundingClientRect();
+    Object.assign($('replay-hover'), { hidden: false, textContent: `Turn ${turn}` });
+    $('replay-hover').style.left = `${Math.max(0, Math.min(box.width, event.clientX - box.left))}px`;
+  });
+  $('replay-timeline').addEventListener('mouseleave', () => { $('replay-hover').hidden = true; });
+  $('replay-timeline').addEventListener('keydown', event => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); stepTurn(event.key === 'ArrowLeft' ? -1 : 1); }
+    else if (event.key === 'Home') { event.preventDefault(); replayControl({ action: 'seek', turn: 0 }); }
+    else if (event.key === ' ') { event.preventDefault(); replayControl({ action: 'pause', value: !replayNow()?.paused }); }
+  });
+  // a replay file dropped on the page is added to the replays
+  const page = $('page-online');
+  page.addEventListener('dragover', event => {
+    if ([...(event.dataTransfer?.items || [])].some(item => item.kind === 'file')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }
+  });
+  page.addEventListener('drop', event => {
+    const files = [...(event.dataTransfer?.files || [])].filter(file => file.name.toLowerCase().endsWith('.replay'));
+    if (!event.dataTransfer?.files?.length) return;
+    event.preventDefault();
+    if (!files.length) { showResult('Only replay files (.replay) can be dropped here.'); return; }
+    const paths = files.map(file => window.colo.droppedPath(file)).filter(Boolean);
+    if (paths.length) importReplays(paths);
+  });
+  window.colo.onReplays(() => { if (tab === 'replays') loadReplays(); });
+
   window.colo.onOnline(next => {
+    const hadBattle = Boolean(state?.battle);
     state = next;
     render();
     if (rooms) renderRooms();
+    // the Watch buttons follow whether something plays
+    if (replayList && hadBattle !== Boolean(state.battle)) renderReplays();
     poll.wake();
   });
   function renderCount(count) {
