@@ -77,3 +77,24 @@ test('an XD battle model\'s slots: the first motion in use, and the joints its e
   assert.equal(snag.slotJoints(pkx, 7)[6], 29);
   assert.equal(snag.slotJoints(pkx, 7)[0], -1);
 });
+
+test('the Customize preview bends limbs and pins joints as the snag\'s emulation does (model-rig.js)', async () => {
+  const { createRig } = await import('../src/model-rig.js');
+  const limbOf = { [JOINT1]: 1, [JOINT2]: 2, [EFFECTOR]: 3 };
+  const check = ({ model, rig, values }) => {
+    const joints = model.joints.map(({ parent }, j) => ({ parent, scale: [1, 1, 1], rotation: [0, 0, 0], translation: [0, 0, 0],
+      ...(rig[j].type || rig[j].refs.length || rig[j].hint ? { constraint: { limb: limbOf[rig[j].type] || 0, refs: rig[j].refs, hint: rig[j].hint } } : {}) }));
+    const preview = createRig({ joints, inverseBind: joints.map(() => null), draw: [], shapes: [] }, () => null);
+    preview.pose(values);
+    const expected = snag.posed(model, snag.rigOfModel({ joints }), values, 0);
+    joints.forEach((_, j) => near(place(Array.from(preview.world[j].elements)), place(expected[j]), 1e-4));
+  };
+  check(limb([1, 1, 0]));
+  check(limb([1, 1, 0], { flip: true }));
+  check(limb([1.5, 0, 0], { pole: [0.75, 5, 0] }));
+  check(limb([4, 0, 0]));
+  const joints = [{ parent: -1 }, { parent: 0 }, { parent: 0 }], rig = [plain(), plain([{ type: 1, joint: 2 }]), plain()];
+  const values = new Float32Array(27);
+  [[0, 0, 0], [1, 2, 3], [-4, 5, 6]].forEach((p, j) => values.set([1, 1, 1, 0, 0, 0, ...p], j * 9));
+  check({ model: { joints }, rig, values });
+});

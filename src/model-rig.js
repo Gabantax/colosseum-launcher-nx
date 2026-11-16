@@ -125,28 +125,124 @@ export function createRig(rig, makeMesh) {
     return right.copy(skeleton).invert().multiply(world[owner]);
   }
 
+  // --- the game's constraints (jobj.c HSD_JObjSetupMatrixSub, resolveIKJoint1/2; robj.c HSD_RObjUpdateAll) ---------
+  // A limb the game bends: JOINT1 (1) turned toward the target so its bone and its JOINT2 (2) child's reach it, and
+  // the JOINT2 aimed at it; their EFFECTOR (3) sits at the bone's end. A joint pinned to another takes that one's place.
+  const PLACE = 1, POLE = 3, JOINT1 = 1, JOINT2 = 2, EFFECTOR = 3;
+  const constraintOf = j => rig.joints[j].constraint;
+  const refsOf = (j, type) => (constraintOf(j)?.refs || []).filter(ref => ref.type === type).map(ref => ref.joint);
+  const childOf = (j, limb) => rig.joints.findIndex((joint, k) => joint.parent === j && joint.constraint?.limb === limb);
+  const constrained = rig.joints.map((joint, j) => (joint.constraint ? j : -1)).filter(j => j >= 0);
+  const followed = [...new Set(constrained.flatMap(j => constraintOf(j).refs.map(ref => ref.joint)))];
+  const plainPlace = rig.joints.map(() => [0, 0, 0]);
+  // each limb's joints, found once: JOINT1 → { joint2, effector }
+  const limbs = new Map(constrained.filter(j => constraintOf(j).limb === JOINT1 && constraintOf(j).hint).map(j => {
+    const joint2 = childOf(j, JOINT2);
+    return [j, { joint2, effector: joint2 >= 0 ? childOf(joint2, EFFECTOR) : childOf(j, EFFECTOR) }];
+  }));
+  const targets = new Map();
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const scaled = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const unit = a => scaled(a, Math.sqrt(1 / (1e-10 + dot(a, a))));
+  const axisOf = (m, c) => [m.elements[c * 4], m.elements[c * 4 + 1], m.elements[c * 4 + 2]];
+  function placeOf(m, out = [0, 0, 0]) { out[0] = m.elements[12]; out[1] = m.elements[13]; out[2] = m.elements[14]; return out; }
+  function setMatrix(m, x, y, z, place) {
+    const e = m.elements;
+    e[0] = x[0]; e[1] = x[1]; e[2] = x[2]; e[4] = y[0]; e[5] = y[1]; e[6] = y[2]; e[8] = z[0]; e[9] = z[1]; e[10] = z[2];
+    e[12] = place[0]; e[13] = place[1]; e[14] = place[2];
+    e[3] = e[7] = e[11] = 0; e[15] = 1;
+  }
+  function turnAbout(axis, angle, v) {
+    const [x, y, z] = unit(axis), c = Math.cos(angle), s = Math.sin(angle), t = 1 - c;
+    return [(t * x * x + c) * v[0] + (t * x * y - s * z) * v[1] + (t * x * z + s * y) * v[2],
+      (t * x * y + s * z) * v[0] + (t * y * y + c) * v[1] + (t * y * z - s * x) * v[2],
+      (t * x * z - s * y) * v[0] + (t * y * z + s * x) * v[1] + (t * z * z + c) * v[2]];
+  }
+  function applyConstraint(j, values) {
+    // a followed joint's place: as constrained if it came before this one, else as first posed
+    const at = k => (k < j ? placeOf(world[k]) : plainPlace[k]);
+    const average = joints => scaled(joints.reduce((sum, k) => add(sum, at(k)), [0, 0, 0]), 1 / joints.length);
+    const { limb, hint } = constraintOf(j), parent = rig.joints[j].parent, scaleX = k => values[k * 9];
+    if (limb === JOINT1 && hint) {
+      const { joint2, effector } = limbs.get(j);
+      if (effector < 0 || !refsOf(effector, PLACE).length) return;
+      const hint2 = joint2 >= 0 ? constraintOf(joint2).hint : null;
+      const a = hint.length * scaleX(j), b = hint2 ? hint2.length * scaleX(joint2) * scaleX(j) : 0;
+      const base = parent >= 0 ? placeOf(world[parent]) : [0, 0, 0], target = average(refsOf(effector, PLACE));
+      targets.set(effector, target);
+      const toward = sub(target, base), d2 = dot(toward, toward);
+      if (d2 <= 1e-8) return;
+      let normal, side;
+      const poles = refsOf(j, POLE);
+      if (poles.length) {
+        side = sub(average(poles), base);
+        if (hint.turn) side = turnAbout(toward, hint.turn, side);
+        normal = cross(toward, side);
+        side = cross(normal, toward);
+      } else {
+        normal = axisOf(world[j], 2);
+        side = cross(normal, toward);
+        normal = cross(toward, side);
+      }
+      normal = unit(normal);
+      side = unit(side);
+      const a2 = a * a, b2 = b * b, t = a2 - b2, h2 = Math.max(0, 0.25 * (2 * (a2 + b2) - d2 - (t * t) / d2));
+      const along = Math.sqrt(Math.max(0, (a2 - h2) / d2)), height = Math.sqrt(h2) * (hint2?.flip ? -1 : 1);
+      const x = unit(add(scaled(toward, b2 - h2 < d2 ? along : -along), scaled(side, height)));
+      const s = [values[j * 9], values[j * 9 + 1], values[j * 9 + 2]];
+      setMatrix(world[j], scaled(x, s[0]), scaled(cross(normal, x), s[1]), scaled(normal, s[2]), base);
+    } else if (limb === JOINT2 && parent >= 0 && constraintOf(parent)?.hint) {
+      const effector = childOf(j, EFFECTOR), target = targets.get(effector);
+      if (effector < 0 || !target) return;
+      const elbow = add(placeOf(world[parent]), scaled(unit(axisOf(world[parent], 0)), constraintOf(parent).hint.length * scaleX(parent)));
+      const x = unit(sub(target, elbow)), y = unit(cross(axisOf(world[parent], 2), x)), s = [values[j * 9], values[j * 9 + 1], values[j * 9 + 2]];
+      setMatrix(world[j], scaled(x, s[0]), scaled(y, s[1]), scaled(cross(x, y), s[2]), elbow);
+    } else if (limb === EFFECTOR && parent >= 0 && constraintOf(parent)?.hint) {
+      const end = add(placeOf(world[parent]), scaled(unit(axisOf(world[parent], 0)), constraintOf(parent).hint.length * scaleX(parent)));
+      world[j].elements[12] = end[0]; world[j].elements[13] = end[1]; world[j].elements[14] = end[2];
+    } else if (!limb && refsOf(j, PLACE).length) {
+      const place = average(refsOf(j, PLACE));
+      world[j].elements[12] = place[0]; world[j].elements[13] = place[1]; world[j].elements[14] = place[2];
+    }
+  }
+
+  // Each joint's matrix from `values`, parents first; with `constrain`, the game's constraints too (applyConstraint)
+  function posePlain(values, constrain = false) {
+    for (let j = 0; j < count; j++) {
+      const joint = rig.joints[j], parent = joint.parent, o = j * 9, scale = scales[j];
+      const parentScale = parent >= 0 && hasScale[parent] ? scales[parent] : null;
+      // A joint's scale passes down to its children (JObjMakeMatrix).
+      if (joint.classicalScale) {
+        hasScale[j] = parentScale ? 1 : 0;
+        if (parentScale) { scale[0] = parentScale[0]; scale[1] = parentScale[1]; scale[2] = parentScale[2]; }
+      } else {
+        hasScale[j] = 1;
+        scale[0] = values[o] * (parentScale ? parentScale[0] : 1);
+        scale[1] = values[o + 1] * (parentScale ? parentScale[1] : 1);
+        scale[2] = values[o + 2] * (parentScale ? parentScale[2] : 1);
+      }
+      jointMatrix(values.subarray(o, o + 3), values.subarray(o + 3, o + 6), values.subarray(o + 6, o + 9), parentScale, local);
+      if (parent >= 0) world[j].multiplyMatrices(world[parent], local);
+      else world[j].copy(local);
+      if (constrain && rig.joints[j].constraint) applyConstraint(j, values);
+    }
+  }
+
   return {
     meshes, world, billboards: billboards.length > 0,
     // `values` holds nine values for each joint: its scale, rotation and translation. `view` takes the rig's space to
     // the camera's, for billboards.
     pose(values = rest, view = null) {
-      for (let j = 0; j < count; j++) {
-        const joint = rig.joints[j], parent = joint.parent, o = j * 9, scale = scales[j];
-        const parentScale = parent >= 0 && hasScale[parent] ? scales[parent] : null;
-        // A joint's scale passes down to its children (JObjMakeMatrix).
-        if (joint.classicalScale) {
-          hasScale[j] = parentScale ? 1 : 0;
-          if (parentScale) { scale[0] = parentScale[0]; scale[1] = parentScale[1]; scale[2] = parentScale[2]; }
-        } else {
-          hasScale[j] = 1;
-          scale[0] = values[o] * (parentScale ? parentScale[0] : 1);
-          scale[1] = values[o + 1] * (parentScale ? parentScale[1] : 1);
-          scale[2] = values[o + 2] * (parentScale ? parentScale[2] : 1);
-        }
-        jointMatrix(values.subarray(o, o + 3), values.subarray(o + 3, o + 6), values.subarray(o + 6, o + 9), parentScale, local);
-        if (parent >= 0) world[j].multiplyMatrices(world[parent], local);
-        else world[j].copy(local);
+      // A model with limbs the game bends or joints pinned to others: posed once plainly, for the places of joints a
+      // constraint follows that come after it, then again with the constraints applied
+      if (constrained.length) {
+        posePlain(values);
+        for (const k of followed) placeOf(world[k], plainPlace[k]);
       }
+      posePlain(values, constrained.length > 0);
       if (view) unview.copy(view).invert();
       for (const j of billboards) {
         const joint = rig.joints[j];

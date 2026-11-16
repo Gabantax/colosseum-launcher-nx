@@ -86,6 +86,8 @@ function rigOf(pkx) {
     return out;
   });
 }
+// The same, from a model hsd-model.js parsed (its joints' `constraint`: limb 1, 2 or 3 for JOINT1, JOINT2, EFFECTOR)
+const rigOfModel = model => model.joints.map(({ constraint }) => ({ type: (constraint?.limb || 0) << 21, refs: constraint?.refs || [], hint: constraint?.hint || null }));
 const refsOf = (rig, j, type) => rig[j].refs.filter(ref => ref.type === type).map(ref => ref.joint);
 
 const isUnder = (model, j, ancestor) => { for (let k = model.joints[j].parent; k >= 0; k = model.joints[k].parent) if (k === ancestor) return true; return false; };
@@ -195,9 +197,10 @@ function valuesFor(values, o, parentWorld, world) {
 }
 
 // The clip with its bent limbs' joints set to where the game draws them, so the clip says what's seen without them
-function withLimbsSet(model, rig, clip) {
+// (with `pins`, a joint pinned to another's place too, as Wes's pelvis is)
+function withLimbsSet(model, rig, clip, { pins = false } = {}) {
   const count = model.joints.length, values = Float32Array.from(clip.values);
-  const bent = model.joints.map((_, j) => rig[j].type !== 0 && (rig[j].type !== JOINT1 || rig[j].hint));
+  const bent = model.joints.map((_, j) => (rig[j].type !== 0 ? rig[j].type !== JOINT1 || rig[j].hint : pins && refsOf(rig, j, PLACE).length > 0));
   for (let frame = 0; frame < clip.frames; frame++) {
     const world = posed(model, rig, values, frame);
     for (let j = 0; j < count; j++) {
@@ -442,7 +445,7 @@ function buildSnagModel(heroXd, michaelXd) {
 }
 
 module.exports = {
-  VERSION, MICHAEL_SNAG, SNAG_SLOTS, buildSnagModel,
+  VERSION, MICHAEL_SNAG, SNAG_SLOTS, buildSnagModel, rigOfModel, withLimbsSet, withTargets,
   // for the tests
-  rigOf, posed, withLimbsSet, withTargets, fitToKeys, keyedChannels, clipTiming, datOf, slotClip, slotJoints, fingersOf, xdLayout,
+  rigOf, posed, fitToKeys, keyedChannels, clipTiming, datOf, slotClip, slotJoints, fingersOf, xdLayout,
 };
