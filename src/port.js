@@ -343,7 +343,7 @@ const FEATURE_ENVIRONMENT = {
 // textures folder, for playing (texturePackFolders). `game` is which game (games.js): its renderer, display
 // and input settings are every game's, the rest only where the game has that feature.
 function buildEnvironment(settings, disc, root, { customTextures = null, laterGenerations = false, packPokemon = false, noRepeats = false, baseForms = false,
-  game = games.DEFAULT } = {}) {
+  spread = false, game = games.DEFAULT } = {}) {
   if (!root) throw new Error('The port folder is required to configure texture packs.');
   const env = {
     // The game never takes typed text, but SDL starts text input with its window, and on a Steam Deck
@@ -385,7 +385,7 @@ function buildEnvironment(settings, disc, root, { customTextures = null, laterGe
   // Unset is hold at 4x, as in a game built before these settings.
   if (settings.fastForward === 'toggle') env.COLO_FAST_FORWARD = 'toggle';
   if (settings.fastForwardSpeed && settings.fastForwardSpeed !== 4) env.COLO_FAST_FORWARD_SPEED = String(settings.fastForwardSpeed);
-  const run = randomizer.environmentValue(settings, { laterGenerations, packPokemon, noRepeats, baseForms });
+  const run = randomizer.environmentValue(settings, { laterGenerations, packPokemon, noRepeats, baseForms, spread });
   if (run) env.COLO_RANDOMIZER = run;
   if (settings.hdModels === false) env.COLO_HD_MODELS = '0';
   // Unset is on in the game, as it is in a game built before these settings.

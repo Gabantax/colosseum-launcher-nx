@@ -806,7 +806,7 @@ const POKEMON_TEXT = {};
 const XD_RANDOMIZER_TEXT = {
   'randomizer-starters-title': 'Starter',
   'randomizer-starters-note': 'Your first Pokémon, instead of Eevee.',
-  'randomizer-shadow-note': 'Every Shadow Pokémon you can snag. Each is a different species. Lugia and the Shadow Togepi you\'re given stay as they are.',
+  'randomizer-shadow-note': 'Every Shadow Pokémon you can snag. Each is a different species, and keeps its trainer and its level. Lugia and the Shadow Togepi you\'re given stay as they are.',
   'randomizer-trainers-note': 'Everything else trainers send out, in the story, on Mt. Battle and in the Orre Colosseum. Quick Battle and the battle CDs stay as they are.',
   'randomizer-gifts-note': 'The Pokémon traded to you in the story, and Mt. Battle\'s Chikorita, Cyndaquil and Totodile. Poké Spot Pokémon stay as they are.'
 };

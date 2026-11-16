@@ -1582,7 +1582,8 @@ async function play(installation = null, battle = null) {
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
-    noRepeats: onlineFeatures(root).randomizerNoRepeats, baseForms: onlineFeatures(root).randomizerBaseForms, game: chosen.id }),
+    noRepeats: onlineFeatures(root).randomizerNoRepeats, baseForms: onlineFeatures(root).randomizerBaseForms,
+    spread: onlineFeatures(root).randomizerSpread, game: chosen.id }),
     ...saves.gameDataEnvironment(), ...bindingsEnvironment(settings),
     ...(supports('languagePacks') ? languagePacks.environment(settings, languageFolder()) : {}),
     ...(supports('gbaLink') ? gbaLink.environment(config.gba, settings, gbaBackupFolder()) : {}),
@@ -1864,12 +1865,15 @@ function onlineFeatures(root, id = config.game) {
         randomizerPacks: bytes.includes('randomizer: packs\' Pokemon'),
         // no evolution family twice, and starters and Shadow Pokémon of first forms only
         randomizerNoRepeats: bytes.includes('randomizer: no repeated families'),
-        randomizerBaseForms: bytes.includes('randomizer: base forms only') };
+        randomizerBaseForms: bytes.includes('randomizer: base forms only'),
+        // similar strength's choices spread evenly over the Pokémon close in strength
+        randomizerSpread: bytes.includes('randomizer: similar strength spread evenly') };
     }
     return onlineBinary;
   } catch (_) {
     return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false, replays: false,
-      looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false };
+      looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false,
+      randomizerSpread: false };
   }
 }
 
