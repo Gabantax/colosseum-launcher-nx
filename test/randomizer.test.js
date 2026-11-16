@@ -197,6 +197,24 @@ test('a run has Generation 4 Pokémon when they are added and the game knows the
   assert.equal(randomizer.environmentValue(on(only4), { laterGenerations: true }), 'C0FFEE11:19:7');
 });
 
+test('similar strength spreads its picks when the game knows how, and only with similar strength on', () => {
+  assert.equal(randomizer.SPREAD, 512);
+  assert.equal(randomizer.environmentValue(on(), { spread: true }), 'C0FFEE11:531:7');
+  assert.equal(randomizer.environmentValue(on({ randomizerSimilar: false }), { spread: true }), 'C0FFEE11:3:7');
+  // a game from before it makes the run it always made
+  assert.equal(randomizer.environmentValue(on()), 'C0FFEE11:19:7');
+  assert.equal(randomizer.environmentValue(on(), { spread: false }), 'C0FFEE11:19:7');
+  // it randomizes nothing by itself
+  assert.equal(randomizer.environmentValue(on({ randomizerStarters: false, randomizerShadow: false }), { spread: true }), null);
+  // a save made with it reads back with it (options from 256 on are the stamp's byte 7)
+  const plain = Buffer.alloc(0x1df80 + 8 + 16);
+  const at = 0x1df80 + 8, seed = 0xc0ffee11, options = 531, generations = 7;
+  plain.writeUInt32BE(0x43524e44, at); plain[at + 4] = 1; plain[at + 5] = options & 0xff; plain[at + 6] = generations; plain[at + 7] = options >> 8;
+  plain.writeUInt32BE(seed, at + 8);
+  plain.writeUInt32BE((seed ^ 0x5eedc01d ^ ((options & 0xff) << 8) ^ generations ^ ((options >> 8) << 16)) >>> 0, at + 12);
+  assert.deepEqual(randomizer.runOf(plain), { seed: 'C0FFEE11', options: 531, generations: 7 });
+});
+
 test('no repeats and first forms only are off to start with, and reach the game only when it knows them', () => {
   const settings = randomizer.normalize({});
   assert.equal(settings.randomizerNoRepeats, false);

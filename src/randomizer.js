@@ -17,6 +17,10 @@ const PACKS = 64;   // Pokémon packs' own Pokémon too (src/pokemon-packs.js)
 // Pokémon only of a first form. Options from 256 on are the stamp's byte 7.
 const NO_REPEATS = 128;
 const BASE_FORMS = 256;
+// Similar strength's choices spread evenly over the Pokémon close in strength to the one replaced (within 10% of its base
+// stats, widened only when too few are), so a run of few generations doesn't give the same few Pokémon to most trainers.
+// Sent with similar strength whenever the game knows it; not a setting of its own.
+const SPREAD = 512;
 // A pack's own Pokémon in the game's spoiler log: this much past its place in the species table, as it may share its base's number.
 const PACK_SPECIES = 0x10000;
 const GENERATIONS = { randomizerGen1: 1, randomizerGen2: 2, randomizerGen3: 4, randomizerGen4: 8 };
@@ -81,8 +85,10 @@ const hasGen4 = (settings, laterGenerations) => Boolean(settings.randomizerGen4 
 // generation without its Pokémon is a run of the game's own three. packPokemon: the player has Pokémon packs' Pokémon and
 // the game can choose them. Without them the run isn't one with packs, so it stays as it is when a pack is added later.
 // noRepeats and baseForms: the game knows those options (a game before them would keep only the first eight bits).
-function environmentValue(settings, { laterGenerations = false, packPokemon = false, noRepeats = false, baseForms = false } = {}) {
-  const options = flags(settings, OPTIONS) & (packPokemon ? ~0 : ~PACKS) & (noRepeats ? ~0 : ~NO_REPEATS) & (baseForms ? ~0 : ~BASE_FORMS);
+// spread: the game spreads similar strength's choices (SPREAD); a save keeps how its run was made.
+function environmentValue(settings, { laterGenerations = false, packPokemon = false, noRepeats = false, baseForms = false, spread = false } = {}) {
+  let options = flags(settings, OPTIONS) & (packPokemon ? ~0 : ~PACKS) & (noRepeats ? ~0 : ~NO_REPEATS) & (baseForms ? ~0 : ~BASE_FORMS);
+  if (spread && (options & OPTIONS.randomizerSimilar)) options |= SPREAD;
   if (!settings.randomizer || !settings.randomizerSeed || !(options & PARTS)) return null;
   let generations = flags(settings, GENERATIONS) & (hasGen4(settings, laterGenerations) ? GAME_GENERATIONS | GEN4 : GAME_GENERATIONS);
   if (!generations) generations = GAME_GENERATIONS;
@@ -155,4 +161,4 @@ function spoilerText(raw, species, packs = [], gameId = 'colosseum') {
 
 function spoilerSeed(raw) { return (String(raw).match(/^seed ([0-9A-F]{8})/) || [])[1] || null; }
 
-module.exports = { OPTIONS, GENERATIONS, PACKS, NO_REPEATS, BASE_FORMS, SPOILER_FILE, hasGen4, newSeed, normalizeSeed, normalize, environmentValue, runOf, readSave, createSaveReader, spoilerText, spoilerSeed };
+module.exports = { OPTIONS, GENERATIONS, PACKS, NO_REPEATS, BASE_FORMS, SPREAD, SPOILER_FILE, hasGen4, newSeed, normalizeSeed, normalize, environmentValue, runOf, readSave, createSaveReader, spoilerText, spoilerSeed };
