@@ -96,7 +96,8 @@
       "Later generations: Cherrim changes into its Sunshine Form in strong sunlight and back to its Overcast Form when the sun ends, in Colosseum and in XD. Press Make assets when the launcher asks, to make its Sunshine Form's model.",
       "Windows: the game now builds when its folder has an accented letter in its path, such as the é in Pokémon Colosseum. Before, the build stopped with \"stdlib.h: No such file or directory\" or, at its last step, \"cannot find\".",
       "Windows: when Windows fails to start one of the build's programs (error 0xC0000142), the build tries it again, and says what happened if it keeps failing.",
-      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the close-ups when your Aura Reader spots a Shadow Pokémon and when you throw a Snag Ball now show your hero's face and hand, where they used to show their chest or shoulder, and your hero no longer stoops over in them."
+      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the close-ups when your Aura Reader spots a Shadow Pokémon and when you throw a Snag Ball now show your hero's face and hand, where they used to show their chest or shoulder, and your hero no longer stoops over in them.",
+      "Pokémon XD: fixed the Disc Case in Key Items not letting you move between your Battle CDs, and the game freezing after you closed it."
     ]
   },
   "releases": [
