@@ -561,3 +561,50 @@ test('a spectator\'s game a game behind the set plays each game in turn, and hea
   assert.equal(await session.again(), false);
   session.close();
 });
+
+test('each player\'s look goes in the hello, and the game waits for the looks the launcher makes from the start', async () => {
+  const dressed = [];
+  let finish;
+  const dress = start => { dressed.push(start.players.map(player => player.look?.hero)); return new Promise(resolve => { finish = resolve; }); };
+  const session = new online.Session({ url: 'http://rooms.test', WebSocket: FakeSocket, features: { rules: true }, dress });
+  const opened = session.host({ ...details, look: { hero: 'red', colors: { vest: '#2f8a4a' } }, rules: { level: 50, size: 6 }, listed: true });
+  await new Promise(resolve => setImmediate(resolve));
+  FakeSocket.last.receive({ type: 'room', code: 'KQ7M2D', key: 'k'.repeat(32) });
+  await opened;
+  const ws = FakeSocket.last;
+  assert.deepEqual(ws.messages()[0].look, { hero: 'red', colors: { vest: '#2f8a4a' } });
+  const make = fakeBridge();
+  await session.attachGame(make);
+  const bridge = make({});
+  session.prepareGame();
+  const players = [{ ...START.players[0], look: { hero: 'red', colors: { vest: '#2f8a4a' } } }, { ...START.players[1], look: { hero: 'may', colors: {} } }];
+  ws.receive({ ...START, players });
+  assert.deepEqual(dressed, [['red', 'may']]);
+  bridge.onClose();   // the waiting game closed for the battle
+  let started = false;
+  const again = session.again().then(value => { started = value; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(started, false, 'the game waits for the looks');
+  finish({ lines: ['look 0 3 /made/red.pkx', 'look 1 2'], folders: ['/made/hd'] });
+  await again;
+  assert.equal(started, true);
+  assert.deepEqual(bridge.lines.slice(-3), ['look 0 3 /made/red.pkx', 'look 1 2', 'start 42 Ash Misty 1 2 3 4 5 6 7 8 9 10 11 12']);
+  assert.deepEqual(session.looks, ['/made/hd']);
+  session.close();
+});
+
+test('looks that fail to be made leave the game its usual trainers', async () => {
+  const session = new online.Session({ url: 'http://rooms.test', WebSocket: FakeSocket, dress: async () => { throw new Error('no disc'); } });
+  const ws = await hosted(session);
+  const make = fakeBridge();
+  await session.attachGame(make);
+  const bridge = make({});
+  session.prepareGame();
+  ws.receive(START);
+  bridge.onLine('restart');
+  bridge.onClose();
+  assert.equal(await session.again(), true);
+  assert.deepEqual(bridge.lines.slice(-2), ['config 0 50 6 1', 'start 42 Ash Misty 1 2 3 4 5 6 7 8 9 10 11 12']);
+  assert.deepEqual(session.looks, []);
+  session.close();
+});

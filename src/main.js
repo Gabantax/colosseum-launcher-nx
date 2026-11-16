@@ -43,6 +43,11 @@ const formats = require('./formats');
 const storyParty = require('./story-party');
 const crossplay = require('./crossplay');
 const pokedexNames = require('./pokedex');
+const heroLook = require('./hero-look');
+const heroBake = require('./hero-bake');
+const xdSave = require('./xd-save');
+const heroColors = require('./hero-colors');
+const heroStory = require('./hero-story');
 const pokedexData = pokedexNames.create();
 const pokemonCries = require('./pokemon-cries');
 const pokedexCries = pokemonCries.create();
@@ -1459,6 +1464,40 @@ function saveJukeboxPlaylists(list) {
   return all[config.game];
 }
 
+// The Customize page's heroes, read in a worker (hero-look-worker.js), with the HD images the Pokédex would use.
+let heroWorker = null, heroRequest = 0;
+const heroPending = new Map();
+function heroStopWorker() {
+  heroWorker?.terminate();
+  heroWorker = null;
+  for (const { reject } of heroPending.values()) reject(new Error('Customize was closed.'));
+  heroPending.clear();
+}
+// The texture folders a hero's HD images come from: the Pokédex's.
+function heroFolders() {
+  const settings = { ...config.settings, textures: Boolean(config.repo && config.settings.textures && port.texturePackInstalled(config.repo, config.game)) };
+  const folders = port.texturePackFolders(settings, config.repo, customTextureDirectory());
+  return { folders, key: folders.join('\n') };
+}
+function heroAsk(message) {
+  if (!heroWorker) {
+    heroWorker = new Worker(path.join(__dirname, 'hero-look-worker.js'));
+    heroWorker.on('message', ({ id: request, error, result }) => {
+      const pending = heroPending.get(request);
+      if (!pending) return;
+      heroPending.delete(request);
+      if (error) pending.reject(new Error(error)); else pending.resolve(result);
+    });
+    heroWorker.on('error', error => { log(`Customize: ${error.message}`); heroStopWorker(); });
+    heroWorker.on('exit', () => { heroWorker = null; });
+  }
+  const request = ++heroRequest;
+  return new Promise((resolve, reject) => {
+    heroPending.set(request, { resolve, reject });
+    heroWorker.postMessage({ id: request, ...message });
+  });
+}
+
 let jukeboxWorker = null, jukeboxRequest = 0;
 const jukeboxPending = new Map();
 function jukeboxStopWorker() {
@@ -1506,6 +1545,13 @@ async function play(installation = null, battle = null) {
   const cacheFolder = path.join(app.getPath('userData'), 'game-cache');
   fs.mkdirSync(cacheFolder, { recursive: true });
   const { file: packsFile, own: packPokemon } = preparePlayPacks(rom, cacheFolder, battle);
+  // XD's story played as another hero: their field models, made once for the disc (hero-field.js)
+  const heroFields = chosen.id === 'xd' && supports('playAs') && !battle ? await makeFieldModels(rom) : null;
+  // the Customize page's hero for the story, played whatever hero the save was made with
+  const storyHero = !battle && supports('playAs') ? chosenStoryHero(chosen.id) : null;
+  if (storyHero) log(`The story plays as ${heroColors.hero(storyHero).label} (Customize).`);
+  // the heroes in their Customize colours in the story (an online battle has each player's own: hero-bake.js)
+  const storyColors = !battle && supports('customize') ? await makeStoryColors(rom, chosen.id, settings, root) : null;
   // The game's own Settings screen writes its changes here (src/game-settings.js), each as it is made: they are kept as
   // they come, while the game runs, and one left by a game that crashed is kept now
   const gameSettingsFile = path.join(cacheFolder, 'game-settings.json');
@@ -1519,6 +1565,8 @@ async function play(installation = null, battle = null) {
     ...(supports('gbaLink') ? gbaLink.environment(config.gba, settings, gbaBackupFolder()) : {}),
     ...(supports('quickMoves') ? { SMS_BUTTON_PROMPT_DIR: promptDirectory() } : {}),
     ...(supports('randomizer') ? { COLO_RANDOMIZER_LOG: spoilerFile() } : {}),
+    ...(heroFields ? { COLO_HERO_FIELD: heroFields } : {}),
+    ...(storyHero ? { COLO_PLAYER: storyHero } : {}),
     // The renderer's caches, in the launcher's own folder: its default place is shared with the Sunshine port's.
     // Another game's shaders are its own file.
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
@@ -1527,6 +1575,11 @@ async function play(installation = null, battle = null) {
     ...(battle ? { COLO_ONLINE: String(battle.port), COLO_SKIP_MOVIES: '1', COLO_NOCARD: '1' } : {}),
     ...(config.settings.discordPresence && supports('discordPresence') ? { COLO_PRESENCE: '1' } : {}),
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
+  // an online battle's players in their colours: the HD images made for them, read before the HD pack's
+  if (battle?.looks?.length && playEnv.SMS_TEXTURE_PACKS && playEnv.SMS_TEXTURE_PACKS !== '0') playEnv.SMS_TEXTURE_PACKS = [...battle.looks, playEnv.SMS_TEXTURE_PACKS].join(';');
+  // the story's heroes in their colours: their repainted textures, read before any other pack's (with no HD pack too)
+  if (storyColors && playEnv.SMS_TEXTURE_PACKS !== undefined)
+    playEnv.SMS_TEXTURE_PACKS = [storyColors, ...(playEnv.SMS_TEXTURE_PACKS && playEnv.SMS_TEXTURE_PACKS !== '0' ? [playEnv.SMS_TEXTURE_PACKS] : [])].join(';');
   const recordedTools = game.toolRoot(root, undefined, chosen.id);
   const env = recordedTools ? buildTools.environmentAtRoot(recordedTools, playEnv) : toolEnv(playEnv);
   const cmd = port.gameRunCommand(root, rom, process.platform, env, undefined, chosen.id);
@@ -1772,6 +1825,8 @@ function onlineFeatures(root, id = config.game) {
         crossplay: rules && (story || xd),
         // spectators' games, which play a room's battle from both players' lines (config side 2)
         spectate: bytes.includes(xd ? 'online: XD spectating' : 'online: spectating'),
+        // each player's hero in their colours (look lines)
+        looks: bytes.includes(xd ? 'online: XD side %d battles as hero' : 'battles as hero'),
         // the randomizer (host/randomizer.c), which XD's game has once it prints its run
         randomizer: bytes.includes('randomizer: seed '),
         // the randomizer's fourth generation
@@ -1785,7 +1840,7 @@ function onlineFeatures(root, id = config.game) {
     return onlineBinary;
   } catch (_) {
     return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false,
-      randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false };
+      looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false };
   }
 }
 
@@ -1944,6 +1999,98 @@ function gameBuild(cross = false) {
   return { build: cross ? online.crossBuildId(installedBuild) : online.buildId(installedBuild), version, launcher: app.getVersion() };
 }
 
+// Who the player battles online as (src/hero-bake.js): the Customize page's hero for online battles, else their save's,
+// in that hero's colours. Made ahead, so that their own look is ready when a battle starts. Null where there are no
+// heroes to customize (XD's disc has none of Colosseum's).
+function playerLook() {
+  if (!supports('customize')) return null;
+  let looks;
+  try { looks = heroLook.readLooks(app.getPath('userData')); } catch (_) { return null; }
+  const look = heroBake.onlineLook(looks, saveHero(), heroColors.heroesFor(config.game).map(hero => hero.id));
+  if (look && heroBake.painted(look) && onlineFeatures(config.repo).looks) makeLooks([look]).catch(() => {});
+  return look;
+}
+
+// The story's heroes in their Customize colours (hero-story.js, in a worker): the folder of their repainted textures, or
+// null (none has colours, or they couldn't be made: the story then shows the heroes' own). `settings` and `root` are
+// the launch's, whose texture packs (the HD pack's images) are repainted too.
+function makeStoryColors(rom, game, settings, root) {
+  let looks;
+  try { looks = heroLook.readLooks(app.getPath('userData')); } catch (_) { return Promise.resolve(null); }
+  if (!heroStory.paintedHeroes(looks, game).length) return Promise.resolve(null);
+  const folders = port.texturePackFolders({ ...settings, textures: Boolean(settings.textures && port.texturePackInstalled(root, game)) }, root, customTextureDirectory());
+  const worker = new Worker(path.join(__dirname, 'hero-story-worker.js'), { workerData: { rom, game, looks, folders, root: path.join(app.getPath('userData'), 'story-heroes') } });
+  return new Promise(resolve => {
+    const done = folder => { resolve(folder); worker.terminate(); };
+    worker.once('message', ({ folder, error }) => {
+      if (error) log(`The heroes' colours couldn't be made for the story (${error}); it shows their own.`);
+      else if (folder) log('The story shows the heroes in their Customize colours.');
+      done(error ? null : folder);
+    });
+    worker.once('error', error => { log(`The heroes' colours couldn't be made for the story (${error.message}).`); done(null); });
+  });
+}
+
+// The hero the Customize page says every story save plays as in `game`, or null (each save's own)
+function chosenStoryHero(game) {
+  try { return heroColors.storyHero(heroLook.readLooks(app.getPath('userData')), game); } catch (_) { return null; }
+}
+
+// The hero the player's save plays as (the game's own stamp in it): Colosseum's Wes, or XD's Michael, for a save without
+// one or no save.
+function saveHero() {
+  if (config.game === 'xd') {
+    try {
+      const pack = xdSave.newestPack(fs.readFileSync(path.join(currentSaveDirectory(), storyParty.XD_SAVE)));
+      return pack ? heroBake.stampedHero(pack.plain, { at: xdSave.stampAt(pack.plain) + heroBake.XD_HERO_STAMP, none: 'michael' }) : 'michael';
+    } catch (_) { return 'michael'; }
+  }
+  if (!supports('customize')) return 'wes';
+  try { return heroBake.stampedHero(gciSave.newestPlain(fs.readFileSync(path.join(currentSaveDirectory(), storyParty.SAVE))).plain); }
+  catch (_) { return 'wes'; }
+}
+
+// XD's heroes' field models, made in a worker (hero-field-worker.js): their folder, or null (the story is then Michael's).
+function makeFieldModels(rom) {
+  const worker = new Worker(path.join(__dirname, 'hero-field-worker.js'), { workerData: { rom, root: path.join(app.getPath('userData'), 'hero-field') } });
+  return new Promise(resolve => {
+    const done = value => { resolve(value); worker.terminate(); };
+    worker.once('message', ({ folder, error }) => {
+      if (error) log(`The heroes' field models for XD couldn't be made: ${error}`);
+      done(folder || null);
+    });
+    worker.once('error', error => { log(`The heroes' field models for XD couldn't be made: ${error.message}`); done(null); });
+  });
+}
+
+// The players' looks made in a worker (hero-bake-worker.js): [{ file, hd } or null] in the order of `looks`.
+function makeLooks(looks) {
+  const { folders } = heroFolders();
+  const worker = new Worker(path.join(__dirname, 'hero-bake-worker.js'), { workerData: {
+    rom: port.validateRom(config.rom, config.game), game: config.game, folder: path.join(app.getPath('userData'), 'online-heroes'), folders, looks } });
+  return new Promise((resolve, reject) => {
+    worker.once('message', ({ made, error }) => { if (error) reject(new Error(error)); else resolve(made); worker.terminate(); });
+    worker.once('error', reject);
+    worker.once('exit', code => reject(new Error(`The heroes weren't made (${code}).`)));
+  });
+}
+
+// A battle's start, made ready for this game (the Session's dress): each player's hero from their look, those in their
+// own colours made from this disc. A game from before looks gets none.
+async function dressPlayers(start) {
+  if (!supports('customize') || !onlineFeatures(config.repo).looks) return { lines: [], folders: [] };
+  // a hero this game's disc hasn't (XD's Michael, in Colosseum) leaves that player as the game's own trainer
+  const looks = (start.players || []).slice(0, 2).map(player => heroBake.normalizeLook(player?.look))
+    .map(look => look && heroColors.heroIn(look.hero, config.game) ? look : null);
+  const painted = looks.map(look => look && heroBake.painted(look) ? look : null);
+  let made = [null, null];
+  if (painted.some(Boolean)) {
+    try { made = await makeLooks(painted); }
+    catch (error) { log(`Online: the players' colours couldn't be made (${error.message}); they battle in their heroes' own.`); }
+  }
+  return { lines: heroBake.lookLines(looks, made), folders: [...new Set(made.flatMap(each => each?.hd ? [each.hd] : []))] };
+}
+
 // The session's view of what the game can do in a room (src/online.js Session features).
 function sessionFeatures(cross) {
   const features = onlineFeatures(config.repo);
@@ -2013,7 +2160,7 @@ async function playBattle(session) {
     else if (!await session.again()) return;
     // the room's battle rules: Platinum's need their file made for the game (preparePlayPacks)
     const rules = () => session.start?.rules || (battle?.session === session ? battle.rules : null);
-    do await exclusive(playLabel(), () => play(null, { port: gamePort, rules: rules() }), true);
+    do await exclusive(playLabel(), () => play(null, { port: gamePort, looks: session.looks, rules: rules() }), true);
     while (await session.again());
   } finally {
     session.close();
@@ -2095,13 +2242,13 @@ async function createRoom() {
   // a game from before timers would play without them: the room says so
   const rules = onlineFeatures(config.repo).timers ? parties.roomRules(setup) : formats.withoutTimers(parties.roomRules(setup));
   const chosen = partyFor(rules, { cross });
-  const session = new online.Session({ features: sessionFeatures(cross) });
+  const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   battleResult = null;
   battle = { session, status: 'connecting', role: 'host', rules, bestOf: setup.bestOf, code: null, opponent: null };
   broadcastOnline();
   watchSession(session);
   try {
-    battle.code = await session.host({ name: setup.trainer, ...gameBuild(cross), ...chosen, rules, bestOf: setup.bestOf, listed: setup.listed });
+    battle.code = await session.host({ name: setup.trainer, ...gameBuild(cross), ...chosen, look: playerLook(), rules, bestOf: setup.bestOf, listed: setup.listed });
   } catch (error) {
     session.close();
     battle = null;
@@ -2125,13 +2272,13 @@ async function joinRoom(input) {
   if (info.status !== 'waiting') throw new Error('That battle has already started.');
   const cross = online.isCrossBuild(info.build);
   if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
-  const session = new online.Session({ features: sessionFeatures(cross) });
+  const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   const rules = formats.normalize(info.rules || {});
   const chosen = partyFor(rules, { cross });
   battle = { session, status: 'connecting', role: 'joiner', rules, bestOf: info.bestOf || 1, code, opponent: info.name };
   broadcastOnline();
   watchSession(session);
-  try { await session.join({ code, name: setup.trainer, ...gameBuild(cross), ...chosen }); }
+  try { await session.join({ code, name: setup.trainer, ...gameBuild(cross), ...chosen, look: playerLook() }); }
   catch (error) {
     session.close();
     battle = null;
@@ -2157,7 +2304,7 @@ async function watchRoom(input) {
   if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
   // the spectator's game plays the players' battle, so it has to be the very same build
   if (gameBuild(cross).build !== info.build) throw new Error(`That battle is on another version of the game (${info.version || 'unknown'}). Watching needs the same version.`);
-  const session = new online.Session({ features: sessionFeatures(cross) });
+  const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   const players = Array.isArray(info.players) ? info.players : [info.name, null];
   battle = { session, status: 'connecting', role: 'watcher', rules: formats.normalize(info.rules || {}), bestOf: info.bestOf || 1, code, opponent: null, players };
   broadcastOnline();
@@ -2482,6 +2629,21 @@ function registerHandlers() {
     const look = pokedexLook(key, String(form));
     return withHdTextures(look.pkx ? hsdModel.parseModel(look.pkx) : pokedexData.model(port.validateRom(config.rom, config.game), look.national, String(form)));
   });
+  // The Customize page: a hero's model with its textures sorted into colour regions, and the colours chosen.
+  ipcMain.handle('hero-model', (_event, id, kind) => {
+    requireFeature('customize', 'Customize');
+    return heroAsk({ rom: port.validateRom(config.rom, config.game), game: config.game, hero: String(id), kind: kind === 'stand' ? 'stand' : 'battle', ...heroFolders() });
+  });
+  ipcMain.handle('hero-clip', (_event, id, motion, wesMoves) => {
+    requireFeature('customize', 'Customize');
+    return heroAsk({ rom: port.validateRom(config.rom, config.game), game: config.game, hero: String(id), motion: String(motion), wesMoves: Boolean(wesMoves) });
+  });
+  ipcMain.handle('hero-close', () => heroStopWorker());
+  // with the hero the save plays as, whom the player battles online as until they choose one
+  // and the game whose heroes the page shows (its disc's)
+  ipcMain.handle('hero-looks', () => ({ ...heroLook.readLooks(app.getPath('userData')), saveHero: saveHero(), game: config.game,
+    heroes: heroColors.heroesFor(config.game).map(hero => hero.id) }));
+  ipcMain.handle('save-hero-looks', (_event, looks) => heroLook.saveLooks(app.getPath('userData'), looks));
   ipcMain.handle('pokedex-cry', (_event, key) => {
     const own = String(key).startsWith('pack:') ? pokedexPacks.get(String(key).slice('pack:'.length))?.ownCry : null;
     if (own) return own;

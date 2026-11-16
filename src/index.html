@@ -33,6 +33,7 @@
       <button id="nav-play" class="nav-tab active" aria-current="page"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 4.5v11l9-5.5z"/></svg><span>Play</span></button>
       <button id="nav-saves" class="nav-tab" title="Saved games"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h10l3 3v11H4z"/><path d="M7 3v4h6V3M7 17v-5h7v5"/></svg><span>Saves</span></button>
       <button id="nav-pokedex" class="nav-tab" data-feature="pokedex" title="Browse every Pokémon on your disc"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h5M12.5 10h5"/><circle cx="10" cy="10" r="2.5"/></svg><span>Pokédex</span></button>
+      <button id="nav-customize" class="nav-tab" data-feature="customize" title="Choose each hero's colours, on their model from your disc"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="5.5" r="2.8"/><path d="M4.5 17.5c.4-4 2.6-6.5 5.5-6.5s5.1 2.5 5.5 6.5"/></svg><span>Customize</span></button>
       <button id="nav-jukebox" class="nav-tab" data-feature="jukebox" title="Listen to the game's music from your disc"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 14.5V5l8-1.8v9.3"/><circle cx="6" cy="14.5" r="2.2"/><circle cx="14" cy="12.5" r="2.2"/></svg><span>Jukebox</span></button>
       <button id="nav-online" class="nav-tab" data-feature="online" title="Battle other players online"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.2 2 3.2 4.6 3.2 7.5s-1 5.5-3.2 7.5c-2.2-2-3.2-4.6-3.2-7.5s1-5.5 3.2-7.5z"/></svg><span>Online</span></button>
       <span class="nav-spacer" aria-hidden="true"></span>
@@ -199,6 +200,34 @@
           </div>
         </div>
       </section>
+      <section id="page-customize" class="page sheet pokedex-page customize-page" aria-labelledby="customize-title" hidden>
+        <div class="modal-head"><div><h1 id="customize-title">Customize</h1><p>Each hero's colours, on their model from your disc. The story shows your heroes in these colours, and online battles show you as your hero in them.</p></div></div>
+        <div class="customize-body">
+          <div id="customize-heroes" class="customize-heroes" role="tablist" aria-label="Heroes"></div>
+          <div class="pokedex-stage-wrap customize-stage-wrap">
+            <canvas id="customize-stage" class="pokedex-stage" tabindex="0" aria-label="The hero's model. Drag or use the arrow keys to turn it, scroll to zoom."></canvas>
+            <div id="customize-status" class="pokedex-status" role="status" hidden><span class="pokedex-loader" aria-hidden="true"></span><span id="customize-status-text"></span><button id="customize-retry" class="solid" hidden>Try again</button></div>
+            <div class="pokedex-stage-controls customize-stage-controls"><label><span>Motion</span><select id="customize-motion"></select></label>
+              <label id="customize-wes-moves-field" class="customize-wes-moves" title="Play every motion as Wes moves, on this hero"><input id="customize-wes-moves" type="checkbox"><span>Wes's moves</span></label></div>
+            <p id="customize-motion-note" class="customize-motion-note" hidden></p>
+            <div class="customize-playback"><button id="customize-play" class="subtle" type="button">Pause</button><input id="customize-frame" type="range" min="0" max="0" value="0" aria-label="Frame of the motion"><span id="customize-frame-text" class="customize-frame-text"></span></div>
+          </div>
+          <div class="customize-panel">
+            <div class="customize-heading"><h2 id="customize-name"></h2><small id="customize-from"></small></div>
+            <div class="customize-online-row"><button id="customize-online" class="subtle customize-online" type="button"></button>
+              <p id="customize-online-note" class="helper customize-online-note"></p></div>
+            <div class="customize-online-row"><div class="customize-story-buttons"><button id="customize-story" class="subtle customize-online" type="button"></button>
+              <button id="customize-story-clear" class="subtle" type="button" hidden>Use each save's own hero</button></div>
+              <p id="customize-story-note" class="helper customize-online-note"></p></div>
+            <h3 class="customize-label">Presets</h3>
+            <div id="customize-presets" class="pokedex-filters customize-presets" role="group" aria-label="Presets"></div>
+            <h3 class="customize-label">Colours</h3>
+            <div id="customize-regions" class="customize-regions"></div>
+            <button id="customize-reset" class="subtle customize-reset" type="button">Reset all colours</button>
+            <p id="customize-hd" class="helper" hidden>Shown with the HD texture pack's images.</p>
+          </div>
+        </div>
+      </section>
       <section id="page-saves" class="page sheet saves-page" aria-labelledby="saves-title" hidden>
       <div class="modal-head"><div><h1 id="saves-title">Saves</h1><p>Your saved games and their backups.</p></div></div>
       <div class="modal-body">
@@ -258,6 +287,7 @@
               <label data-feature="hdText" class="field"><span>Text<small>HD draws the game's fonts sharp from the Inter typeface. Upscaled keeps their original look, enlarged.</small></span><select id="hdText"><option value="on">HD</option><option value="upscaled">Upscaled</option><option value="off">As on the disc</option></select></label>
               <label data-feature="shiny" class="switch"><span><strong>Show shiny Shadow Pokémon</strong><small id="shiny-shadow-note">A Shadow Pokémon looks shiny in battle if it will be shiny once you snag it. That's decided when you first meet it in battle, and it stays the same if you lose or battle it again. Only resetting to a save from before you met it gives a new chance.</small></span><input id="shinyShadow" type="checkbox"><i></i></label>
               <label data-feature="shinyStarters" class="switch"><span><strong>Shiny starters</strong><small>Espeon and Umbreon can be shiny, at 1 in 8192 as in other Pokémon games; the original never makes them shiny. From your next New Game.</small></span><input id="shinyStarters" type="checkbox"><i></i></label>
+              <label data-feature="playAs" class="switch"><span><strong>Choose your hero</strong><small>A New Game asks who you will play as before you enter your name: the game's own hero (Wes, or Michael in XD), or Brendan, May, Red or Leaf, the Game Boy Advance heroes Colosseum's Mt. Battle shows, and in XD Wes too. Your hero walks the story and battles in the game's hero's place, and the save remembers who you chose. The opening, the movies and the P★DA still show the game's own hero. Online, you battle as the hero you choose on the Customize page.</small></span><input id="chooseHero" type="checkbox"><i></i></label>
               <label data-feature="starters" class="switch"><span><strong id="choose-starters-title">Choose starters</strong><small id="choose-starters-note">After you enter your name for a New Game, the game asks whether to begin with Espeon and Umbreon. Say No to pick any two Pokémon instead, at the same levels. A randomized game that randomizes the starters doesn't ask.</small></span><input id="chooseStarters" type="checkbox"><i></i></label>
               <label data-feature="tmNames" class="switch"><span><strong>TMs by move name</strong><small>The bag and shops list a TM by the move it teaches, such as Thunderbolt, instead of TM24. Its number shows above the description box.</small></span><input id="tmNames" type="checkbox"><i></i></label>
               <label data-feature="languagePacks" class="field"><span>Language<small>The game's text, menus and title cards in French, German, Spanish or Italian, from the European release. A language downloads the first time you play with it.</small></span><select id="language"></select></label>
@@ -570,6 +600,8 @@
   <script src="play-stage.js"></script>
   <script src="renderer.js"></script>
   <script type="module" src="pokedex-page.js"></script>
+  <script src="hero-colors.js"></script>
+  <script type="module" src="customize-page.js"></script>
   <script src="room-poll.js"></script>
   <script src="team-sets.js"></script>
   <script src="gen3-learnsets.js"></script>
