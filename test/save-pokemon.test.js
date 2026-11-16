@@ -38,7 +38,8 @@ function colosseumCard(dir, copies, extra = null) {
         const [box, slot] = where.split(':').map(Number);
         if (box < 3) p.copy(plain, 0xb90 + box * 0x24a4 + 0x14 + slot * 0x138);
       }
-      for (let n = 1; n <= 0x43; n++) plain.writeUInt16BE(20, 0x1b4ac + 0x18 * n + 0x16);  // heart max 20 (x100)
+      // as a new game makes the Shadow block: heart max 20 (x100), never met (order 0xFFFF)
+      for (let n = 1; n <= 0x60; n++) { plain.writeUInt16BE(20, 0x1b4ac + 0x18 * n + 0x16); plain.writeUInt16BE(0xffff, 0x1b4ac + 0x18 * n + 0x14); }
       for (const [kind, ids] of Object.entries(copy.flags || {})) for (const n of ids) {
         const { at, mask } = sp.colosseumFlag(plain, kind, n);
         plain.writeUInt32BE((plain.readUInt32BE(at) | mask) >>> 0, at);
@@ -107,23 +108,69 @@ test('Colosseum: taking from the party closes the gap in every copy of the save'
   assert.equal(gciSave.newestPlain(fs.readFileSync(path.join(dir, 'pokemon_colosseum.dat'))).count, 3);
 });
 
-test('Colosseum: giving fills the party, then the boxes, marks the id snagged and keeps the gauge in range', t => {
+test('Colosseum: a received Shadow gets an entry of its own, in the party, then the boxes', t => {
   const dir = folder(t);
-  colosseumCard(dir, [{ party: [UMBREON] }]);
+  colosseumCard(dir, [{ party: [UMBREON], flags: { met: [2] } }]);
   const big = Buffer.from(BAYLEEF); big.writeInt32BE(9000, 0xdc);
   const done = sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, big));
-  assert.deepEqual([done.area, done.slot], ['party', 1]);
+  assert.deepEqual([done.area, done.slot, done.entry], ['party', 1, 0x2d], 'the first spare id');
   let save = sp.readCard(dir, 'colosseum');
-  assert.equal(save.party[1].nickname, 'BAYLEEF');
-  assert.equal(save.party[1].trainer, 0x5555, 'the original trainer stays');
-  assert.equal(save.party[1].heart, 2000, 'within this save\'s gauge for the id');
-  assert.equal(save.shadows[2].snagged, true);
-  assert.equal(save.shadows[2].purified, false);
+  const bayleef = save.party[1];
+  assert.deepEqual([bayleef.nickname, bayleef.shadowId, bayleef.traded, bayleef.storyId], ['BAYLEEF', 0x2d, true, 2]);
+  assert.equal(bayleef.trainer, 0x5555, 'the original trainer stays');
+  assert.equal(bayleef.heart, 2000, 'within this save\'s gauge size for its story id');
+  assert.equal(bayleef.heartPercent, 100);
+  const { plain } = sp.cardCopies(dir, 'colosseum').copies[0].ctx;
+  const record = 0x1b4ac + 0x18 * 0x2d;
+  assert.deepEqual([plain.readUInt16BE(record + 0x10), plain[record + 0x12], plain.readUInt16BE(record + 0x16)], [153, 2, 20]);
+  assert.deepEqual(['met', 'snagged', 'purified', 'isNew'].map(kind => sp.colosseumFlag(plain, kind, 0x2d).set), [true, true, false, true]);
+  assert.deepEqual([save.shadows[2].met, save.shadows[2].snagged], [true, false], 'the story id\'s own flags untouched');
   assert.equal(sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, big)).already, true, 'a repeat changes nothing');
+  const another = Buffer.from(BAYLEEF); another.writeUInt32BE(0x77, 4);
+  assert.equal(sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, another)).entry, 0x2e, 'two of one story id: two entries');
   colosseumCard(dir, [{ party: [UMBREON, ESPEON, UMBREON, ESPEON, UMBREON, ESPEON].map((p, i) => { const c = Buffer.from(p); c.writeUInt32BE(i + 100, 4); return c; }) }]);
   assert.deepEqual(['box', 0, 0], Object.values(sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, BAYLEEF))).slice(0, 3));
   save = sp.readCard(dir, 'colosseum');
   assert.equal(save.boxes[0].pokemon[0].nickname, 'BAYLEEF');
+});
+
+test('Colosseum: a traded-in Shadow goes out as its story id, and its entry is free again; a purified one gives its entry up', t => {
+  const dir = folder(t);
+  colosseumCard(dir, [{ party: [UMBREON] }]);
+  sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, BAYLEEF));
+  const save = sp.readCard(dir, 'colosseum');
+  const out = sp.editCard(dir, 'colosseum', ctx => sp.takeFrom(ctx, save.party[1], save.party[1]));
+  assert.equal(out.entry, 0x2d);
+  assert.equal(out.bytes.readUInt16BE(0xd8), 2, 'sent as story id 2');
+  let { plain } = sp.cardCopies(dir, 'colosseum').copies[0].ctx;
+  assert.equal(plain[0x1b4ac + 0x18 * 0x2d + 0x12], 0);
+  assert.equal(sp.colosseumFlag(plain, 'snagged', 0x2d).set, false);
+  // give one, purify it (gauge -100, as the game does), give another: same entry, the purified one is a normal Pokémon
+  sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, BAYLEEF));
+  sp.editCard(dir, 'colosseum', ctx => { const at = 0xa8 + 0x138; ctx.plain.writeInt32BE(-100, at + 0xdc); return { changed: true }; });
+  const second = Buffer.from(MAKUHITA); second.writeUInt32BE(0x5555, 0x14);
+  assert.equal(sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, second)).entry, 0x2d);
+  const after = sp.readCard(dir, 'colosseum');
+  assert.deepEqual(after.party.filter(Boolean).map(p => [p.nickname, p.shadowId, p.shadow]), [['UMBREON', 0, false], ['BAYLEEF', 0, false], ['MAKUHITA', 0x2d, true]]);
+});
+
+test('Colosseum: past the save\'s 48 entries they go to the file beside it, which the save names', t => {
+  const dir = folder(t);
+  colosseumCard(dir, [{ party: [UMBREON] }]);
+  // every spare id taken by someone else (an e-Reader card's): not usable
+  sp.editCard(dir, 'colosseum', ctx => { for (let id = 1; id <= 0x60; id++) ctx.plain.writeUInt16BE(5, 0x1b4ac + 0x18 * id + 0x10); return { changed: true }; });
+  const done = sp.editCard(dir, 'colosseum', ctx => sp.giveTo(ctx, BAYLEEF));
+  assert.equal(done.entry, 0x100);
+  assert.ok(fs.existsSync(path.join(dir, 'pokemon_colosseum.shadows')));
+  const copy = sp.cardCopies(dir, 'colosseum').copies[0].ctx;
+  assert.equal(copy.sideMissing, false);
+  assert.equal(copy.side.length, 0x10);
+  assert.deepEqual([copy.side[0], copy.side[1], copy.side.readUInt16BE(4), copy.side.readUInt16BE(6)], [0x0b, 2, 153, 20]);
+  const save = sp.readCard(dir, 'colosseum');
+  assert.deepEqual([save.party[1].shadowId, save.party[1].traded, save.party[1].storyId], [0x100, true, 2]);
+  const out = sp.editCard(dir, 'colosseum', ctx => sp.takeFrom(ctx, save.party[1], save.party[1]));
+  assert.equal(out.bytes.readUInt16BE(0xd8), 2);
+  assert.equal(sp.cardCopies(dir, 'colosseum').copies[0].ctx.side.length, 0, 'none in use: the save names none');
 });
 
 test('Colosseum: boxes 4 to 10 are edited in the .boxes file, named by a new stamp', t => {
@@ -142,14 +189,14 @@ test('Colosseum: boxes 4 to 10 are edited in the .boxes file, named by a new sta
   assert.equal(pcBoxes.extraBoxPokemon(dir, gciSave.newestPlain(fs.readFileSync(path.join(dir, 'pokemon_colosseum.dat'))).plain), 0);
 });
 
-test('Colosseum: a save takes story ids it hasn\'t purified and doesn\'t hold', () => {
-  const shadows = Object.fromEntries(sp.COLOSSEUM_STORY_IDS.map(n => [n, { purified: n === 3 }]));
-  const save = { game: 'colosseum', party: [{ shadow: true, shadowId: 1 }, { shadow: false, shadowId: 2 }], boxes: [{ pokemon: [{ shadow: true, shadowId: 4 }] }], shadows };
-  const accepts = sp.shadowAccepts(save);
-  assert.ok(!accepts.includes(1) && !accepts.includes(4), 'held');
-  assert.ok(!accepts.includes(3), 'purified');
-  assert.ok(accepts.includes(2) && accepts.includes(0x43));
-  assert.ok(!accepts.includes(0x30), 'e-Reader ids never');
+test('a save takes every story id while it has an entry free', t => {
+  const dir = folder(t);
+  colosseumCard(dir, [{ party: [UMBREON, MAKUHITA], flags: { purified: [3] } }]);
+  const { ctx } = sp.cardCopies(dir, 'colosseum').copies[0];
+  const accepts = sp.shadowAccepts(sp.model(ctx), ctx);
+  assert.equal(accepts.length, 48);
+  assert.ok(accepts.includes(1) && accepts.includes(3), 'held or purified: a received one has its own entry');
+  assert.ok(!accepts.includes(0x30), 'only story ids travel');
 });
 
 // ---- XD ----
@@ -205,34 +252,51 @@ test('reads an XD save, its Shadow records and the rule for what it takes', t =>
   assert.equal(save.party[1].shadow, true);
   assert.equal(save.party[1].heart, 1200);
   assert.equal(sp.offerProblem(save, save.party[1]), null);
-  assert.deepEqual(sp.shadowAccepts(save), [2, 3], 'missed, or traded away with none left; not held, purified or only met');
+  assert.equal(sp.shadowAccepts(save).length, 82, 'every story id but XD-001');
+  assert.ok(!sp.shadowAccepts(save).includes(73));
 });
 
-test('XD: a trade out marks the record traded away; one in gets a merged record', t => {
+test('XD: a trade out marks the record traded away; one in gets an entry with a merged record', t => {
   const dir = folder(t);
   xdCard(dir, { party: [EEVEE, TEDDIURSA], records: { 1: { status: 3, where: 1, heart: 1200, species: 216 }, 2: { status: 2, species: 217, index: 9 } } });
   const out = sp.editCard(dir, 'xd', ctx => sp.takeFrom(ctx, { species: 216, rnd: 0x77, trainer: XD_OT }, { area: 'party', box: 0, slot: 1 }));
   assert.equal(out.record.readInt32BE(0x24), 1200);
+  assert.equal(out.entry, null, 'a story Shadow: sent as it is');
   let save = sp.readCard(dir, 'xd');
   assert.deepEqual(save.party.filter(Boolean).map(p => p.nickname), ['EEVEE']);
   assert.deepEqual(save.shadows[1], { status: 3, where: 5, species: 216 });
-  // another player's Ursaring (id 2) arrives, with their record
+  // another player's Ursaring (story id 2) arrives, with their record
   const theirs = xdPokemon({ species: 217, rnd: 0x88, trainer: 0x4444, nickname: 'URSARING', shadowId: 2 });
-  const record = Buffer.alloc(0x48); record.writeUInt32BE((3 << 29 | 1 << 22 | 4 << 15) >>> 0, 0); record.writeInt32BE(777, 0x24); record[0x40] = 3;
+  const record = Buffer.alloc(0x48); record.writeUInt32BE((3 << 29 | 1 << 22 | 4 << 15) >>> 0, 0); record.writeInt32BE(777, 0x24); record[0x40] = 3; record.writeUInt16BE(2, 0x3e);
   const into = sp.editCard(dir, 'xd', ctx => sp.giveTo(ctx, theirs, record));
-  assert.deepEqual([into.area, into.slot], ['party', 1]);
+  assert.deepEqual([into.area, into.slot, into.entry], ['party', 1, 0x54]);
   save = sp.readCard(dir, 'xd');
-  assert.equal(save.party[1].nickname, 'URSARING');
-  assert.equal(save.party[1].shadow, true);
+  assert.deepEqual([save.party[1].nickname, save.party[1].shadowId, save.party[1].shadow, save.party[1].storyId], ['URSARING', 0x54, true, 2]);
   assert.equal(save.party[1].heart, 777, 'their heart gauge');
-  assert.deepEqual(save.shadows[2], { status: 3, where: 1, species: 217 });
+  assert.deepEqual(save.shadows[2], { status: 2, where: 0, species: 217 }, 'the story id\'s own record untouched');
   const { copies } = sp.cardCopies(dir, 'xd');
-  const rec = copies[0].ctx.plain.subarray(xdSave.BODY + SECTIONS.darkPokemon + 2 * 0x48);
+  const rec = copies[0].ctx.plain.subarray(xdSave.BODY + SECTIONS.darkPokemon + 0x54 * 0x48);
+  assert.equal(rec[0] >> 5, 3, 'snagged');
+  assert.equal((rec.readUInt32BE(0) >>> 15) & 7, 1, 'in the party');
+  assert.deepEqual([rec.readUInt16BE(0x3e), rec.readUInt16BE(0x1a), rec[0x43]], [0x54, 217, 2]);
   assert.equal(rec[0x40], 3, 'Hyper chance pattern');
   assert.ok(rec.readUInt32BE(0) & (1 << 22), 'Hyper Mode kept');
-  assert.equal((rec.readUInt32BE(0) >>> 23) & 3, 2, 'marked as traded in');
-  assert.equal(rec[0x13], 9, 'met before: its order kept');
   assert.equal(copies.length, 2, 'both copies changed and valid');
+  // and out again: as story id 2, its record traded away; the entry is clear
+  const back = sp.editCard(dir, 'xd', ctx => sp.takeFrom(ctx, save.party[1], save.party[1]));
+  assert.deepEqual([back.entry, back.bytes.readUInt16BE(0xba), back.record.readUInt16BE(0x3e), back.record[0x43], (back.record.readUInt32BE(0) >>> 15) & 7], [0x54, 2, 2, 0, 5]);
+  const cleared = sp.cardCopies(dir, 'xd').copies[0].ctx.plain.subarray(xdSave.BODY + SECTIONS.darkPokemon + 0x54 * 0x48);
+  assert.deepEqual([cleared[0], cleared.readUInt16BE(0x1a), cleared.readUInt16BE(0x3e)], [0, 0x118, 0x54]);
+});
+
+test('a cancelled trade\'s own story Shadow goes back as it was, never onto an entry', t => {
+  const dir = folder(t);
+  xdCard(dir, { party: [EEVEE, TEDDIURSA], records: { 1: { status: 3, where: 1, heart: 1200, species: 216 } } });
+  const out = sp.editCard(dir, 'xd', ctx => sp.takeFrom(ctx, { species: 216, rnd: 0x77, trainer: XD_OT }, { area: 'party', box: 0, slot: 1 }));
+  sp.editCard(dir, 'xd', ctx => sp.restoreTo(ctx, out.bytes));
+  const save = sp.readCard(dir, 'xd');
+  assert.deepEqual([save.party[1].shadowId, save.party[1].traded || false, save.party[1].heart], [1, false, 1200]);
+  assert.deepEqual(save.shadows[1], { status: 3, where: 1, species: 216 });
 });
 
 test('the real saves, when they are here, read and edit back cleanly', t => {
@@ -250,13 +314,28 @@ test('the real saves, when they are here, read and edit back cleanly', t => {
   assert.equal(after.party.find(p => p?.shadow).heart, teddiursa.heart);
 });
 
-test('what a save takes counts the Pokémon it is sending as gone', () => {
-  const teddiursa = { key: 't', area: 'party', box: 0, slot: 1, shadow: true, shadowId: 1 };
-  const xd = { game: 'xd', party: [{ key: 'e', shadowId: 0 }, teddiursa], boxes: [], shadows: { 1: { status: 3, where: 1 }, 2: { status: 1 } } };
-  assert.deepEqual(sp.shadowAccepts(xd), []);
-  assert.deepEqual(sp.acceptsAfterTaking(xd, null, teddiursa), [1], 'traded away: one can come back');
-  const shadows = Object.fromEntries(sp.COLOSSEUM_STORY_IDS.map(n => [n, { purified: false }]));
-  const colosseum = { game: 'colosseum', party: [{ key: 'u', shadowId: 0 }, { ...teddiursa }], boxes: [], shadows };
-  assert.ok(!sp.shadowAccepts(colosseum).includes(1));
-  assert.ok(sp.acceptsAfterTaking(colosseum, null, teddiursa).includes(1));
+test('the game\'s own saves with 100 traded-in Shadows, when they are here: one more goes to the next free entry', t => {
+  const root = '/mnt/10tbhdd/colosseum-port/shadowtrade-work/fixtures';
+  for (const [name, game, file] of [['colosseum-100', 'colosseum', 'pokemon_colosseum'], ['xd-100', 'xd', 'PokemonXD']]) {
+    if (!fs.existsSync(path.join(root, name, `${file}.dat`))) { t.diagnostic(`no ${name}`); continue; }
+    const dir = folder(t);
+    for (const each of fs.readdirSync(path.join(root, name))) fs.copyFileSync(path.join(root, name, each), path.join(dir, each));
+    const before = sp.cardCopies(dir, game).copies[0].ctx;
+    assert.equal(before.sideMissing, false, `${name}: the file beside the save is the save's`);
+    const traded = sp.allPokemon(sp.model(before)).filter(p => p.traded);
+    assert.ok(traded.length >= 100);
+    const last = Math.max(...traded.map(p => p.shadowId));
+    // a copy of one of them, as another player would send it: its story id, another personality
+    const sample = traded[0], found = sp.findPokemon(before, sample);
+    const record = game === 'xd' ? before.plain.subarray(before.sections.darkPokemon + sample.shadowId * 0x48, before.sections.darkPokemon + sample.shadowId * 0x48 + 0x48) : null;
+    const out = sp.outgoing(before, found.bytes, record);
+    out.bytes.writeUInt32BE(0x0badf00d, game === 'xd' ? 0x28 : 0x04);
+    // the one on the highest entry leaves (and frees its entry, and a slot)
+    sp.editCard(dir, game, ctx => { const victim = sp.allPokemon(sp.model(ctx)).find(p => p.traded && p.shadowId === last); return victim ? sp.takeFrom(ctx, victim, victim) : null; });
+    const done = sp.editCard(dir, game, ctx => sp.giveTo(ctx, out.bytes, out.record));
+    assert.equal(done.entry, last, `${name}: the entry just freed is the lowest free one`);
+    const after = sp.cardCopies(dir, game).copies[0].ctx;
+    assert.equal(after.sideMissing, false);
+    assert.equal(sp.allPokemon(sp.model(after)).filter(p => p.traded).length, traded.length, 'one out, one in');
+  }
 });

@@ -1706,6 +1706,23 @@ function trades() {
     fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view) });
   return shadowtradeTrades;
 }
+// Whether a game's installed build takes Shadowtrade: each received Shadow Pokémon on an entry of its own, past the
+// save's own tables too (host/shadowtrade.c). Earlier builds would read a received XD Shadow's entry as empty, so the
+// launcher trades only for a build that has it, by its log line in the game file.
+const shadowtradeBinaries = new Map();
+function shadowtradeReady(game) {
+  try {
+    const root = games.allFields(config)[game]?.repo;
+    if (!root || !binaryReady(root, game)) return false;
+    const file = binaryOf(root, game), { mtimeMs } = fs.statSync(file);
+    const known = shadowtradeBinaries.get(file);
+    if (known?.mtimeMs === mtimeMs) return known.ready;
+    const ready = fs.readFileSync(file).includes('shadowtrade: entries past the save');
+    shadowtradeBinaries.set(file, { mtimeMs, ready });
+    return ready;
+  } catch (_) { return false; }
+}
+
 function saveDirectoryOf(game) { return game === config.game ? currentSaveDirectory() : saves.saveDirectory(process.env, process.platform, game); }
 function saveRandomized(game) { try { return Boolean(saveRun(saveDirectoryOf(game), game).run); } catch (_) { return false; } }
 
@@ -1713,9 +1730,10 @@ function saveRandomized(game) { try { return Boolean(saveRun(saveDirectoryOf(gam
 // while that game isn't running, or null.
 function tradeAccess(game) {
   const randomized = saveRandomized(game);
+  if (!shadowtradeReady(game) && storyGame !== game) return null;
   if (storyGame === game) {
     const live = savePokemon.readLive(liveFile(game));
-    if (!live?.head.loaded) return null;
+    if (!live?.head.loaded || !(live.head.entries >= 2)) return null;
     let cardTrainerId = null;
     try { cardTrainerId = savePokemon.readCard(saveDirectoryOf(game), game)?.trainerId ?? null; } catch (_) { /* no card save: the game's is new */ }
     return shadowtrade.liveAccess({ game, liveDir: liveFolder(game), cardTrainerId, randomized, onWaiting: () => broadcast('shadowtrade-waiting', game) });
@@ -1743,6 +1761,10 @@ function pokemonPage() {
       notice = live ? 'Continue your save in the game to see its Pokémon as they are now and trade.'
         : 'This is your last save. This version of the game can\'t trade while it runs: update the game, or trade once it closes.';
     }
+  }
+  if (canTrade && model && !(source === 'live' ? live.head.entries >= 2 : shadowtradeReady(game))) {
+    canTrade = false;
+    notice = notice || (binaryReady(games.allFields(config)[game]?.repo, game) ? 'Update the game to use Shadowtrade: this version of it can\'t take a traded Shadow Pokémon.' : 'Set up the game to use Shadowtrade.');
   }
   if (model) {
     const each = pokemon => pokemon && { ...pokemon, tradeProblem: savePokemon.offerProblem(model, pokemon) };

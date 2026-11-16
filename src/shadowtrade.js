@@ -80,8 +80,13 @@ function cardAccess({ game, saveDir, randomized = false, backup = () => {} }) {
     },
     async give(data, record) {
       backup('before-shadowtrade');
-      const done = savePokemon.editCard(saveDir, game, ctx => savePokemon.giveTo(ctx, data, record) || null);
-      return done ? { ok: true, area: done.area, box: done.box, slot: done.slot, already: Boolean(done.already) } : { ok: false, code: 'full' };
+      const done = savePokemon.editCard(saveDir, game, ctx => savePokemon.giveTo(ctx, data, record));
+      return done && !done.refused ? { ok: true, area: done.area, box: done.box, slot: done.slot, entry: done.entry, already: Boolean(done.already) } : { ok: false, code: done?.refused || 'full' };
+    },
+    async restore(data) {
+      backup('before-shadowtrade');
+      const done = savePokemon.editCard(saveDir, game, ctx => savePokemon.restoreTo(ctx, data));
+      return done && !done.refused ? { ok: true, area: done.area, box: done.box, slot: done.slot, already: Boolean(done.already) } : { ok: false, code: done?.refused || 'full' };
     },
     has(identity) {
       const { copies } = savePokemon.cardCopies(saveDir, game);
@@ -156,6 +161,8 @@ function liveAccess({ game, liveDir, cardTrainerId, randomized = false, wait = m
       return command(`take ${place.area} ${place.box} ${place.slot} ${hex(identity.species)} ${hex(identity.rnd)} ${hex(identity.trainer)}`);
     },
     give(data, record) { return command(`give ${data.toString('hex')}${record ? ` record ${record.toString('hex')}` : ''}`); },
+    // one of the save's own story Shadows back as it was (a cancelled trade), needs a game with the return command
+    restore(data) { return command(`return ${data.toString('hex')}`); },
     has(identity) {
       const live = current();
       return Boolean(live?.ctx && savePokemon.findPokemon(live.ctx, identity));
@@ -222,9 +229,11 @@ class Shadowtrade {
       const found = savePokemon.findPokemon(read.ctx, identity, place);
       const record = access.game === 'xd' ? read.ctx.plain.subarray(read.ctx.sections.darkPokemon + pokemon.shadowId * savePokemon.XD.recordSize,
         read.ctx.sections.darkPokemon + (pokemon.shadowId + 1) * savePokemon.XD.recordSize) : null;
+      // what is sent: a traded-in one with its story id again (save-pokemon.js outgoing), as the game sends it too
+      const out = savePokemon.outgoing(read.ctx, found.bytes, record);
       const entry = { tradeId: crypto.randomBytes(16).toString('hex'), game: access.game, pool: access.pool, stage: 'taking', createdAt: Date.now(),
         trainerName: read.model.trainer, accepts: savePokemon.acceptsAfterTaking(read.model, read.ctx, pokemon),
-        sent: { data: b64(found.bytes), record: record ? b64(record) : null, identity, place, summary: summary(pokemon) } };
+        sent: { data: b64(out.bytes), record: out.record ? b64(out.record) : null, identity, place, summary: summary(pokemon), traded: Boolean(pokemon.traded) } };
       this.state.journal.push(entry);
       this.save();
       const taken = await access.take(identity, place);
@@ -249,7 +258,8 @@ class Shadowtrade {
     return { 'last-pokemon': 'You can\'t trade your last Pokémon that can battle: keep one in your party.', 'not-shadow': 'Only Shadow Pokémon can go to Shadowtrade.',
       lugia: 'XD-001 can\'t be traded.', full: 'Your party and PC boxes are full: make room for the Pokémon you\'ll receive.',
       save: 'The game couldn\'t save, so nothing was traded.', timeout: 'The game didn\'t reach a moment it could trade in: walk around in the field, outside menus and battles, and try again.',
-      invalid: 'The game refused the Pokémon received.', missing: 'That Pokémon isn\'t in the save any more.' }[result.code] || `The game couldn't trade (${result.code}${result.message ? `: ${result.message}` : ''}).`;
+      invalid: 'The game refused the Pokémon received. Update the game if Shadowtrade is new to it.',
+      entries: 'Your save holds as many traded-in Shadow Pokémon as it can: purify some, and the next one comes.', missing: 'That Pokémon isn\'t in the save any more.' }[result.code] || `The game couldn't trade (${result.code}${result.message ? `: ${result.message}` : ''}).`;
   }
 
   // Sends a taken Pokémon (again, if an answer was lost). Leaves it 'taken' when the server can't be reached.
@@ -279,7 +289,7 @@ class Shadowtrade {
     if (trade.status === 'cancelled' && trade.returned && ['taken', 'waiting'].includes(entry.stage)) {
       entry.stage = 'received';
       entry.received = { data: trade.returned.pokemon.data, record: trade.returned.pokemon.record || null, from: entry.trainerName, returned: true,
-        summary: entry.sent.summary };
+        own: !entry.sent.traded, summary: entry.sent.summary };
     }
   }
 
@@ -297,15 +307,16 @@ class Shadowtrade {
       const identity = { species: checked.data.readUInt16BE(0), rnd: checked.data.readUInt32BE(entry.game === 'xd' ? 0x28 : 0x04),
         trainer: checked.data.readUInt32BE(entry.game === 'xd' ? 0x24 : 0x14) };
       let record = checked.record;
-      if (entry.game === 'xd' && access.mode === 'live') {
+      if (entry.game === 'xd' && access.mode === 'live' && !entry.received.own) {
         // the game writes the record as given: merged here from this save's own (save-pokemon.js mergeXdRecord)
         const read = access.read();
         const at = read.ctx.sections.darkPokemon + checked.data.readUInt16BE(savePokemon.XD.at.shadow) * savePokemon.XD.recordSize;
         const party = read.model.party.filter(Boolean).length < savePokemon.PARTY_SIZE;
         record = savePokemon.mergeXdRecord(read.ctx.plain.subarray(at, at + savePokemon.XD.recordSize), checked.record, checked.data.readUInt16BE(savePokemon.XD.at.shadow),
-          { area: party ? 'party' : 'box', box: 0 }, read.ctx.plain.readUInt32BE(read.ctx.sections.hero + savePokemon.XD.meetCount));
+          { area: party ? 'party' : 'box', box: 0 }, read.ctx.plain[read.ctx.sections.hero + savePokemon.XD.meetCount]);
       }
-      const given = access.has(identity) ? { ok: true, already: true } : await access.give(checked.data, record);
+      const given = access.has(identity) ? { ok: true, already: true }
+        : entry.received.own ? await access.restore(checked.data) : await access.give(checked.data, record);
       if (!given.ok) {
         entry.stage = 'received';
         entry.message = this.commandError(given);
@@ -387,7 +398,7 @@ class Shadowtrade {
         try { reply = await this.post('cancel', { pool: entry.pool, tradeId }); } catch (error) {
           if (error.status !== 404) throw new Error(`The Shadowtrade server can't be reached, so it can't be cancelled yet: ${error.message}`);
           entry.stage = 'received';
-          entry.received = { data: entry.sent.data, record: entry.sent.record, from: entry.trainerName, returned: true, summary: entry.sent.summary };
+          entry.received = { data: entry.sent.data, record: entry.sent.record, from: entry.trainerName, returned: true, own: !entry.sent.traded, summary: entry.sent.summary };
         }
         if (reply) {
           if (entry.stage === 'taken') entry.stage = 'waiting';

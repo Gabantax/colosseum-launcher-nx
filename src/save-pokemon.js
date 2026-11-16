@@ -22,6 +22,8 @@ const path = require('node:path');
 const gciSave = require('./gci-save');
 const pcBoxes = require('./pc-boxes');
 const xdSave = require('./xd-save');
+const entries = require('./shadow-entries');
+const { colosseumFlag, setColosseumFlag } = entries;
 
 const COLOSSEUM = {
   file: 'pokemon_colosseum.dat', size: 0x138, trainerName: 0x78, trainerId: 0xa4, party: 0xa8, boxes: 0xb90, boxSize: 0x24a4,
@@ -29,8 +31,6 @@ const COLOSSEUM = {
   at: { species: 0x00, rnd: 0x04, ball: 0x0f, trainer: 0x14, nickname: 0x2e, level: 0x60, moves: 0x78, item: 0x88, hp: 0x8a,
     maxHp: 0x8c, egg: 0xcb, shadow: 0xd8, heart: 0xdc }
 };
-// The flags the save keeps for each Shadow id: flag (first id's word in the slot, its bit), each next id the next bit.
-const COLOSSEUM_FLAGS = { met: [0x1befc, 20], snagged: [0x1c07c, 20], purified: [0x1bef0, 20] };
 // The day care's Pokémon (save kind 11, proven against the game in a run).
 const COLOSSEUM_DAYCARE_POKEMON = 0x8178;
 const COLOSSEUM_HEART_MAX = n => 0x1b4ac + 0x18 * n + 0x16;
@@ -71,17 +71,6 @@ const keyOf = (species, rnd, trainer) => `${species}:${rnd >>> 0}:${trainer >>> 
 
 // ---- Colosseum ----
 
-function colosseumFlag(plain, kind, n) {
-  const [word, first] = COLOSSEUM_FLAGS[kind], bit = first + n - 1;
-  const at = word + 4 * (bit >> 5), mask = (1 << (bit & 31)) >>> 0;
-  return { at, mask, set: ((plain.readUInt32BE(at) & mask) >>> 0) !== 0 };
-}
-
-function setColosseumFlag(plain, kind, n) {
-  const { at, mask } = colosseumFlag(plain, kind, n);
-  plain.writeUInt32BE((plain.readUInt32BE(at) | mask) >>> 0, at);
-}
-
 function colosseumPokemon(bytes, extra = {}) {
   const at = COLOSSEUM.at, species = bytes.readUInt16BE(at.species);
   if (!species) return null;
@@ -114,9 +103,21 @@ function colosseumSlots(ctx) {
   return out;
 }
 
+// Every slot plus the day care's Pokémon: where a Shadow id can be held.
+function colosseumAll(ctx) {
+  return [...colosseumSlots(ctx), { area: 'daycare', box: 0, slot: 0, buffer: ctx.plain, at: COLOSSEUM_DAYCARE_POKEMON }];
+}
+
+// A Pokémon on a traded-in entry: its story id and, in Colosseum, the entry's heart gauge size.
+function withEntry(ctx, pokemon) {
+  if (!pokemon?.shadowId) return pokemon;
+  const info = entries.entryInfo(ctx, pokemon.shadowId);
+  return info?.storyId ? { ...pokemon, traded: true, storyId: info.storyId, ...(info.heartMax !== undefined ? { entryHeartMax: info.heartMax } : {}) } : pokemon;
+}
+
 function colosseumModel(ctx) {
   const { plain } = ctx;
-  const slots = colosseumSlots(ctx).map(place => ({ place, pokemon: colosseumPokemon(place.buffer.subarray(place.at, place.at + COLOSSEUM.size)) }));
+  const slots = colosseumSlots(ctx).map(place => ({ place, pokemon: withEntry(ctx, colosseumPokemon(place.buffer.subarray(place.at, place.at + COLOSSEUM.size))) }));
   const party = slots.filter(item => item.place.area === 'party').map(({ place, pokemon }) => pokemon && { ...pokemon, area: 'party', box: 0, slot: place.slot });
   const boxes = [];
   for (const { place, pokemon } of slots.filter(item => item.place.area === 'box')) {
@@ -127,18 +128,17 @@ function colosseumModel(ctx) {
   for (const n of COLOSSEUM_STORY_IDS)
     shadows[n] = { met: colosseumFlag(plain, 'met', n).set, snagged: colosseumFlag(plain, 'snagged', n).set,
       purified: colosseumFlag(plain, 'purified', n).set, heartMax: plain.readUInt16BE(COLOSSEUM_HEART_MAX(n)) };
-  for (const item of [...party, ...boxes.flatMap(box => box.pokemon)])
-    if (item?.shadow && shadows[item.shadowId]?.heartMax) item.heartPercent = Math.max(0, Math.min(100, Math.round(item.heart / shadows[item.shadowId].heartMax)));
+  for (const item of [...party, ...boxes.flatMap(box => box.pokemon)]) {
+    const max = item?.traded ? item.entryHeartMax : shadows[item?.shadowId]?.heartMax;
+    if (item?.shadow && max) item.heartPercent = Math.max(0, Math.min(100, Math.round(item.heart / max)));
+  }
   return { game: 'colosseum', trainer: units(plain, COLOSSEUM.trainerName), trainerId: plain.readUInt32BE(COLOSSEUM.trainerId),
     party, boxes, shadows, boxesBeyondThree: Boolean(ctx.extra) };
 }
 
 // ---- XD ----
 
-function xdRecord(ctx, n) {
-  const at = ctx.sections.darkPokemon + n * XD.recordSize;
-  return at + XD.recordSize <= ctx.plain.length ? ctx.plain.subarray(at, at + XD.recordSize) : null;
-}
+function xdRecord(ctx, n) { return entries.xdRecordAt(ctx, n); }
 const xdStatus = record => record[0] >> 5;
 const xdWhere = record => (record.readUInt32BE(0) >>> 15) & 7;
 
@@ -171,18 +171,21 @@ function xdSlots(ctx) {
 }
 
 // Every other place a Pokémon of XD's save can be: the day care and the Purify Chamber.
-function xdElsewhere(ctx) {
+function xdElsewherePlaces(ctx) {
   const { plain, sections } = ctx, out = [];
   if (sections.dayCare !== undefined) out.push(sections.dayCare + XD_DAYCARE_POKEMON);
   if (sections.chamber !== undefined)
     for (let chamber = 0; chamber < XD_CHAMBER.count; chamber++)
       for (let i = 0; i < XD_CHAMBER.pokemon; i++) out.push(sections.chamber + chamber * XD_CHAMBER.size + i * XD.size);
-  return out.filter(at => at + XD.size <= plain.length).map(at => plain.subarray(at, at + XD.size));
+  return out.filter(at => at + XD.size <= plain.length).map(at => ({ area: 'elsewhere', box: 0, slot: 0, buffer: plain, at }));
 }
+function xdElsewhere(ctx) { return xdElsewherePlaces(ctx).map(place => place.buffer.subarray(place.at, place.at + XD.size)); }
+function xdAll(ctx) { return [...xdSlots(ctx), ...xdElsewherePlaces(ctx)]; }
+const allPlaces = ctx => (ctx.game === 'xd' ? xdAll(ctx) : colosseumAll(ctx));
 
 function xdModel(ctx) {
   const { plain, sections } = ctx;
-  const slots = xdSlots(ctx).map(place => ({ place, pokemon: xdPokemon(ctx, place.buffer.subarray(place.at, place.at + XD.size)) }));
+  const slots = xdSlots(ctx).map(place => ({ place, pokemon: withEntry(ctx, xdPokemon(ctx, place.buffer.subarray(place.at, place.at + XD.size))) }));
   const party = slots.filter(item => item.place.area === 'party').map(({ place, pokemon }) => pokemon && { ...pokemon, area: 'party', box: 0, slot: place.slot });
   const boxes = [];
   for (const { place, pokemon } of slots.filter(item => item.place.area === 'box')) {
@@ -216,7 +219,7 @@ function cardCopies(saveDir, gameId) {
     xdSave.SLOTS.forEach((start, index) => {
       if (data.length < start + xdSave.SLOT_SIZE || data[start] !== 1 || data[start + 1] !== 1 || data[start + 2] !== 1) return;
       const { plain, valid } = xdSave.decipher(data.subarray(start + xdSave.PACK, start + xdSave.SLOT_SIZE));
-      if (valid) copies.push({ index, count: data.readInt32BE(start + 4), ctx: xdCardContext(plain) });
+      if (valid) copies.push({ index, count: data.readInt32BE(start + 4), ctx: withSide(saveDir, xdCardContext(plain)) });
     });
     return { data, copies: copies.sort((a, b) => b.count - a.count) };
   }
@@ -229,9 +232,17 @@ function cardCopies(saveDir, gameId) {
     if (!plain) continue;
     const hash = pcBoxes.stampedHash(plain);
     const extra = hash === null ? null : pcBoxes.boxesFor(saveDir, hash);
-    copies.push({ index, count: slot.readInt32BE(4), ctx: { game: 'colosseum', plain, extra: extra ? Buffer.from(extra) : null, hash } });
+    copies.push({ index, count: slot.readInt32BE(4), ctx: withSide(saveDir, { game: 'colosseum', plain, extra: extra ? Buffer.from(extra) : null, hash }) });
   }
   return { data, copies: copies.sort((a, b) => b.count - a.count) };
+}
+
+// A card copy's entries past the save's tables (shadow-entries.js), from the file its stamp names. Without the file the
+// game plays with none, and so does an edit here.
+function withSide(saveDir, ctx) {
+  const stamp = entries.readStamp(ctx);
+  const side = entries.readSide(saveDir, ctx.game, stamp);
+  return { ...ctx, side: side || Buffer.alloc(0), sideStamp: stamp, sideMissing: !side };
 }
 
 // The save the game would load, as a model, or null when there is none yet.
@@ -256,13 +267,16 @@ function parseLive(bytes) {
   const bodySize = bytes.readUInt32BE(0x20), extraSize = bytes.readUInt32BE(0x24);
   if (LIVE_HEADER + bodySize + extraSize > bytes.length) return null;
   const body = bytes.subarray(LIVE_HEADER, LIVE_HEADER + bodySize);
+  head.entries = bytes.readUInt32BE(0x30);
+  const sideAt = bytes.readUInt32BE(0x34), sideSize = bytes.readUInt32BE(0x38);
+  const side = sideAt && sideAt + sideSize <= bytes.length ? Buffer.from(bytes.subarray(sideAt, sideAt + sideSize)) : Buffer.alloc(0);
   if (game === 'xd') {
-    return { head, ctx: { game, plain: Buffer.from(body), sections: { ...XD.ram } } };
+    return { head, ctx: { game, live: true, plain: Buffer.from(body), sections: { ...XD.ram }, side } };
   }
   // the slot's plain bytes from its offset 8 on: put back the 8 bytes of header in front, so offsets are the card's
   const plain = Buffer.concat([Buffer.alloc(8), body]);
   const extra = extraSize ? Buffer.from(bytes.subarray(LIVE_HEADER + bodySize, LIVE_HEADER + bodySize + extraSize)) : null;
-  return { head, ctx: { game, plain, extra } };
+  return { head, ctx: { game, live: true, plain, extra, side } };
 }
 
 function readLive(file) {
@@ -293,11 +307,13 @@ function offerProblem(saveModel, pokemon) {
   if (!pokemon.shadow) return 'Only Shadow Pokémon can go to Shadowtrade.';
   if (saveModel.game === 'xd') {
     if (pokemon.shadowId === XD_LUGIA) return 'XD-001 can\'t be traded: the Purify Chamber needs it.';
-    if (pokemon.shadowId > XD_LAST_ID) return 'This Shadow Pokémon isn\'t one of the story\'s.';
-    if (saveModel.shadows[pokemon.shadowId]?.status !== XD_STATUS.snagged) return 'Only a snagged Shadow Pokémon can be traded.';
-    const copies = allPokemon(saveModel).filter(each => each.shadowId === pokemon.shadowId);
-    if (copies.length > 1) return 'Another Pokémon in this save shares this one\'s Shadow, so neither can be traded.';
-  } else if (!COLOSSEUM_STORY_IDS.includes(pokemon.shadowId)) return 'This Shadow Pokémon isn\'t one of the story\'s.';
+    if (!pokemon.traded) {
+      if (pokemon.shadowId > XD_LAST_ID) return 'This Shadow Pokémon isn\'t one of the story\'s.';
+      if (saveModel.shadows[pokemon.shadowId]?.status !== XD_STATUS.snagged) return 'Only a snagged Shadow Pokémon can be traded.';
+      const copies = allPokemon(saveModel).filter(each => each.shadowId === pokemon.shadowId);
+      if (copies.length > 1) return 'Another Pokémon in this save shares this one\'s Shadow, so neither can be traded.';
+    }
+  } else if (!pokemon.traded && !COLOSSEUM_STORY_IDS.includes(pokemon.shadowId)) return 'This Shadow Pokémon isn\'t one of the story\'s.';
   if (pokemon.area === 'party') {
     const others = saveModel.party.filter(each => each && each.key !== pokemon.key && !each.egg && each.hp > 0);
     if (!others.length) return 'You can\'t trade your last Pokémon that can battle: keep one in your party.';
@@ -307,37 +323,16 @@ function offerProblem(saveModel, pokemon) {
 
 const allPokemon = saveModel => [...saveModel.party, ...saveModel.boxes.flatMap(box => box.pokemon)].filter(Boolean);
 
-// The Shadow ids this save can take a Pokémon of: [n].
-// Colosseum: any story id the save hasn't purified, while no unpurified Pokémon of that id is in it (two would share
-// one walking counter, and the first purified would leave the other unable to drop its gauge by walking). A save that
-// hasn't met the id yet still takes it: the story's trainer will have their own.
-// XD: the record must be free for it: missed (status 2), or snagged and then traded away or released with no Pokémon
-// of that id left in the save. An id not met yet would make the story's trainer a copy of the received one, sharing its
-// heart gauge, so it waits until the player has met it.
+// The Shadow ids this save can take a Pokémon of: [n]. A received Shadow gets an entry of its own (shadow-entries.js), so
+// a save takes every story id while it has an entry free: thousands, counting the file beside the save.
 function shadowAccepts(saveModel, ctx = null) {
-  const held = new Set(allPokemon(saveModel).filter(each => each.shadow).map(each => each.shadowId));
-  if (saveModel.game === 'xd') {
-    const anywhere = new Set(allPokemon(saveModel).map(each => each.shadowId));
-    if (ctx) for (const bytes of xdElsewhere(ctx)) if (bytes.readUInt16BE(0)) anywhere.add(bytes.readUInt16BE(XD.at.shadow));
-    return Object.entries(saveModel.shadows).map(([n, record]) => [Number(n), record]).filter(([n, record]) => n !== XD_LUGIA &&
-      (record.status === XD_STATUS.missed || (record.status === XD_STATUS.snagged && [XD_WHERE.traded, XD_WHERE.released].includes(record.where) && !anywhere.has(n))))
-      .map(([n]) => n);
-  }
-  if (ctx?.plain && ctx.plain.length >= COLOSSEUM_DAYCARE_POKEMON + COLOSSEUM.size) {
-    const dayCare = colosseumPokemon(ctx.plain.subarray(COLOSSEUM_DAYCARE_POKEMON, COLOSSEUM_DAYCARE_POKEMON + COLOSSEUM.size));
-    if (dayCare?.shadow) held.add(dayCare.shadowId);
-  }
-  return COLOSSEUM_STORY_IDS.filter(n => !saveModel.shadows[n]?.purified && !held.has(n));
+  const story = saveModel.game === 'xd' ? Array.from({ length: XD_LAST_ID }, (_, i) => i + 1).filter(n => n !== XD_LUGIA) : COLOSSEUM_STORY_IDS;
+  if (ctx && entries.chooseEntry({ ...ctx, side: ctx.side || Buffer.alloc(0) }, allPlaces) === null) return [];
+  return [...story];
 }
 
-// What a save takes once `pokemon` (one of its own) has left it for Shadowtrade: it no longer holds it, and in XD its
-// record says traded away.
-function acceptsAfterTaking(saveModel, ctx, pokemon) {
-  const gone = each => each && each.key === pokemon.key && each.area === pokemon.area && each.box === pokemon.box && each.slot === pokemon.slot ? null : each;
-  const after = { ...saveModel, party: saveModel.party.map(gone), boxes: saveModel.boxes.map(box => ({ ...box, pokemon: box.pokemon.map(gone) })) };
-  if (saveModel.game === 'xd' && saveModel.shadows[pokemon.shadowId]) after.shadows = { ...saveModel.shadows, [pokemon.shadowId]: { ...saveModel.shadows[pokemon.shadowId], where: XD_WHERE.traded } };
-  return shadowAccepts(after, ctx);
-}
+// What a save takes once `pokemon` (one of its own) has left it: taking one only ever frees an entry.
+function acceptsAfterTaking(saveModel, ctx, _pokemon) { return shadowAccepts(saveModel, ctx); }
 
 // XD: B's record for the received Pokémon, from A's (sent with it) and B's own: A's heart gauge, pools, Hyper Mode,
 // IVs, personality and walking; B's species row; status snagged, the "new" mark, a traded-in marker (snatchFromWho 2,
@@ -382,7 +377,9 @@ function takeFrom(ctx, identity, place) {
     live.writeUInt32BE(word >>> 0, 0);
     live[0x11] = 0;
   }
-  return { area: found.area, box: found.box, slot: found.slot, bytes, record };
+  const entry = entries.isEntryId(ctx.game, shadowId) && entries.entryInfo(ctx, shadowId)?.storyId ? shadowId : null;
+  if (entry !== null) entries.sendEntry(ctx, bytes, record);
+  return { area: found.area, box: found.box, slot: found.slot, bytes, record, entry };
 }
 
 function firstFree(ctx) {
@@ -390,30 +387,62 @@ function firstFree(ctx) {
   return slots.find(item => !item.buffer.readUInt16BE(item.at));
 }
 
-// Puts a received Pokémon in: the first free party slot, else the first free box slot. Colosseum: its heart gauge
-// kept within this save's for its id, and the id marked snagged. XD: its record merged (mergeXdRecord). Returns where
-// it went ({ already: true } when this copy has it already), or null when there's no room.
+// The copy of a Pokémon to send to Shadowtrade, as takeFrom will send it: a traded-in one with its story id again.
+function outgoing(ctx, bytes, record) {
+  const out = { bytes: Buffer.from(bytes), record: record ? Buffer.from(record) : null };
+  const id = out.bytes.readUInt16BE(ctx.game === 'xd' ? XD.at.shadow : COLOSSEUM.at.shadow);
+  const info = entries.isEntryId(ctx.game, id) ? entries.entryInfo(ctx, id) : null;
+  if (!info?.storyId) return out;
+  out.bytes.writeUInt16BE(info.storyId, ctx.game === 'xd' ? XD.at.shadow : COLOSSEUM.at.shadow);
+  if (out.record) {
+    out.record.writeUInt16BE(info.storyId, 0x3e);
+    out.record[0x43] = 0;
+    out.record.writeUInt32BE(((out.record.readUInt32BE(0) & ~(7 << 15)) | (XD_WHERE.traded << 15)) >>> 0, 0);
+    out.record[0x11] = 0;
+  }
+  return out;
+}
+
+// Puts a received Pokémon (with its story id N) in: the first free party slot, else the first free box slot, on an
+// entry of its own (shadow-entries.js giveEntry: Colosseum's gauge kept within this save's size for N; XD's record
+// merged from the sender's). Returns where it went ({ already: true } when this copy has it already), { refused:
+// 'full' } with no room, { refused: 'entries' } with no entry free.
 function giveTo(ctx, pokemon, record = null) {
   const at = ctx.game === 'xd' ? XD.at : COLOSSEUM.at;
   const identity = { species: pokemon.readUInt16BE(at.species), rnd: pokemon.readUInt32BE(at.rnd), trainer: pokemon.readUInt32BE(at.trainer) };
   const existing = findPokemon(ctx, identity);
   if (existing) return { area: existing.area, box: existing.box, slot: existing.slot, already: true };
   const free = firstFree(ctx);
-  if (!free) return null;
+  if (!free) return { refused: 'full' };
+  if (!ctx.side) ctx.side = Buffer.alloc(0);
   const bytes = Buffer.from(pokemon);
-  const shadowId = bytes.readUInt16BE(at.shadow);
-  if (ctx.game === 'xd') {
-    const live = xdRecord(ctx, shadowId), hero = ctx.sections.hero;
-    const count = ctx.plain.readUInt32BE(hero + XD.meetCount);
-    const merged = mergeXdRecord(live, record, shadowId, free, count);
-    if (xdStatus(live) < XD_STATUS.met) ctx.plain.writeUInt32BE((count + 1) >>> 0, hero + XD.meetCount);
-    merged.copy(live);
-  } else {
-    const max = ctx.plain.readUInt16BE(COLOSSEUM_HEART_MAX(shadowId));
-    if (max && bytes.readInt32BE(at.heart) > max * 100) bytes.writeInt32BE(max * 100, at.heart);
-    setColosseumFlag(ctx.plain, 'snagged', shadowId);
-  }
+  const n = bytes.readUInt16BE(at.shadow);
+  const entry = entries.giveEntry(ctx, allPlaces, bytes, {
+    heartMaxOf: id => ctx.plain.readUInt16BE(COLOSSEUM_HEART_MAX(id)),
+    // its order on the Shadow Monitor: the hero's count of Shadows met (a byte), as it is (the game leaves it, too)
+    merge: bRecord => mergeXdRecord(bRecord, record, n, free, ctx.plain[ctx.sections.hero + XD.meetCount]) });
+  if (entry === null) return { refused: 'entries' };
   bytes.copy(free.buffer, free.at);
+  return { area: free.area, box: free.box, slot: free.slot, entry };
+}
+
+// Puts one of the save's own story Shadows back as it was before it left (a trade cancelled): its own story id, raw;
+// XD's record for it says where it is again (status kept). Returns where it went, as giveTo does.
+function restoreTo(ctx, pokemon) {
+  const at = ctx.game === 'xd' ? XD.at : COLOSSEUM.at;
+  const identity = { species: pokemon.readUInt16BE(at.species), rnd: pokemon.readUInt32BE(at.rnd), trainer: pokemon.readUInt32BE(at.trainer) };
+  const existing = findPokemon(ctx, identity);
+  if (existing) return { area: existing.area, box: existing.box, slot: existing.slot, already: true };
+  const free = firstFree(ctx);
+  if (!free) return { refused: 'full' };
+  if (ctx.game === 'xd') {
+    const record = xdRecord(ctx, pokemon.readUInt16BE(at.shadow));
+    if (record) {
+      record.writeUInt32BE(((record.readUInt32BE(0) & ~(7 << 15)) | ((free.area === 'party' ? XD_WHERE.party : XD_WHERE.box) << 15)) >>> 0, 0);
+      record[0x11] = free.area === 'party' ? 0 : free.box;
+    }
+  }
+  Buffer.from(pokemon).copy(free.buffer, free.at);
   return { area: free.area, box: free.box, slot: free.slot };
 }
 
@@ -437,12 +466,19 @@ function editCard(saveDir, gameId, change) {
   if (!copies.length) throw new Error('There is no save to change yet.');
   const out = Buffer.from(data);
   let result = null;
-  const entries = [];
+  const boxEntries = [], sideAdded = [];
   copies.forEach((copy, order) => {
     const before = copy.ctx.extra ? Buffer.from(copy.ctx.extra) : null;
+    const sideBefore = entries.usedSide(copy.ctx.side, gameId);
     const done = change(copy.ctx);
     if (order === 0) result = done;
-    if (!done || done.already) return;
+    if (!done || done.already || done.refused) return;
+    const sideAfter = entries.usedSide(copy.ctx.side, gameId);
+    if (!sideAfter.equals(sideBefore)) {
+      const hash = sideAfter.length ? entries.sideHash(sideAfter) : 0n;
+      entries.writeStamp(copy.ctx, hash);
+      if (hash) sideAdded.push({ hash, data: Buffer.from(sideAfter) });
+    }
     if (gameId === 'xd') {
       const start = xdSave.SLOTS[copy.index];
       xdSave.encipher(copy.ctx.plain).copy(out, start + xdSave.PACK);
@@ -451,16 +487,17 @@ function editCard(saveDir, gameId, change) {
     if (copy.ctx.extra && !copy.ctx.extra.equals(before)) {
       const hash = pcBoxes.fnv64(copy.ctx.extra);
       pcBoxes.writeStamp(copy.ctx.plain, hash);
-      entries.push({ hash, data: copy.ctx.extra, previous: copy.ctx.hash });
+      boxEntries.push({ hash, data: copy.ctx.extra, previous: copy.ctx.hash });
     }
     gciSave.scramble(copy.ctx.plain).copy(out, gciSave.SLOT_START + copy.index * gciSave.SLOT_SIZE);
   });
   if (!result) return null;
-  if (result.already) return result;
-  if (entries.length) pcBoxes.writeEntries(saveDir, entries, copies.map(copy => copy.ctx.hash).filter(hash => hash !== null && hash !== undefined));
+  if (result.already || result.refused) return result;
+  if (boxEntries.length) pcBoxes.writeEntries(saveDir, boxEntries, copies.map(copy => copy.ctx.hash).filter(hash => hash !== null && hash !== undefined));
+  if (sideAdded.length) entries.writeSide(saveDir, gameId, sideAdded, copies.map(copy => copy.ctx.sideStamp).filter(Boolean));
   writeAtomic(path.join(saveDir, gameId === 'xd' ? XD.file : COLOSSEUM.file), out);
   return result;
 }
 
 module.exports = { COLOSSEUM, XD, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, parseLive, cardCopies,
-  colosseumFlag, offerProblem, shadowAccepts, acceptsAfterTaking, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };
+  colosseumFlag, offerProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };

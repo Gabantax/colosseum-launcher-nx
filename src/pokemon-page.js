@@ -57,7 +57,7 @@ function renderGrid() {
     button.classList.toggle('selected', Boolean(isSelected));
     button.classList.toggle('shadow', pokemon.shadow);
     button.setAttribute('aria-selected', String(Boolean(isSelected)));
-    button.title = `${shown(pokemon)}, level ${pokemon.level}${pokemon.shadow ? ', Shadow Pokémon' : ''}`;
+    button.title = `${shown(pokemon)}, level ${pokemon.level}${pokemon.shadow ? ', Shadow Pokémon' : ''}${pokemon.traded ? ', from Shadowtrade' : ''}`;
     button.append(sprite(pokemon, tab === 'party' ? 56 : 44));
     const label = document.createElement('span');
     label.className = 'pokemon-slot-label';
@@ -92,6 +92,7 @@ function renderDetail() {
   badges.replaceChildren();
   if (pokemon.shadow) badges.append(Object.assign(document.createElement('span'), { className: 'badge shadow-badge', textContent: 'Shadow Pokémon' }));
   if (pokemon.shiny) badges.append(Object.assign(document.createElement('span'), { className: 'badge warn', textContent: 'Shiny' }));
+  if (pokemon.traded) badges.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: 'From Shadowtrade', title: 'It has a Shadow of its own in your save, apart from the story\'s' }));
   if (pokemon.egg) badges.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: 'Egg' }));
   if (!pokemon.egg) badges.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: `HP ${pokemon.hp}/${pokemon.maxHp}` }));
   const heart = $('pokemon-heart');

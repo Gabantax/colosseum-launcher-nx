@@ -21,7 +21,7 @@ function plainSave(trainerId, party) {
   plain[0] = 1; plain[1] = 1; plain.writeInt32BE(4, 4);
   utf16(plain, 0x78, 'WES'); plain.writeUInt32BE(trainerId, 0xa4);
   party.forEach((p, i) => p.copy(plain, 0xa8 + i * 0x138));
-  for (let n = 1; n <= 0x43; n++) plain.writeUInt16BE(20, 0x1b4ac + 0x18 * n + 0x16);
+  for (let n = 1; n <= 0x60; n++) { plain.writeUInt16BE(20, 0x1b4ac + 0x18 * n + 0x16); plain.writeUInt16BE(0xffff, 0x1b4ac + 0x18 * n + 0x14); }
   return plain;
 }
 function card(dir, trainerId, party) {
@@ -108,7 +108,7 @@ test('two players trade: the first waits, the second receives at once, the first
   assert.deepEqual(a.party(), ['UMBREON', 'BAYLEEF']);
   const save = sp.readCard(a.dir, 'colosseum');
   assert.equal(save.party[1].trainer, B_ID, 'B stays its original trainer');
-  assert.equal(save.shadows[2].snagged, true);
+  assert.deepEqual([save.party[1].traded, save.party[1].storyId, save.party[1].shadowId], [true, 2, 0x2d], 'on an entry of its own');
   assert.equal([...server.trades.values()].every(each => each.status === 'done'), true);
 });
 
