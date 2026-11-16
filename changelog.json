@@ -84,7 +84,8 @@
       "On Linux, when the game can't open its window, the activity log and error box now give the real reason, such as a graphics driver that failed to load, instead of only \"Invalid window\".",
       "Settings in the game: the field menu (START) has a new SETTINGS button above EXIT, in Colosseum and in XD. It opens a Settings screen over the game with three pages, Display, Graphics and Sound: fullscreen, aspect ratio, brightness, V-Sync, resolution, anti-aliasing, upscaling, HD textures and more change while you play, and Sound has separate Master volume, Music and Sound effects sliders. Use the D-pad or stick to pick and change a setting, L and R to turn the page, and B to go back to the menu. What you change there is kept for next time.",
       "Pokémon XD: fixed the game crashing on Windows just after some battles start, such as the Rider Willie fight outside the Outskirt Stand.",
-      "Replays of online battles play in Colosseum and in XD, with a bar across the top of the game showing the turn and how far through the battle it is. In the game, Start pauses, left and right go back or ahead a turn, and up and down change the speed."
+      "Replays of online battles play in Colosseum and in XD, with a bar across the top of the game showing the turn and how far through the battle it is. In the game, Start pauses, left and right go back or ahead a turn, and up and down change the speed.",
+      "Fixed story cutscenes stopping for good at 60 fps with someone walking on the spot, such as Beluh at the top of the stairs in Agate Village when she goes for the Small Tablet, and Miror B. at the door in Realgam Tower after his battle. Holding fast-forward is no longer needed to get past them."
     ]
   },
   "releases": [
