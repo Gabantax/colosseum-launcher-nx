@@ -37,13 +37,46 @@
     return held;
   }
 
+  // Only a controller in the standard layout says which axis is its right stick. Chromium knows no layout for some,
+  // such as Mayflash's GameCube adapter in PC mode, and passes on their axes as the device lists them: on a GameCube
+  // adapter the fourth is a trigger (Chromium's own map for the XSkills adapter says so), which rests at -1, and it
+  // scrolled the page up for as long as the adapter was plugged in.
   function scrollAxis(gamepads, deadzone = 0.25) {
     let strongest = 0;
     for (const gamepad of gamepads) {
-      const y = gamepad?.connected ? gamepad.axes[3] || 0 : 0;
+      const y = gamepad?.connected && gamepad.mapping === 'standard' ? gamepad.axes[3] || 0 : 0;
       if (Math.abs(y) > Math.abs(strongest)) strongest = y;
     }
     return Math.abs(strongest) < deadzone ? 0 : strongest;
+  }
+
+  // Leaves out the axes of each controller that have not yet moved since the launcher first saw it, until they
+  // come back to the middle or move from where they were. An idle controller doesn't always read zero: an empty
+  // port on a GameCube adapter can read held, and an axis that is really a trigger rests at one end. Such an axis
+  // never moves focus or the page. The stick a player pushes to wake the controller (Chromium shows controllers
+  // only after one is used) counts once it moves on, or is let go. Buttons pass as they are, so the first press
+  // still works; one held from the start fires once at most (createRepeater).
+  function createRestGate({ centre = 0.5, moved = 0.25 } = {}) {
+    const pads = new Map();
+    return function gate(gamepads) {
+      const present = new Set();
+      const gated = gamepads.map(gamepad => {
+        if (!gamepad?.connected) return gamepad;
+        const key = `${gamepad.index}:${gamepad.id}`;
+        present.add(key);
+        let state = pads.get(key);
+        if (!state) pads.set(key, state = { first: [...gamepad.axes], live: [] });
+        const axes = [...gamepad.axes].map((value, index) => {
+          const first = state.first[index] ?? value;
+          if (Math.abs(value) < centre || Math.abs(value - first) > moved) state.live[index] = true;
+          return state.live[index] ? value : 0;
+        });
+        return { connected: true, index: gamepad.index, id: gamepad.id, mapping: gamepad.mapping, axes, buttons: gamepad.buttons };
+      });
+      // A controller unplugged and plugged in again is looked at afresh.
+      for (const key of pads.keys()) if (!present.has(key)) pads.delete(key);
+      return gated;
+    };
   }
 
   // Fires each input once when pressed; directions repeat while held. Inputs
@@ -89,6 +122,7 @@
 
   function start({ document, window, regions = '', defaultFocus = () => [], paused = () => false, letters = () => false, actions = {} }) {
     const repeat = createRepeater();
+    const gate = createRestGate();
     let frame = 0, lastFrame = 0;
 
     // An open menu (a popover) or dialog keeps focus inside it.
@@ -198,7 +232,7 @@
 
     function loop(now) {
       frame = 0;
-      const gamepads = [...(window.navigator.getGamepads?.() || [])];
+      const gamepads = gate([...(window.navigator.getGamepads?.() || [])]);
       if (!gamepads.some(gamepad => gamepad?.connected)) return;
       const quiet = !document.hasFocus() || paused();
       for (const name of repeat(heldInputs(gamepads, 0.5, letters), now, quiet)) handle(name);
@@ -212,7 +246,7 @@
     wake();
   }
 
-  const api = { heldInputs, scrollAxis, createRepeater, nextInDirection, typed, start };
+  const api = { heldInputs, scrollAxis, createRestGate, createRepeater, nextInDirection, typed, start };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.coloGamepadNav = api;
 })(typeof globalThis === 'object' ? globalThis : this);
