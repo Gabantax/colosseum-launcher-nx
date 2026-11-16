@@ -11,6 +11,8 @@ button:focus-visible, select:focus-visible, .switch input:focus-visible + i { ou
 .brand { display: flex; align-items: center; gap: 9px; min-width: 180px; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
 .brand strong { font-weight: 800; }
 .brand-copy { display: grid; gap: 3px; }
+.brand-name { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.brand-games { margin-left: 4px; padding: 1px 6px; border: 1px solid #ffc75a66; border-radius: 999px; color: #ffe2a3; font-size: 9.5px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
 .version-summary { color: #eed3e7; font-size: 11px; font-weight: 500; letter-spacing: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .brand-mark { display: block; width: 32px; height: 32px; object-fit: contain; filter: drop-shadow(0 1px 2px #0000004d); }
 .tabs { align-self: stretch; display: flex; gap: 4px; }

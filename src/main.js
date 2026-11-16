@@ -2965,7 +2965,7 @@ function createWindow() {
   const zoom = windowsScaling ? displayScale.displayZoom(screen.getPrimaryDisplay()) : 1;
   window = new BrowserWindow({
     ...displayScale.scaledSize(WINDOW_SIZE, zoom),
-    frame: false, backgroundColor: '#1a1420', title: 'Colosseum Launcher',
+    frame: false, backgroundColor: '#1a1420', title: 'Orre Launcher',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   if (windowsScaling) displayScale.followDisplayScale(window, screen, WINDOW_SIZE, zoom);

@@ -51,7 +51,7 @@ function message({ launcherVersion, launcherSha, game, repository, beta, previou
   if (previous && !launcher.length && !gameNotes.length)
     fields.push({ name: 'Changes', value: `Nothing new in [the changelog](${changelog}) since the last Beta.` });
   return {
-    username: 'Colosseum Launcher',
+    username: 'Orre Launcher',
     allowed_mentions: { parse: [] },
     embeds: [{
       title: `Beta ${launcherVersion} is out`,

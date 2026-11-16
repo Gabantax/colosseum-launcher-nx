@@ -2,16 +2,18 @@
   <img src="build/icon.svg" width="112" height="112" alt="">
 </p>
 
-<h1 align="center">Colosseum Launcher</h1>
+<h1 align="center">Orre Launcher</h1>
+
+<p align="center"><strong>Pokémon Colosseum + XD</strong></p>
 
 <p align="center">
-  <a href="https://github.com/chasem-dev/colosseum-launcher/releases/latest"><img src="docs/download-button.svg" width="248" height="60" alt="Download Colosseum Launcher from the latest release"></a>&nbsp;&nbsp;<a href="https://discord.gg/pkVwBrSwsZ"><img src="docs/discord-button.svg" width="248" height="60" alt="Join the Pokémon Colosseum Port Discord server"></a>
+  <a href="https://github.com/chasem-dev/colosseum-launcher/releases/latest"><img src="docs/download-button.svg" width="248" height="60" alt="Download Orre Launcher from the latest release"></a>&nbsp;&nbsp;<a href="https://discord.gg/pkVwBrSwsZ"><img src="docs/discord-button.svg" width="248" height="60" alt="Join the Pokémon Colosseum Port Discord server"></a>
 </p>
 
 <img width="1512" height="943" alt="image" src="https://github.com/user-attachments/assets/a513d488-33c6-4249-9792-5fb9c79a0b1b" />
 
 
-Set up and play the native PC port of Pokémon Colosseum, and of Pokémon XD: Gale of Darkness, on **Windows, macOS, and Linux**. The launcher guides you through setup, downloads the tools it needs, and gives you one big **Play** button when you're ready.
+Orre Launcher (formerly Colosseum Launcher) sets up and plays the native PC port of Pokémon Colosseum, and of Pokémon XD: Gale of Darkness, on **Windows, macOS, and Linux**. The launcher guides you through setup, downloads the tools it needs, and gives you one big **Play** button when you're ready.
 
 **Bring your own game.** You need a disc image made from your own North American Pokémon Colosseum disc (or Pokémon XD disc, GXXE01, for XD). The launcher does not include a game or disc image.
 
@@ -19,7 +21,7 @@ This is an unofficial fan project, not affiliated with Nintendo, Creatures, GAME
 
 ## Download
 
-**[Download Colosseum Launcher from the latest release](https://github.com/chasem-dev/colosseum-launcher/releases/latest)**
+**[Download Orre Launcher from the latest release](https://github.com/chasem-dev/colosseum-launcher/releases/latest)**
 
 | Your computer | Download |
 | --- | --- |
@@ -33,7 +35,7 @@ The launcher requires a **64-bit computer** and an internet connection for setup
 
 ### Windows
 
-Open the `.exe` installer and follow the steps, then open Colosseum Launcher.
+Open the `.exe` installer and follow the steps, then open the launcher. Its files and shortcuts are still named Colosseum Launcher.
 
 **Portable version:** put `Colosseum-Launcher-<version>-win-portable.exe` in any folder, such as on a USB drive, and open it. Nothing is installed. The first time it runs, it creates a `Colosseum-Launcher-Portable` folder next to the `.exe` and keeps everything there: settings, setup files, build tools, the game, saves, and save backups. Portable versions don't update themselves: to update, put the new portable `.exe` in place of the old one, next to the same folder.
 
@@ -41,7 +43,7 @@ Open the `.exe` installer and follow the steps, then open Colosseum Launcher.
 
 1. Double-click the `.dmg`.
 2. Drag **Colosseum Launcher.app** onto **Applications** in the window that opens.
-3. Eject the disk image, then open Colosseum Launcher from Applications.
+3. Eject the disk image, then open it from Applications.
 
 ### Linux
 
