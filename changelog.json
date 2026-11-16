@@ -97,7 +97,9 @@
       "Windows: the game now builds when its folder has an accented letter in its path, such as the é in Pokémon Colosseum. Before, the build stopped with \"stdlib.h: No such file or directory\" or, at its last step, \"cannot find\".",
       "Windows: when Windows fails to start one of the build's programs (error 0xC0000142), the build tries it again, and says what happened if it keeps failing.",
       "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the close-ups when your Aura Reader spots a Shadow Pokémon and when you throw a Snag Ball now show your hero's face and hand, where they used to show their chest or shoulder, and your hero no longer stoops over in them.",
-      "Pokémon XD: fixed the Disc Case in Key Items not letting you move between your Battle CDs, and the game freezing after you closed it."
+      "Pokémon XD: fixed the Disc Case in Key Items not letting you move between your Battle CDs, and the game freezing after you closed it.",
+      "Online battles in Pokémon XD use the same battle menus as the story: choose with the cursor and A, with no more picking moves with the right stick to hide them from your opponent.",
+      "Online team preview has a cursor in Colosseum and XD: move it with the D-pad, stick or arrow keys, press A to pick the Pokémon under it, B to take back your last pick and R to see its summary, instead of a different button for each Pokémon."
     ]
   },
   "releases": [
