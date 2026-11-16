@@ -158,7 +158,8 @@ function encodeTrack(values, tolerance) {
 
 // A clip (`samples` frames of nine values for each joint, the last at frame `end`) as an AnimJoint tree with the joint
 // tree's shape, keying `keyed[j]`'s channels of joint j. Returns the root's offset.
-function addClip(added, dat, set, clip, { end, flags = 0 }, keyed, tolerances) {
+// `after`, a JObj: the clip's last joint is one more, not yet in the tree, its next sibling (the last in the order)
+function addClip(added, dat, set, clip, { end, flags = 0 }, keyed, tolerances, after = 0) {
   const { pointer } = reader(dat), jointCount = keyed.length;
   let next = 0;
   const node = () => {
@@ -194,6 +195,11 @@ function addClip(added, dat, set, clip, { end, flags = 0 }, keyed, tolerances) {
       if (previous) added.pointer(previous, 4, anim.at);
       else head = anim;
       previous = anim;
+      if (joint === after) {
+        const extra = node();
+        added.pointer(previous, 4, extra.at);
+        previous = extra;
+      }
     }
     return head;
   };

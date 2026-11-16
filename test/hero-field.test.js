@@ -200,3 +200,31 @@ test('limbs are matched place by place, from the last joint at each place back',
   field.matchPlaces(map, [[2]], [[11, 12]]);
   assert.equal(map[2], 12, 'a hero\'s one joint at a shoulder turns as Michael\'s joint that turns the upper arm');
 });
+
+test('a clip can key one joint more, the root\'s last child\'s next sibling, added after the clip', () => {
+  const dat = field.readDat(battleDat()), set = field.sceneSet(dat), { pointer } = field.reader(dat);
+  const root = pointer(set), last = pointer(root + 8), joints = field.jointOffsets(dat, set);
+  assert.equal(joints.length, 3);
+  const samples = 6, values = new Float32Array(samples * 4 * 9);
+  for (let f = 0; f < samples; f++) for (let j = 0; j < 4; j++) values.set([1, 1, 1, 0, 0, 0, ...(j === 3 ? [f, 2 * f, -f] : [0, j ? 1 : 0, 0])], (f * 4 + j) * 9);
+  const keyed = [new Set(), new Set(), new Set(), new Set([6, 7, 8])];
+  const added = new field.Added((dat.data.length + 31) & ~31), lead = added.base - dat.data.length;
+  const carrier = added.alloc(0x40);
+  for (let k = 0; k < 3; k++) carrier.buffer.writeFloatBE(1, 0x20 + k * 4);
+  const anim = field.addClip(added, dat, set, { samples, values }, { end: samples - 1 }, keyed, [1e-4, 1e-4, 1e-4], last);
+  const list = added.alloc(8);
+  added.pointer(list, 0, anim);
+  dat.data.writeUInt32BE(list.at, set + 4);
+  dat.data.writeUInt32BE(carrier.at, last + 0x0c);
+  dat.pointers.push(last + 0x0c);
+  const made = field.writeDat(dat, Buffer.concat([Buffer.alloc(lead), added.bytes()]), added.pointers.map(at => at + lead));
+  const again = field.readDat(made), order = field.jointOffsets(again, field.sceneSet(again));
+  assert.equal(order.length, 4, 'numbered after every joint the model had');
+  assert.equal(order[3], carrier.at);
+  assert.equal(field.reader(again).pointer(order[1] + 0x0c), carrier.at, 'the root\'s last child\'s next');
+  const clip = hsd.parseClip(field.asPkx(made), 0);
+  for (let f = 0; f < samples - 1; f++) {
+    const at = (f * 4 + 3) * 9 + 6;
+    assert.deepEqual(Array.from(clip.values.subarray(at, at + 3)).map(v => Math.round(v * 1000) / 1000), [f, 2 * f, -f]);
+  }
+});

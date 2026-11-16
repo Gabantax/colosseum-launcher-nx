@@ -32,7 +32,9 @@
       "Fixed online rooms on Platinum's rules (Generation 4) starting their battles without Platinum's rules, moves and Pokémon.",
       "Online replays: every online battle you play or watch is saved, and the Online page has a new Replays tab beside Rooms that lists them. Press Watch and the game plays the battle again from its start, with each player as the hero they battled as. A bar above the game marks every turn and where Pokémon fainted: click a turn to jump to it, step back or ahead a turn, pause, and pick a speed from 0.5x to 8x. The last 50 battles are kept, and starring one keeps it for good. To share a battle, send its file (Show folder finds it). Open replay, or dropping the file on the Online page, adds one someone sent you. A replay saved with another version of the game plays until that version's battle goes differently, then stops and says so.",
       "Windows: when Windows can't start one of the build's programs (error 0xC0000142), the launcher builds again with fewer programs at once, and if that fails too it says what usually causes it: antivirus, overlays or screen recorders that load themselves into every program.",
-      "Windows: if the game folder has an accented letter in its path, such as the é in Pokémon Colosseum, and the game version being set up can't be built there, setup now stops at once and says to move it to a folder like C:\\Games, instead of failing at the end of the build."
+      "Windows: if the game folder has an accented letter in its path, such as the é in Pokémon Colosseum, and the game version being set up can't be built there, setup now stops at once and says to move it to a folder like C:\\Games, instead of failing at the end of the build.",
+      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, your hero throws Poké Balls with Michael's throw, so the ball leaves their hand and flies over their head, where it used to come out of their chest.",
+      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the Snag Ball now flashes into your hero's palm as it does in Michael's hand, where it used to sit inside their fist from the start."
     ],
     "game": [
       "Online: each player battles as their own hero in the colours they chose on the launcher's Customize page, in Colosseum and XD and in rooms for both games, and both players and anyone watching see them that way, even when both picked the same hero. Michael shows only in XD: in Colosseum a player who chose him appears as the game's usual trainer, and so does a player on an older launcher.",
@@ -93,7 +95,8 @@
       "Later generations: Generation 4 move descriptions no longer run out of their boxes. Each is broken into lines that fit, as the game's own descriptions are, on the summary's moves page, the screen for forgetting a move and, in XD, the Move Teacher's list.",
       "Later generations: Cherrim changes into its Sunshine Form in strong sunlight and back to its Overcast Form when the sun ends, in Colosseum and in XD. Press Make assets when the launcher asks, to make its Sunshine Form's model.",
       "Windows: the game now builds when its folder has an accented letter in its path, such as the é in Pokémon Colosseum. Before, the build stopped with \"stdlib.h: No such file or directory\" or, at its last step, \"cannot find\".",
-      "Windows: when Windows fails to start one of the build's programs (error 0xC0000142), the build tries it again, and says what happened if it keeps failing."
+      "Windows: when Windows fails to start one of the build's programs (error 0xC0000142), the build tries it again, and says what happened if it keeps failing.",
+      "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the close-ups when your Aura Reader spots a Shadow Pokémon and when you throw a Snag Ball now show your hero's face and hand, where they used to show their chest or shoulder, and your hero no longer stoops over in them."
     ]
   },
   "releases": [
