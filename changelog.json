@@ -100,7 +100,9 @@
       "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the close-ups when your Aura Reader spots a Shadow Pokémon and when you throw a Snag Ball now show your hero's face and hand, where they used to show their chest or shoulder, and your hero no longer stoops over in them.",
       "Pokémon XD: fixed the Disc Case in Key Items not letting you move between your Battle CDs, and the game freezing after you closed it.",
       "Online battles in Pokémon XD use the same battle menus as the story: choose with the cursor and A, with no more picking moves with the right stick to hide them from your opponent.",
-      "Online team preview has a cursor in Colosseum and XD: move it with the D-pad, stick or arrow keys, press A to pick the Pokémon under it, B to take back your last pick and R to see its summary, instead of a different button for each Pokémon."
+      "Online team preview has a cursor in Colosseum and XD: move it with the D-pad, stick or arrow keys, press A to pick the Pokémon under it, B to take back your last pick and R to see its summary, instead of a different button for each Pokémon.",
+      "Later generations: Lava Plume and Discharge hit every Pokémon around the user in a double battle, both foes and its partner, as in Pokémon Platinum, in Colosseum and in XD. Under Colosseum's own battle rules they used to hit only one foe.",
+      "Later generations: fixed Shedinja taking no recoil from Struggle under Platinum's battle rules, which could leave a battle with no way to end. Struggle's recoil now always takes at least 1 HP, as in Pokémon Platinum."
     ]
   },
   "releases": [
