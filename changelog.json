@@ -36,7 +36,8 @@
       "Windows: if the game folder has an accented letter in its path, such as the é in Pokémon Colosseum, and the game version being set up can't be built there, setup now stops at once and says to move it to a folder like C:\\Games, instead of failing at the end of the build.",
       "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, your hero throws Poké Balls with Michael's throw, so the ball leaves their hand and flies over their head, where it used to come out of their chest.",
       "Pokémon XD: playing as Wes, Brendan, May, Red or Leaf, the Snag Ball now flashes into your hero's palm as it does in Michael's hand, where it used to sit inside their fist from the start.",
-      "Later generations: in Pokémon XD, Generation 4 and pack Pokémon icons in Pokémon Storage and the Purification Chamber are now as big as XD's own Pokémon beside them, instead of noticeably smaller."
+      "Later generations: in Pokémon XD, Generation 4 and pack Pokémon icons in Pokémon Storage and the Purification Chamber are now as big as XD's own Pokémon beside them, instead of noticeably smaller.",
+      "Settings: the Performance overlay switch is now Controls overlay, as the overlay lists your controls."
     ],
     "game": [
       "Online: each player battles as their own hero in the colours they chose on the launcher's Customize page, in Colosseum and XD and in rooms for both games, and both players and anyone watching see them that way, even when both picked the same hero. Michael shows only in XD: in Colosseum a player who chose him appears as the game's usual trainer, and so does a player on an older launcher.",
@@ -111,7 +112,9 @@
       "Fixed walking through walls with fast-forward on, such as coming out a level or two up beside the Pokémon Center in Agate Village, and in Pokémon XD out of the HQ lab beside the elevator or through a closed door. Fast-forward now plays more of the game's own steps instead of longer ones, so on a slower computer it may run a little slower than the speed you picked.",
       "Fixed fast-forward and a faster Battle animation speed holding a battle up while each move's sound and each Pokémon's cry finished playing at normal speed. The battle now moves on as soon as the sped-up animation is over, and the sound still plays to its end, in Colosseum and in XD.",
       "Pokémon XD: with Skip movies on, a new game goes straight past the opening scene of Shadow Lugia lifting the S.S. Libra and on to the battle simulation in the lab, as it does once the scene ends. Turn it on under Gameplay.",
-      "Pokémon XD: with the HD texture pack, the sea in the opening scene no longer looks like rough rock, and the helicopters' searchlights keep their soft glow. The game's own textures are used for these, as on the console."
+      "Pokémon XD: with the HD texture pack, the sea in the opening scene no longer looks like rough rock, and the helicopters' searchlights keep their soft glow. The game's own textures are used for these, as on the console.",
+      "Colosseum's Battle Mode in widescreen: the Pokémon selection screen and the VS screen before it fill the whole window instead of a 4:3 picture with black bars, their backdrop carried out to the sides at its own shape, and the title bars along the top of Battle Mode's menus, such as Battle Now, reach both edges.",
+      "The overlay the backtick key (`) opens is now a button guide, in Colosseum and XD: it lists your own keyboard keys and controller buttons for each GameCube button, the stick, the C-Stick, the D-pad, half tilt, fast-forward and the Game Boy Advance, including any you changed under Controls, with the frame rate below. It no longer lists mouse controls, Esc or F7, which did nothing in this game, and nothing in it is named after Super Mario Sunshine any more."
     ]
   },
   "releases": [
