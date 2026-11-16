@@ -203,8 +203,11 @@ export function createTexture(source) {
   texture.wrapS = WRAP[source.wrapS] || THREE.ClampToEdgeWrapping;
   texture.wrapT = WRAP[source.wrapT] || THREE.ClampToEdgeWrapping;
   texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
+  // Mipmaps only where the game has them (two of the disc's textures, Butterfree's): it samples the rest from their base
+  // level alone, so a strip of eye or mouth frames doesn't bleed into the frame shown as the model gets smaller (the
+  // tinted lines above Wooper's eyes).
+  texture.minFilter = source.mipmap === false ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = source.mipmap !== false;
   texture.needsUpdate = true;
   return texture;
 }

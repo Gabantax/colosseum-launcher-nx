@@ -166,10 +166,11 @@ function classify(species, { seen, shadow, spots }) {
 }
 
 // The looks a species has on XD's disc: its model, its shiny model or filter, and Castform's, Unown's and Deoxys's others
-function formsOf(entry, file, disc, colosseumForms) {
+// with the shiny one of each
+function formsOf(entry, file, disc, { formsOf: colosseumForms, withShiny }) {
   const forms = colosseumForms(entry, file, disc);
   const has = stem => disc.files.has(`pkx_${stem}.fsys`);
-  if (entry.national === NATIONAL_DEOXYS && forms.length) forms.push(...DEOXYS.filter(([stem]) => has(stem)).map(([id, label]) => ({ id, label })));
+  if (entry.national === NATIONAL_DEOXYS && forms.length) forms.push(...withShiny(DEOXYS.filter(([stem]) => has(stem)).map(([id, label]) => ({ id, label })), disc));
   return forms;
 }
 
@@ -183,7 +184,7 @@ function readPokedex(disc, discSprites, helpers) {
   const models = helpers.dolOffset(dol, MODEL_TABLE.address), modelCount = dol.readUInt32BE(helpers.dolOffset(dol, MODEL_TABLE.countAddress));
   for (const entry of species) {
     const file = entry.model < modelCount ? files.get(dol.readUInt32BE(models + entry.model * MODEL_TABLE.size + MODEL_TABLE.id)) : null;
-    entry.forms = formsOf(entry, file, disc, helpers.formsOf);
+    entry.forms = formsOf(entry, file, disc, helpers);
     // body sprites are named by species, as Colosseum's are (body001, and body001_c for its shiny one); Unown's by letter
     const stem = `body${String(entry.id).padStart(3, '0')}`, image = sprite(null, stem) || sprite(null, `${stem}a`);
     entry.sprite = image?.url || null;

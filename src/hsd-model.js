@@ -134,8 +134,10 @@ function readTexture(dat, at, textures, cache) {
   }
   const data = dat.data.subarray(pixels, pixels + gx.textureSize(format, width, height)), rgba = gx.decode(format, width, height, data, palette, paletteFormat);
   // `disc` is the texture as the disc has it, for finding its HD replacement (texture-pack-lookup.js); `image` is its
-  // HSD_ImageDesc's offset in the model's data (hero-bake.js puts other texels there).
-  const index = rgba ? textures.push({ width, height, rgba, wrapS: dat.u32(at + 0x34), wrapT: dat.u32(at + 0x38), disc: { data, format, width, height, palette, image } }) - 1 : -1;
+  // HSD_ImageDesc's offset in the model's data (hero-bake.js puts other texels there). `mipmap`: whether the game samples
+  // it with mipmaps (the HSD_ImageDesc's flag); without, HSD_TObjSetup keeps the base level only.
+  const index = rgba ? textures.push({ width, height, rgba, wrapS: dat.u32(at + 0x34), wrapT: dat.u32(at + 0x38), mipmap: dat.u32(image + 0x0c) !== 0,
+    disc: { data, format, width, height, palette, image } }) - 1 : -1;
   cache.set(key, index);
   return index;
 }
@@ -165,9 +167,13 @@ function readLayers(dat, material, textures, cache) {
     const flags = dat.u32(at + 0x40), coord = flags & COORD_MASK, tev = dat.pointer(at + 0x58);
     // -1: a format this can't read, which draws as white
     const texture = readTexture(dat, at, textures, cache);
+    // The blend factor reaches the TEV as a constant colour (TObjMakeTExp, HSD_TExpSetReg), cut to 0-255: Mankey's,
+    // Snorlax's, Gligar's and Ursaring's eye textures say 2 or 5 and the game draws them plainly, where an unclamped
+    // factor pushed the eyes' surroundings to black.
+    const blending = Math.min(Math.max(dat.f32(at + 0x44), 0), 1);
     layers.push({ texture, id: dat.u32(at + 8), source: Math.max(dat.u32(at + 0x0c) - GX_TEXCOORD_SOURCE0, 0), coord,
       lightmap: flags & LIGHTMAP_MASK, colorOp: (flags >> 16) & 0x0f, alphaOp: (flags >> 20) & 0x0f, bump: Boolean(flags & TEX_BUMP),
-      blending: dat.f32(at + 0x44), translate: [dat.f32(at + 0x28), dat.f32(at + 0x2c)], scale: [dat.f32(at + 0x1c), dat.f32(at + 0x20)],
+      blending, translate: [dat.f32(at + 0x28), dat.f32(at + 0x2c)], scale: [dat.f32(at + 0x1c), dat.f32(at + 0x20)],
       repeat: [dat.u8(at + 0x3c) || 1, dat.u8(at + 0x3d) || 1], mirrorT: dat.u32(at + 0x38) === GX_MIRROR, tev: tev ? readTev(dat, tev) : null });
   }
   return layers;

@@ -106,7 +106,10 @@ test('XD\'s Pokédex: every Pokémon, each with a model and a sprite, and how XD
   assert.match(find(27).status.note, /Rock Poké Spot/);
   assert.equal(find(1).height, '2\'04"');
   assert.equal(find(1).weight, '15.2 lbs');
-  assert.deepEqual(find(386).forms.map(form => form.label), ['Normal', 'Shiny', 'Attack', 'Defense', 'Speed']);
+  assert.deepEqual(find(386).forms.map(form => form.label), ['Normal', 'Shiny', 'Attack', 'Defense', 'Speed', 'Shiny Attack', 'Shiny Defense', 'Shiny Speed']);
+  // each form's shiny model (XD's rare Deoxys table has all four)
+  assert.deepEqual(find(386).forms.map(form => form.id).slice(5), ['deoxys_atk_c', 'deoxys_def_c', 'deoxys_sp_c']);
+  assert.equal(find(201).forms.length, 56);
   const eevee = pokedex.create().model(rom, 133, 'eievui');
   assert.ok(eevee.shapes.length > 0 && eevee.animations.length > 0);
   assert.deepEqual([eevee.sleep, eevee.wake, eevee.blink], [8, 9, 7]);
