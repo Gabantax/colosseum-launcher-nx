@@ -2011,7 +2011,9 @@ async function playBattle(session) {
     // a joiner's game starts once there's a battle: with team preview, after both have picked
     if (session.role === 'host') session.prepareGame();
     else if (!await session.again()) return;
-    do await exclusive(playLabel(), () => play(null, { port: gamePort }), true);
+    // the room's battle rules: Platinum's need their file made for the game (preparePlayPacks)
+    const rules = () => session.start?.rules || (battle?.session === session ? battle.rules : null);
+    do await exclusive(playLabel(), () => play(null, { port: gamePort, rules: rules() }), true);
     while (await session.again());
   } finally {
     session.close();
