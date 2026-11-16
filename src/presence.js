@@ -88,7 +88,7 @@ function activity(game, { startedAt, online = null, gameName = GAME, areaImages 
     details: undefined,
     state: undefined,
     timestamps: startedAt ? { start: startedAt } : undefined,
-    assets: { large_image: 'logo', large_text: gameName, small_image: 'launcher', small_text: 'Played with Colosseum Launcher' },
+    assets: { large_image: 'logo', large_text: gameName, small_image: 'launcher', small_text: 'Played with Orre Launcher' },
     buttons: [{ label: 'Play it on PC', url: LAUNCHER_URL }, { label: 'Join the Discord', url: DISCORD_URL }]
   };
   if (online) {

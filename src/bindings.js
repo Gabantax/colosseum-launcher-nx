@@ -112,7 +112,7 @@
 
   // Every control's keys; controller buttons only for the controls changed (the rest keep the game's layout).
   function fileText(bindings, padBindings = {}) {
-    const lines = ['# Written by Colosseum Launcher from Settings → Controls. Changes here are replaced on the next launch.'];
+    const lines = ['# Written by Orre Launcher from Settings → Controls. Changes here are replaced on the next launch.'];
     for (const { id } of CONTROLS) {
       const pads = padBindings && padBindings[id] ? padBindings[id] : [];
       lines.push(`${id} =${[...keysFor(bindings, id), ...pads].map(item => ` ${item}`).join('')}`);
