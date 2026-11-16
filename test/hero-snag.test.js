@@ -98,3 +98,20 @@ test('the Customize preview bends limbs and pins joints as the snag\'s emulation
   [[0, 0, 0], [1, 2, 3], [-4, 5, 6]].forEach((p, j) => values.set([1, 1, 1, 0, 0, 0, ...p], j * 9));
   check({ model: { joints }, rig, values });
 });
+
+test('the Snag Ball is held as far from the hero\'s wrist as Michael\'s palm is from his, turning with the wrist', () => {
+  const field = require('../src/hero-field');
+  const joint = (parent, translation, rotation = [0, 0, 0]) => ({ parent, scale: [1, 1, 1], rotation, translation });
+  // Michael: the root, his wrist, his palm (out along the hand and below it), and his ball, pinned to the palm
+  const michael = { joints: [joint(-1, [0, 0, 0]), joint(0, [5, 9, 0]), joint(1, [0.4, -0.7, 0]), joint(0, [1, 1, 1])] };
+  const michaelRig = [plain(), plain(), plain(), plain([{ type: 1, joint: 2 }])];
+  // the hero's wrist rests elsewhere, turned a quarter (its own axes don't matter, only the T-pose's)
+  const hero = { joints: [joint(-1, [0, 0, 0]), joint(0, [6, 12, 0], [0, Math.PI / 2, 0])] };
+  const held = snag.palmPoint(michael, michaelRig, 3, hero, 1);
+  const rest = field.worlds(hero, field.restValues(hero), 0);
+  near(held(rest), [6.4, 11.3, 0]);
+  // the wrist turned a quarter about Z from its rest: the palm's place turns with it, about the wrist
+  const m = rest[1], turned = m.slice();
+  for (let c = 0; c < 3; c++) { turned[c * 4] = -m[c * 4 + 1]; turned[c * 4 + 1] = m[c * 4]; }
+  near(held([rest[0], turned]), [6.7, 12.4, 0]);
+});

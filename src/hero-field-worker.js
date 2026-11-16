@@ -2,7 +2,8 @@
 // Makes the five heroes' models for XD off the main thread, into `folder`, the game's COLO_HERO_FIELD
 // (host/xd/player.c): <hero>.dat, the field model (hero-field.js buildFieldModel: each hero's battle model from XD's
 // disc, with Michael's field clips moved onto it), and <hero>.pkx, the battle model with Michael's Snag Machine clips
-// (hero-snag.js buildSnagModel; a hero it can't be made for keeps the disc's, without them). Made once for a disc:
+// and Poké Ball throw (hero-snag.js buildSnagModel; a hero it can't be made for keeps the disc's, without them). Made
+// once for a disc:
 // made.json says for which. Answers { folder } or { error }.
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -25,7 +26,8 @@ try {
     const michael = fsys.entries(disc.file('people_archive.fsys')).find(entry => entry.id === MICHAEL_FIELD);
     if (!michael) throw new Error('Michael\'s field model isn\'t on this disc.');
     const people = Buffer.from(michael.data()), snag = Buffer.from(fsys.entries(disc.file(heroSnag.MICHAEL_SNAG))[0].data());
-    const hash = crypto.createHash('sha256').update(`${heroField.VERSION}:${heroSnag.VERSION}`).update(people).update(snag);
+    const throwXd = Buffer.from(fsys.entries(disc.file(heroSnag.MICHAEL_BATTLE))[0].data());
+    const hash = crypto.createHash('sha256').update(`${heroField.VERSION}:${heroSnag.VERSION}`).update(people).update(snag).update(throwXd);
     for (const data of files.values()) hash.update(data);
     const key = hash.digest('hex').slice(0, 16), folder = path.join(root, key);
     if (!fs.existsSync(path.join(folder, 'made.json'))) {
@@ -35,7 +37,7 @@ try {
       for (const [id, data] of files) {
         fs.writeFileSync(path.join(temporary, `${id}.dat`), heroField.buildFieldModel(data, people));
         try {
-          fs.writeFileSync(path.join(temporary, `${id}.pkx`), heroSnag.buildSnagModel(data, snag));
+          fs.writeFileSync(path.join(temporary, `${id}.pkx`), heroSnag.buildSnagModel(data, snag, { throwXd, cameraScale: heroSnag.CAMERA_SCALE[id] }));
           snags.push(id);
         } catch (error) { failed[id] = String(error?.message || error); }
       }
