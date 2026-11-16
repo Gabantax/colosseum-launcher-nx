@@ -12,6 +12,7 @@ const fsys = require('./fsys');
 const hsd = require('./hsd-model');
 const colors = require('./hero-colors');
 const retarget = require('./hero-retarget');
+const heroSnag = require('./hero-snag');
 const texturePackLookup = require('./texture-pack-lookup');
 const { decodePng } = require('./pokemon-packs');
 const { colosseumPkx } = require('./xd-disc');
@@ -99,6 +100,18 @@ function createReader(rom, game = 'colosseum') {
     return { id, kind, label: hero.label, model, hd, ...colors.prepare(id, model.textures) };
   }
 
+  // A model at rest as the game draws it (hero-snag.js withLimbsSet), made once per model
+  const drawn = new WeakMap();
+  function asDrawn(model) {
+    if (!drawn.has(model)) {
+      const rest = Float32Array.from(model.joints.flatMap(joint => [...joint.scale, ...joint.rotation, ...joint.translation]));
+      const { values } = heroSnag.withLimbsSet(model, heroSnag.rigOfModel(model), { frames: 1, values: rest }, { pins: true });
+      drawn.set(model, { ...model, joints: model.joints.map((joint, j) => ({ ...joint, scale: Array.from(values.subarray(j * 9, j * 9 + 3)),
+        rotation: Array.from(values.subarray(j * 9 + 3, j * 9 + 6)), translation: Array.from(values.subarray(j * 9 + 6, j * 9 + 9)) })) });
+    }
+    return drawn.get(model);
+  }
+
   // Wes's motion on another hero's model: his standing idle (from his field model, where the disc has it, else his battle
   // model's stance) or a battle slot's.
   function fromWes(id, kind, motionId, slot) {
@@ -107,8 +120,15 @@ function createReader(rom, game = 'colosseum') {
     const index = stands ? colors.heroIn('wes', game).stand.idle : wes.slots[motionId === 'idle' ? 0 : slot] ?? -1;
     if (index < 0) return { clip: null, from: null };
     const key = `${id}:${kind}:${sourceKind}`;
-    if (!matches.has(key)) matches.set(key, retarget.matchJoints(wes.model, own.model));
-    return { clip: retarget.retarget(wes.model, hsd.parseClip(wes.pkx, index), own.model, matches.get(key)), from: 'wes' };
+    // Both models matched and moved as the game draws them: their bent limbs' joints (and Wes's pinned pelvis) set to
+    // where the game puts them, at rest and in Wes's clip, since a bent limb's own values aren't what's seen
+    const source = asDrawn(wes.model), hero = asDrawn(own.model);
+    if (!matches.has(key)) matches.set(key, retarget.matchJoints(source, hero));
+    const match = matches.get(key), clip = heroSnag.withLimbsSet(wes.model, heroSnag.rigOfModel(wes.model), hsd.parseClip(wes.pkx, index), { pins: true });
+    const moved = retarget.retarget(source, clip, hero, match);
+    // then the hero's own limb targets put where the moved limbs end, so the game's way of bending them bends them there
+    const { values } = heroSnag.withTargets(own.model, heroSnag.rigOfModel(own.model), { ...moved, samples: moved.frames }, j => match.map[j] >= 0);
+    return { clip: { ...moved, values }, from: 'wes' };
   }
 
   // A motion of a hero's, on the model modelFor says: { clip, from }, `from` 'wes' for one moved over from Wes's

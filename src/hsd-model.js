@@ -74,6 +74,25 @@ function matrixAt(dat, at) {
   return m;
 }
 
+// A joint's constraints (its RObj list, +0x3C), as the game applies them (robj.c, jobj.c): `refs` the joints it follows
+// (type 1 its place, 3 the way a limb bends) and `hint` a limb's bone length and turn (flag 4 bends it the other way).
+// A limb the game bends itself is a JOINT1 joint, its JOINT2 child and their EFFECTOR, which reaches for its place.
+const LIMB_MASK = 0x600000, ROBJ_ACTIVE = 0x80000000, ROBJ_KIND = 0x70000000, REF_JOBJ = 0x10000000, REF_HINT = 0x40000000;
+function readConstraints(dat, joints, byOffset) {
+  for (const joint of joints) {
+    const refs = [];
+    let hint = null;
+    for (let robj = dat.pointer(joint.offset + 0x3c); robj; robj = dat.pointer(robj)) {
+      const flags = dat.u32(robj + 4), target = dat.pointer(robj + 8);
+      if (!(flags & ROBJ_ACTIVE)) continue;
+      if ((flags & ROBJ_KIND) === REF_JOBJ && byOffset.has(target)) refs.push({ type: flags & 0xfffffff, joint: byOffset.get(target) });
+      else if ((flags & ROBJ_KIND) === REF_HINT && !hint) hint = { length: target ? dat.f32(target) : 0, turn: target ? dat.f32(target + 4) : 0, flip: Boolean(flags & 4) };
+    }
+    const limb = (joint.flags & LIMB_MASK) >> 21;
+    if (limb || refs.length || hint) joint.constraint = { limb, refs, hint };
+  }
+}
+
 function readJoints(dat, first) {
   const joints = [], byOffset = new Map();
   const walk = (start, parent) => {
@@ -89,6 +108,7 @@ function readJoints(dat, first) {
     }
   };
   walk(first, -1);
+  readConstraints(dat, joints, byOffset);
   return { joints, byOffset };
 }
 
@@ -715,7 +735,9 @@ function parseModel(pkx) {
   const { shapes, materials } = readShapes(dat, { joints, byOffset }, table, textures);
   if (!shapes.length) throw new Error('A Pokémon\'s model has nothing to draw.');
   const animations = readClipRoots(dat, set).map(root => Math.ceil(clipLength(dat, root)));
-  return { joints: joints.map(({ parent, flags, scale, rotation, translation }) => ({ parent, classicalScale: Boolean(flags & CLASSICAL_SCALE), scale, rotation, translation,
+  return { joints: joints.map(({ parent, flags, scale, rotation, translation, constraint }) => ({ parent, classicalScale: Boolean(flags & CLASSICAL_SCALE), scale, rotation, translation,
+      // the limb it is part of and the joints it follows, which model-rig.js poses as the game does
+      ...(constraint ? { constraint } : {}),
       // a joint whose meshes face the camera (displayfunc.c mkBillBoardMtx): 1 all round, 2 upright, 3 level, 4 turning in the view
       billboard: (flags >> BILLBOARD_SHIFT) & BILLBOARD_MASK, perspective: Boolean(flags & PERSPECTIVE_BILLBOARD) })),
     inverseBind: joints.map(joint => joint.inverseBind), draw: table.draw, shapes, materials, textures, animations, ...readHeader(pkx, animations.length) };
