@@ -87,7 +87,9 @@
       "Pokémon XD: fixed the game crashing on Windows just after some battles start, such as the Rider Willie fight outside the Outskirt Stand.",
       "Replays of online battles play in Colosseum and in XD, with a bar across the top of the game showing the turn and how far through the battle it is. In the game, Start pauses, left and right go back or ahead a turn, and up and down change the speed.",
       "Fixed story cutscenes stopping for good at 60 fps with someone walking on the spot, such as Beluh at the top of the stairs in Agate Village when she goes for the Small Tablet, and Miror B. at the door in Realgam Tower after his battle. Holding fast-forward is no longer needed to get past them.",
-      "Fixed the game crashing when a trainer spotted you and walked over while Rui stood in the way, such as at the top of the Under's elevator in Pyrite Town, and when you sorted your PDA e-mail by sender or by subject. Pokémon XD had the same fault where someone steps aside to make way, and it's fixed there too."
+      "Fixed the game crashing when a trainer spotted you and walked over while Rui stood in the way, such as at the top of the Under's elevator in Pyrite Town, and when you sorted your PDA e-mail by sender or by subject. Pokémon XD had the same fault where someone steps aside to make way, and it's fixed there too.",
+      "Later generations: Generation 4 move descriptions no longer run out of their boxes. Each is broken into lines that fit, as the game's own descriptions are, on the summary's moves page, the screen for forgetting a move and, in XD, the Move Teacher's list.",
+      "Later generations: Cherrim changes into its Sunshine Form in strong sunlight and back to its Overcast Form when the sun ends, in Colosseum and in XD. Press Make assets when the launcher asks, to make its Sunshine Form's model."
     ]
   },
   "releases": [

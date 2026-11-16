@@ -404,6 +404,37 @@ test('box icons go to the game in a chunk of their own', () => {
   assert.equal(packs.compile({ pokemon: [{ id: 254, ...built, assets: {} }] }).includes('ICON'), false, 'no chunk without an icon');
 });
 
+test('the models of the form a Battle Revolution Pokémon changes into go to the game in a chunk of their own', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-form-'));
+  try {
+    // Cherrim's folder: its models, and its Sunshine Form's (pbr2pkx's model-form1.pkx); Turtwig's has none of a form
+    const model = byte => Buffer.alloc(0x100, byte);
+    const folders = { 421: { 'model.pkx': model(1), 'model-shiny.pkx': model(2), 'model-form1.pkx': model(3), 'model-form1-shiny.pkx': model(4) },
+      387: { 'model.pkx': model(5) } };
+    for (const [number, files] of Object.entries(folders)) {
+      fs.mkdirSync(path.join(root, number), { recursive: true });
+      for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(root, number, name), data);
+    }
+    const spec = name => ({ base: 'Umbreon', name });
+    const built = { species: [{ id: 447, number: 421, generation: 4, spec: spec('Cherrim') }, { id: 413, number: 387, generation: 4, spec: spec('Turtwig') }], moves: [] };
+    const { pokemon } = packs.generationPokemon(tables(), built, { modelsDirectory: root });
+    assert.deepEqual(pokemon.map(each => [each.national, each.forms.length]), [[421, 1], [387, 0]]);
+    const file = packs.compile({ pokemon });
+    const chunks = {};
+    for (let at = 16; at < file.length;) {
+      const tag = file.toString('latin1', at, at + 4), size = file.readUInt32BE(at + 4);
+      chunks[tag] = file.subarray(at + 8, at + 8 + size);
+      at += 8 + Math.ceil(size / 4) * 4;
+    }
+    assert.deepEqual(Object.keys(chunks), ['SPEC', 'FORM']);
+    const form = chunks.FORM;
+    assert.deepEqual([form.readUInt32BE(0), form.readUInt16BE(4), form.readUInt16BE(6)], [1, 447, 1], 'one form: Cherrim\'s first after its own');
+    assert.deepEqual([form.readUInt32BE(8), form[12], form.readUInt32BE(12 + 0x100), form[16 + 0x100]], [0x100, 3, 0x100, 4], 'its model, then its shiny one');
+    assert.equal(form.length, 16 + 0x200);
+    assert.equal(packs.compile({ pokemon: [pokemon[1]] }).includes('FORM'), false, 'no chunk without a form');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a pack\'s cry.wav and a Battle Revolution one are read beside their Pokémon; a bad one is said, or left out', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-cry-'));
   try {
