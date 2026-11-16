@@ -880,6 +880,8 @@ function hdVisualsReady(root, settings = config.settings) {
   return !supports('hdTextures') || port.hdVisualsInstalled(root, settings, config.game);
 }
 
+const DLL_INIT_RETRIES = 2;
+
 async function build(forceFresh = false) {
   const original = requireRepo();
   const settings = { ...config.settings };
@@ -902,6 +904,13 @@ async function build(forceFresh = false) {
   }
   // A fresh build's folder is longer than the one ensureBuildTools checked.
   requireBuildablePath(root);
+  // A game that can't link in a folder with letters outside ASCII says so now, not at the end of the build.
+  const nonAscii = port.nonAsciiPathProblem(root, { portable: Boolean(portableRoot),
+    folder: portableRoot || path.dirname(config.installRoot || original) });
+  if (nonAscii) {
+    log(nonAscii.message);
+    throw new Error(nonAscii.message);
+  }
   if (!hdVisualsReady(root, settings)) await installTextures(root);
   // A game whose build reads main.dol needs it on every system (games.js needsMainDol; neither does now).
   if (chosen.needsMainDol) {
@@ -924,15 +933,28 @@ async function build(forceFresh = false) {
         }),
       { source, toolFolder: toolsStatus().mode === 'own' ? null : buildTools.rootFor(app.getPath('userData')) });
   };
+  // Windows sometimes can't start one of the build's programs (0xC0000142: build-tools.js dllInitFailedError), more
+  // often with many starting at once. The build runs again with two jobs, up to twice, before the player is told what
+  // usually causes it; the compiler cache keeps what each try compiled.
+  const compileSteadily = async buildEnv => {
+    for (let attempt = 1; ; attempt++) {
+      const triedAt = Date.now();
+      try { return await compile(attempt === 1 ? buildEnv : { ...buildEnv, JOBS: '2' }); }
+      catch (error) {
+        if (error.buildHint !== 'dll-init-failed' || attempt > DLL_INIT_RETRIES || wasStopped(triedAt)) throw error;
+        log('Windows could not start one of the build\'s programs (0xC0000142). Building again with fewer programs at once…');
+      }
+    }
+  };
   const startedAt = Date.now();
   let result;
-  try { result = await compile(env); }
+  try { result = await compileSteadily(env); }
   catch (error) {
     // A failed build through the caches is tried once more without them, unless the player stopped it, the build
     // tools lost files, or the drive is full or Windows won't let them fork (which fail the same way again).
     if (!env.COLO_UNIT_CACHE || wasStopped(startedAt) || error.blockedTool || error.buildHint || buildTools.missingTools(app.getPath('userData'))?.length) throw error;
     log('The build failed with the compiler cache. Building again without it…');
-    result = await compile(compilerCache.withoutCaches(env));
+    result = await compileSteadily(compilerCache.withoutCaches(env));
   }
   // Preferences switch only after a successful build. Closing the app or a
   // failed download/build leaves the last installation selected and playable.
