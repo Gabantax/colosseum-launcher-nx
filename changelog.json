@@ -106,7 +106,8 @@
       "Later generations: fixed Shedinja taking no recoil from Struggle under Platinum's battle rules, which could leave a battle with no way to end. Struggle's recoil now always takes at least 1 HP, as in Pokémon Platinum.",
       "Pokémon XD: in widescreen, the new P★DA mail, Poké Snack and ready-to-purify notices and the Miror Radar's icon keep their shape at the left edge of the screen, as on a 4:3 screen, instead of drawing their bar stretched far across it.",
       "Later generations: in Pokémon XD, Generation 4 and pack Pokémon faces are round like XD's own, so an ear or the corners no longer stick out of the round portrait frame, such as Luxio's in the battle panel.",
-      "Fixed the game refusing to save at every start (\"The game data can't be saved\", or in XD \"The POKéMON XD save file is corrupted\") when the save file had been left empty, which could happen when the system went down soon after starting a new game. The empty file is moved aside and kept, so you can start a new save, and the game now writes each save in full before it replaces the old one, in Colosseum and in XD."
+      "Fixed the game refusing to save at every start (\"The game data can't be saved\", or in XD \"The POKéMON XD save file is corrupted\") when the save file had been left empty, which could happen when the system went down soon after starting a new game. The empty file is moved aside and kept, so you can start a new save, and the game now writes each save in full before it replaces the old one, in Colosseum and in XD.",
+      "Pokémon XD: fixed the game crashing on Windows as soon as you picked an item to sell at a shop, such as at the Outskirt Stand or in Agate Village."
     ]
   },
   "releases": [
