@@ -2,10 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { heldInputs, scrollAxis, createRepeater, nextInDirection } = require('../src/gamepad-nav');
+const { heldInputs, scrollAxis, createRestGate, createRepeater, nextInDirection } = require('../src/gamepad-nav');
 
-function pad({ buttons = [], axes = [0, 0, 0, 0], connected = true } = {}) {
-  return { connected, axes, buttons: Array.from({ length: 17 }, (_, index) => ({ pressed: buttons.includes(index), value: buttons.includes(index) ? 1 : 0 })) };
+function pad({ buttons = [], axes = [0, 0, 0, 0], connected = true, mapping = 'standard', index = 0, id = 'Xbox 360 Controller (XInput STANDARD GAMEPAD)' } = {}) {
+  return { connected, mapping, index, id, axes, buttons: Array.from({ length: 17 }, (_, index) => ({ pressed: buttons.includes(index), value: buttons.includes(index) ? 1 : 0 })) };
 }
 const rect = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height });
 
@@ -29,6 +29,52 @@ test('a controller printed like Nintendo\'s confirms with its A, the right-hand 
 test('right stick scrolls with a deadzone', () => {
   assert.equal(scrollAxis([pad({ axes: [0, 0, 0, 0.1] })]), 0);
   assert.equal(scrollAxis([pad({ axes: [0, 0, 0, -0.8] }), pad({ axes: [0, 0, 0, 0.4] })]), -0.8);
+});
+
+// Mayflash's GameCube adapter in PC mode: four controllers Chromium knows no layout for, so their axes come as the
+// device lists them (main stick X and Y, C-stick, L and R triggers). Its triggers rest at -1, and an empty port can
+// read held too.
+const mayflash = (index, axes, buttons = []) =>
+  pad({ index, id: 'MAYFLASH GameCube Controller Adapter (Vendor: 0079 Product: 1846)', mapping: '', axes, buttons });
+
+test('the right stick scrolls only on a controller in the standard layout', () => {
+  assert.equal(scrollAxis([mayflash(0, [0, 0, 0, -1, -1, 0])]), 0);
+  assert.equal(scrollAxis([mayflash(0, [0, 0, 0, -1, -1, 0]), pad({ index: 1, axes: [0, 0, 0, 0.6] })]), 0.6);
+});
+
+test('an axis that has not moved since the controller appeared does nothing', () => {
+  const gate = createRestGate();
+  // An empty port reading its stick hard up-left and a trigger at rest, on a standard pad's right stick Y too.
+  const idle = (stick = 0) => [mayflash(0, [-1, -1, 0, -1, -1, 0]), mayflash(1, [0.02, -0.01, 0, -1, -1, 0]),
+    pad({ index: 2, axes: [0, 0, 0, -1] }), mayflash(3, [0, stick, 0, -1, -1, 0])];
+  for (let frame = 0; frame < 120; frame++) {
+    const pads = gate(idle());
+    assert.deepEqual([...heldInputs(pads)], []);
+    assert.equal(scrollAxis(pads), 0);
+  }
+  // A stick pushed on another port still moves focus.
+  assert.deepEqual([...heldInputs(gate(idle(0.9)))], ['down']);
+});
+
+test('the stick that wakes a controller counts once it moves on or is let go', () => {
+  const gate = createRestGate();
+  // Chromium shows the controller only once it is used, so the first look already has the stick pushed.
+  assert.deepEqual([...heldInputs(gate([pad({ axes: [0, 0.6, 0, 0] })]))], []);
+  assert.deepEqual([...heldInputs(gate([pad({ axes: [0, 1, 0, 0] })]))], ['down']);
+  const again = createRestGate();
+  assert.deepEqual([...heldInputs(again([pad({ axes: [0, -1, 0, 0] })]))], []);
+  assert.deepEqual([...heldInputs(again([pad({ axes: [0, 0, 0, 0] })]))], []);
+  assert.deepEqual([...heldInputs(again([pad({ axes: [0, -1, 0, 0] })]))], ['up']);
+  // Buttons are not held back: the press that wakes a controller still works.
+  assert.deepEqual([...heldInputs(createRestGate()([pad({ buttons: [0] })]))], ['confirm']);
+});
+
+test('a controller plugged in again is looked at afresh', () => {
+  const gate = createRestGate();
+  gate([pad({ axes: [0, 0, 0, 0] })]);
+  assert.deepEqual([...heldInputs(gate([pad({ axes: [0, -1, 0, 0] })]))], ['up']);
+  gate([null]);
+  assert.deepEqual([...heldInputs(gate([pad({ axes: [0, -1, 0, 0] })]))], []);
 });
 
 test('buttons fire once per press and directions repeat while held', () => {
@@ -101,7 +147,7 @@ test('only fields that take typing count as typed', () => {
 });
 
 // A small stand-in page: elements that focus and blur, a document that hears focusin, and one controller.
-function fakePage() {
+function fakePage({ pads } = {}) {
   const listeners = {};
   const document = {
     activeElement: null,
@@ -133,7 +179,7 @@ function fakePage() {
   let buttons = [];
   let frame = null;
   const window = {
-    navigator: { getGamepads: () => [pad({ buttons })] },
+    navigator: { getGamepads: () => pads ? pads() : [pad({ buttons })] },
     requestAnimationFrame(fn) { frame = fn; return 1; },
     addEventListener() {},
     getComputedStyle: () => ({ overflowY: 'visible' }),
@@ -145,7 +191,9 @@ function fakePage() {
     for (const held of [[index], []]) { buttons = held; now += 500; const run = frame; frame = null; run(now); }
   }
   const fire = (type, event) => { for (const fn of listeners[type] || []) fn(event); };
-  return { document, window, element, press, fire };
+  // Runs frames 16 ms apart with whatever the controllers read.
+  function frames(count) { for (let i = 0; i < count && frame; i++) { now += 16; const run = frame; frame = null; run(now); } }
+  return { document, window, element, press, fire, frames };
 }
 
 test('a text field the controller reaches is read-only until A picks it', () => {
@@ -174,4 +222,32 @@ test('a text field the controller reaches is read-only until A picks it', () => 
   page.fire('pointerdown', { target: search });
   assert.equal(search.readOnly, false);
   assert.equal(page.document.body.classList.contains('gamepad-active'), false);
+});
+
+test('an idle GameCube adapter leaves the Settings page where it is', () => {
+  const { start } = require('../src/gamepad-nav');
+  // Four ports: an idle controller whose triggers rest at -1 and whose stick wobbles a little, an empty port
+  // reading zero, one reading its triggers at rest, and (later) one reading everything held.
+  let wobble = 0, stuckPort = false;
+  const page = fakePage({ pads: () => {
+    wobble = (wobble + 1) % 3;
+    return [mayflash(0, [0.01 * wobble, -0.02, 0, -1, -1, 0]), mayflash(1, [0, 0, 0, 0, 0, 0]),
+      mayflash(2, [0, 0, 0, -1, -1, 0]), stuckPort ? mayflash(3, [-1, -1, -1, -1, -1, -1]) : null];
+  } });
+  const tab = page.element('BUTTON', 'button', rect(0, 0, 100, 40));
+  const setting = page.element('SELECT', 'select-one', rect(0, 900, 300, 40));
+  // The Settings page, scrolled down to a setting the player clicked.
+  const settings = { scrollHeight: 3000, clientHeight: 600, scrollTop: 800, parentElement: null };
+  setting.parentElement = settings;
+  page.window.getComputedStyle = element => ({ overflowY: element === settings ? 'auto' : 'visible' });
+  page.document.querySelectorAll = () => [];
+  start({ document: page.document, window: page.window, defaultFocus: () => [tab] });
+  setting.focus();
+  page.frames(300);
+  assert.equal(settings.scrollTop, 800);
+  assert.equal(page.document.activeElement, setting);
+  stuckPort = true;
+  page.frames(300);
+  assert.equal(page.document.activeElement, setting);
+  assert.equal(settings.scrollTop, 800);
 });
