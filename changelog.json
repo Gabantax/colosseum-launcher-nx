@@ -109,7 +109,9 @@
       "Fixed the game refusing to save at every start (\"The game data can't be saved\", or in XD \"The POKéMON XD save file is corrupted\") when the save file had been left empty, which could happen when the system went down soon after starting a new game. The empty file is moved aside and kept, so you can start a new save, and the game now writes each save in full before it replaces the old one, in Colosseum and in XD.",
       "Pokémon XD: fixed the game crashing on Windows as soon as you picked an item to sell at a shop, such as at the Outskirt Stand or in Agate Village.",
       "Fixed walking through walls with fast-forward on, such as coming out a level or two up beside the Pokémon Center in Agate Village, and in Pokémon XD out of the HQ lab beside the elevator or through a closed door. Fast-forward now plays more of the game's own steps instead of longer ones, so on a slower computer it may run a little slower than the speed you picked.",
-      "Fixed fast-forward and a faster Battle animation speed holding a battle up while each move's sound and each Pokémon's cry finished playing at normal speed. The battle now moves on as soon as the sped-up animation is over, and the sound still plays to its end, in Colosseum and in XD."
+      "Fixed fast-forward and a faster Battle animation speed holding a battle up while each move's sound and each Pokémon's cry finished playing at normal speed. The battle now moves on as soon as the sped-up animation is over, and the sound still plays to its end, in Colosseum and in XD.",
+      "Pokémon XD: with Skip movies on, a new game goes straight past the opening scene of Shadow Lugia lifting the S.S. Libra and on to the battle simulation in the lab, as it does once the scene ends. Turn it on under Gameplay.",
+      "Pokémon XD: with the HD texture pack, the sea in the opening scene no longer looks like rough rock, and the helicopters' searchlights keep their soft glow. The game's own textures are used for these, as on the console."
     ]
   },
   "releases": [
