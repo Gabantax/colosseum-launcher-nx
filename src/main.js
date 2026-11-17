@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, net, screen, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, net, screen, protocol, nativeImage } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -71,7 +71,10 @@ const { retrying, httpError } = require('./retry');
 const savePokemon = require('./save-pokemon');
 const shadowtrade = require('./shadowtrade');
 const { GameLink } = require('./game-link');
-const { OnlineTrades } = require('./online-trades');
+const { OnlineTrades, summary: tradeSummary } = require('./online-trades');
+const { Arrivals } = require('./arrivals');
+const tradeConvert = require('./trade-convert');
+const { arrivalLines } = require('./arrival-show');
 
 const DISCORD_INVITE = 'https://discord.gg/pkVwBrSwsZ';
 // The game chosen on the Play page (games.js): its checkout, disc and game source are config's own fields.
@@ -1712,6 +1715,7 @@ async function openStoryLink(game) {
     if (pending && storyLive?.current()?.head.loaded && (whole || !synced)) { synced = true; syncTrades(); }
     const tradesWaiting = onlineTradesInstance?.state.journal.some(entry => entry.game === game);
     if (tradesWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !onlineSynced) { onlineSynced = true; syncOnlineTrades(); }
+    if (storyLive?.current()?.head.loaded && storyLive.current().head.safe) deliverArrivals();
   } });
   link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
   return link;
@@ -1724,8 +1728,84 @@ function closeStoryLink(link) {
 }
 function trades() {
   if (!shadowtradeTrades) shadowtradeTrades = new shadowtrade.Shadowtrade({ folder: path.join(app.getPath('userData'), 'shadowtrade'),
-    fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view) });
+    fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view), arrivals: arrivals() });
   return shadowtradeTrades;
+}
+
+// --- Arrivals (src/arrivals.js): each Pokémon a trade brought, shown by the running game (its P★DA-style notice, a trade
+// evolution, then a card with "Open PC" or "Close"); a trade made with the game closed is shown the next time it runs.
+let arrivalsInstance = null, arrivalNames = null, arrivalRetryAt = 0;
+const ARRIVAL_RETRY_MS = 60 * 1000;
+function arrivals() {
+  if (!arrivalsInstance) arrivalsInstance = new Arrivals({ folder: path.join(app.getPath('userData'), 'arrivals'), log,
+    onChange: () => { arrivalRetryAt = 0; setTimeout(deliverArrivals, 0); },
+    describe: describeArrival,
+    onDone: (entry, result) => {
+      log(`Trades: the game showed ${entry.kind === 'shadowtrade' ? 'the Shadow Pokémon' : 'the Pokémon'} from ${entry.from || 'the trade'}${result.evolved ? `, which evolved` : ''}.`);
+      if (entry.kind === 'trade' && entry.tradeId) onlineTrades().arrived(entry.tradeId, result);
+      broadcast('pokemon-changed', entry.game);
+    } });
+  return arrivalsInstance;
+}
+
+function deliverArrivals() {
+  const game = storyGame;
+  if (!game || !arrivalsInstance?.pending(game).length || arrivalsInstance.busy || Date.now() < arrivalRetryAt) return;
+  const access = onlineTradeAccess(game);
+  if (access?.mode !== 'live' || !storyLive.current()?.head.safe) return;
+  arrivalsInstance.deliver(game, access).then(() => { if (arrivalsInstance.pending(game).length) arrivalRetryAt = Date.now() + ARRIVAL_RETRY_MS; })
+    .catch(error => { arrivalRetryAt = Date.now() + ARRIVAL_RETRY_MS; log(`Trades: ${error.message}`); });
+}
+
+// The names, base stats and sprites the game's card shows, read once (the Pokédex for the game's species, the team builder's
+// battle data, by Colosseum's numbers, for moves, items and abilities); null pieces when a disc isn't there.
+function arrivalData(game) {
+  if (arrivalNames?.game === game) return arrivalNames;
+  arrivalNames = { game, dex: new Map(), battle: null };
+  try { if (game === config.game) for (const entry of pokedexList(port.validateRom(config.rom, game)).species) arrivalNames.dex.set(entry.id, entry); }
+  catch (error) { log(`Trades: no Pokédex for the game's card (${error.message}).`); }
+  try { arrivalNames.battle = battleData(teamDisc()); } catch (_) { /* moves by number */ }
+  return arrivalNames;
+}
+
+// A Pokédex sprite as the game takes it: RGBA, no larger than 192 pixels across
+function arrivalArt(url) {
+  if (!url) return null;
+  let image = /^data:/.test(url) ? nativeImage.createFromDataURL(url) : nativeImage.createFromPath(url.replace(/^file:\/\//, ''));
+  if (image.isEmpty()) return null;
+  const { width, height } = image.getSize(), scale = Math.min(1, 192 / Math.max(width, height));
+  if (scale < 1) image = image.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' });
+  const size = image.getSize(), bgra = image.toBitmap(), rgba = Buffer.alloc(bgra.length);
+  for (let i = 0; i < bgra.length; i += 4) {
+    const a = bgra[i + 3], un = v => (a ? Math.min(255, Math.round(v * 255 / a)) : 0);   // (straight alpha, as the game blends it)
+    rgba[i] = un(bgra[i + 2]); rgba[i + 1] = un(bgra[i + 1]); rgba[i + 2] = un(bgra[i]); rgba[i + 3] = a;
+  }
+  return { width: size.width, height: size.height, rgba };
+}
+
+function describeArrival(entry) {
+  const bytes = Buffer.from(entry.data || '', 'base64');
+  if (!bytes.length) return { lines: [], art: [] };
+  const data = arrivalData(entry.game), own = tradeSummary(entry.game, bytes), colosseum = tradeSummary(entry.game, bytes, 'colosseum');
+  const moves = new Map((data.battle?.moves || []).map(move => [move.id, move])), items = new Map((data.battle?.items || []).map(item => [item.id, item.name]));
+  // the battle data's species are by Colosseum's numbers
+  const names = {
+    species: id => {
+      const shown = data.dex.get(id);
+      if (!shown) return null;
+      const row = data.battle?.species?.[tradeConvert.speciesToColosseum(entry.game, id)] || {};
+      return { name: shown.name, types: shown.types, stats: shown.stats, gender: row.gender, abilities: row.abilities };
+    },
+    move: id => moves.get(id) || null,
+    item: id => items.get(id) || null
+  };
+  // moves and items by Colosseum's numbers (the battle data's), the rest by the game's own
+  const shown = { ...own, moves: colosseum.moves, item: colosseum.item };
+  const shadow = Boolean(tradeConvert.read(entry.game, bytes).shadowNow);
+  const lines = arrivalLines({ summary: shown, names, kind: entry.kind, from: entry.from, evolvesInto: entry.evolvesInto, shadow });
+  const art = [arrivalArt(data.dex.get(own.species)?.sprite)];
+  if (entry.evolvesInto) art.push(arrivalArt(data.dex.get(entry.evolvesInto)?.sprite));
+  return { lines, art };
 }
 // Whether a game's installed build takes Shadowtrade: each received Shadow Pokémon on an entry of its own, past the
 // save's own tables too (host/shadowtrade.c). Earlier builds would read a received XD Shadow's entry as empty, so the
@@ -1800,12 +1880,20 @@ function syncTrades() {
   return trades().sync(tradeAccess).catch(error => log(`Shadowtrade: ${error.message}`));
 }
 
+// While the game runs with a Shadowtrade waiting for its save, the server is asked more often, so a Pokémon matched to it
+// shows in the game soon after (arrivals); otherwise every SHADOWTRADE_SYNC_MS.
+const SHADOWTRADE_LIVE_SYNC_MS = 30 * 1000;
+let shadowtradeSlowAt = 0;
 function startShadowtrade() {
   clearInterval(shadowtradeTimer);
+  shadowtradeSlowAt = Date.now();
   shadowtradeTimer = setInterval(() => {
-    if (trades().state.journal.length) syncTrades();
-    if (onlineTrades().state.journal.length) syncOnlineTrades();
-  }, SHADOWTRADE_SYNC_MS);
+    const now = Date.now(), slow = now - shadowtradeSlowAt >= SHADOWTRADE_SYNC_MS;
+    const waitingLive = Boolean(storyGame && storyLive) && trades().state.journal.some(entry => entry.game === storyGame);
+    if (trades().state.journal.length && (slow || waitingLive)) syncTrades();
+    if (slow) { shadowtradeSlowAt = now; if (onlineTrades().state.journal.length) syncOnlineTrades(); }
+    deliverArrivals();
+  }, SHADOWTRADE_LIVE_SYNC_MS);
   if (trades().state.journal.length) syncTrades();
   if (onlineTrades().state.journal.length) syncOnlineTrades();
 }
@@ -1816,7 +1904,7 @@ let onlineTradesInstance = null;
 function onlineTrades() {
   if (!onlineTradesInstance) onlineTradesInstance = new OnlineTrades({ folder: path.join(app.getPath('userData'), 'online-trades'),
     url: shadowtrade.serverUrl(), fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('online-trades', view),
-    accessFor: onlineTradeAccess, receiverFor: tradeReceiver, launcher: app.getVersion(),
+    accessFor: onlineTradeAccess, receiverFor: tradeReceiver, launcher: app.getVersion(), arrivals: arrivals(),
     name: game => { try { return (storyGame === game ? storyLive?.current()?.model?.trainer : null) || savePokemon.readCard(saveDirectoryOf(game), game)?.trainer || 'Trainer'; } catch (_) { return 'Trainer'; } } });
   return onlineTradesInstance;
 }

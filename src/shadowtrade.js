@@ -126,7 +126,10 @@ function parseResult(text) {
   if (!id) return null;
   if (words[0] === 'ok') {
     const already = words[1] === 'already', rest = already ? words.slice(2) : words.slice(1);
-    return { id, ok: true, already, area: rest[0], box: Number(rest[1]), slot: Number(rest[2]) };
+    // (arrive: "ok party|box B S [shown] [evolved N] [pc]")
+    const evolved = rest.indexOf('evolved');
+    return { id, ok: true, already, area: rest[0], box: Number(rest[1]), slot: Number(rest[2]),
+      evolved: evolved >= 0 ? Number(rest[evolved + 1]) || 0 : 0, pc: rest.includes('pc') };
   }
   return { id, ok: false, code: words[1] || 'error', message: words.slice(2).join(' ') };
 }
@@ -145,6 +148,7 @@ class LiveGame {
     this.results = new Map();
     this.waiters = new Map();
     this.closed = false;
+    this.lock = Promise.resolve();   // one command at a time: the game keeps one waiting, and lets an earlier go
     link.on('message:live', ({ fields, data }) => {
       if (fields.part === 'head' && this.bytes && data.length === LIVE_HEADER) data.copy(this.bytes, 0);
       else if (fields.part === 'all' || !this.bytes) this.bytes = Buffer.from(data);
@@ -174,7 +178,14 @@ class LiveGame {
     return this.parsed;
   }
 
-  send(verb, fields, text) { this.link.send(verb, fields, text === undefined ? null : Buffer.from(text, 'latin1')); }
+  send(verb, fields, text) { this.link.send(verb, fields, text === undefined || text === null ? null : Buffer.isBuffer(text) ? text : Buffer.from(text, 'utf8')); }
+
+  // work() alone among the commands sent to the game (Shadowtrade's, Online Trades' and the arrivals' all go through here)
+  exclusive(work) {
+    const run = this.lock.then(work, work);
+    this.lock = run.catch(() => {});
+    return run;
+  }
 
   // the result of command `id` once it comes, or null if the link closes first (forget(id) stops waiting)
   result(id) {
@@ -199,7 +210,8 @@ function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms =
       if (deadline(current()?.head)) return undefined;
     }
   }
-  async function command(lines) {
+  const command = (lines, before = null) => live.exclusive(() => commandNow(lines, before));
+  async function commandNow(lines, before) {
     const now = current();
     if (!now?.head.loaded) throw new Error('Load your save in the game first.');
     if (cardTrainerId !== null && cardTrainerId !== undefined && now.head.trainerId !== cardTrainerId)
@@ -207,6 +219,7 @@ function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms =
     if (!live.linked) return { ok: false, code: 'timeout' };
     const id = crypto.randomBytes(8).toString('hex');
     const answer = live.result(id);
+    before?.();
     live.send('command', {}, `id ${id}\n${lines}\n`);
     try {
       // The game's save ends on its own "saved" message, which waits for A: while it says it's busy with the command,
@@ -256,15 +269,25 @@ function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms =
     has(identity) {
       const now = current();
       return Boolean(now?.ctx && savePokemon.findPokemon(now.ctx, identity));
-    }
+    },
+    // A Pokémon that came from a trade, shown by the game (a game whose hello says arrive.1; arrivals.js): its notice, its
+    // trade evolution when evolve, the card from `lines` (arrival-show.js) with the pictures in `art`, "Open PC" or "Close".
+    ...(live.link?.has?.('arrive.1') ? {
+      arrive(identity, place, { evolve = false, lines = [], art = [] } = {}) {
+        const hex = n => (n >>> 0).toString(16), at = place || { area: 'party', box: 0, slot: 0 };
+        return command([`arrive ${at.area} ${at.box} ${at.slot} ${hex(identity.species)} ${hex(identity.rnd)} ${hex(identity.trainer)} ${evolve ? 1 : 0}`, ...lines].join('\n'),
+          () => art.forEach((picture, slot) => picture && live.link.send('art', { slot, w: picture.width, h: picture.height }, picture.rgba)));
+      }
+    } : {})
   };
 }
 
 // ---- the trades ----
 
 class Shadowtrade {
-  constructor({ folder, url = serverUrl(), fetch = globalThis.fetch, log = () => {}, onChange = () => {} }) {
-    this.folder = folder; this.url = url; this.fetch = fetch; this.log = log; this.onChange = onChange;
+  // arrivals: arrivals.js, which has the running game show each Pokémon received (null: none shown)
+  constructor({ folder, url = serverUrl(), fetch = globalThis.fetch, log = () => {}, onChange = () => {}, arrivals = null }) {
+    this.folder = folder; this.url = url; this.fetch = fetch; this.log = log; this.onChange = onChange; this.arrivals = arrivals;
     this.file = path.join(folder, 'state.json');
     this.busy = null;
     this.state = this.load();
@@ -422,6 +445,9 @@ class Shadowtrade {
       }
       entry.stage = 'given';
       entry.placedAt = given.area ? { area: given.area, box: given.box, slot: given.slot } : entry.placedAt || null;
+      if (!entry.received.own && !entry.received.returned && !given.already)
+        this.arrivals?.add({ game: entry.game, kind: 'shadowtrade', from: entry.received.from || '', data: b64(checked.data), identity,
+          place: entry.placedAt, evolvesInto: 0, tradeId: entry.tradeId });
       this.save();
       this.log(`Shadowtrade: ${entry.received.summary.nickname} from ${entry.received.from || 'another player'} is in the save.`);
     }

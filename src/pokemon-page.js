@@ -594,14 +594,15 @@ function renderOverlay(room, view) {
   const from = pending?.from || done?.from || room.peer?.name || 'the other player';
   const picture = el('div', { className: 'tw-got' });
   let text;
-  if (got && into && done) {
+  const waitsToEvolve = Boolean(into) && (pending?.stage === 'evolving' || (done && done.evolved === false));
+  if (got && into && done && !waitsToEvolve) {
     picture.append(el('div', { className: 'tw-stage small' }, sprite(got, 60)), el('span', { className: 'tw-arrow', textContent: '›' }), stage({ ...got, species: into }, 112));
     text = `${shown(got)} from ${from} evolved into ${pokeName(into)}! It's in your save.`;
   } else if (got) {
     picture.append(stage(got, 112));
-    if (into && pending) picture.append(el('span', { className: 'tw-arrow', textContent: '›' }), el('div', { className: 'tw-stage small later', title: `${pokeName(into)}, once it evolves` }, sprite({ species: into }, 60)));
-    text = pending?.stage === 'evolving'
-      ? (data?.source === 'live' ? `${shown(got)} from ${from} is evolving into ${pokeName(into)} in your game…` : `${shown(got)} from ${from} is in your save. It evolves into ${pokeName(into)} the next time you play from the launcher.`)
+    if (waitsToEvolve) picture.append(el('span', { className: 'tw-arrow', textContent: '›' }), el('div', { className: 'tw-stage small later', title: `${pokeName(into)}, once it evolves` }, sprite({ species: into }, 60)));
+    text = waitsToEvolve
+      ? (data?.source === 'live' ? `${shown(got)} from ${from} is in your save. Watch your game: it evolves into ${pokeName(into)} there.` : `${shown(got)} from ${from} is in your save. It evolves into ${pokeName(into)} the next time you play from the launcher.`)
       : pending ? `${shown(got)} from ${from} is on its way into your save…` : `${shown(got)} from ${from} is in your save.`;
   } else text = 'The trade is done.';
   overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: 'Trade complete!' }), picture,
@@ -662,9 +663,10 @@ function renderTradeStart(view) {
   const history = (view?.history || []).filter(item => item.game === data?.game).slice(0, 6);
   $('trade-history').replaceChildren(...history.map(item => {
     if (item.returned || !item.received) return el('li', {}, sprite(item.sent, 30), el('span', {}, el('b', { textContent: shown(item.sent) }), ' came back (the trade was called off)'));
-    const got = item.evolvedInto ? { ...item.received, species: item.evolvedInto } : item.received;
+    const evolved = item.evolvedInto && item.evolved !== false;
+    const got = evolved ? { ...item.received, species: item.evolvedInto } : item.received;
     return el('li', { title: item.at ? new Date(item.at).toLocaleString() : '' }, sprite(item.sent, 30), el('span', { className: 'arrow', textContent: '⇄' }), sprite(got, 30),
-      el('span', {}, el('b', { textContent: shown(item.sent) }), ' for ', el('b', { textContent: shown(item.received) }), ` from ${item.from || 'another player'}${item.evolvedInto ? `, now ${pokeName(item.evolvedInto)}` : ''}`));
+      el('span', {}, el('b', { textContent: shown(item.sent) }), ' for ', el('b', { textContent: shown(item.received) }), ` from ${item.from || 'another player'}${evolved ? `, now ${pokeName(item.evolvedInto)}` : item.evolvedInto ? `, evolves when you next play` : ''}`));
   }));
   $('trade-history-title').hidden = !history.length;
 }

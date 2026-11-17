@@ -81,9 +81,11 @@ class OnlineTrades extends EventEmitter {
   // url: the trade server; accessFor(game): the save as shadowtrade.js reaches it (cardAccess / liveAccess);
   // receiverFor(game): what that game takes (trade-convert.js problems: laterPokemon, laterMoves, laterItems)
   constructor({ folder, url, fetch = globalThis.fetch, WebSocket = globalThis.WebSocket, log = () => {}, onChange = () => {},
-    accessFor = () => null, receiverFor = game => ({ game }), name = () => 'Trainer', launcher = '' }) {
+    accessFor = () => null, receiverFor = game => ({ game }), name = () => 'Trainer', launcher = '', arrivals = null }) {
     super();
-    Object.assign(this, { folder, url, fetch, WebSocket, log, onChange, accessFor, receiverFor, name, launcherVersion: launcher });
+    // arrivals: arrivals.js, which has the running game show each Pokémon that came, and do its trade evolution (null:
+    // the evolution is this journal's, and nothing is shown)
+    Object.assign(this, { folder, url, fetch, WebSocket, log, onChange, accessFor, receiverFor, name, launcherVersion: launcher, arrivals });
     this.file = path.join(folder, 'state.json');
     this.state = this.load();
     this.session = null;     // the room this player is in now
@@ -341,7 +343,11 @@ class OnlineTrades extends EventEmitter {
       try { await this.post(entry.code, 'ack', { key: entry.key, tradeId: entry.tradeId }); } catch (error) {
         if (error.status !== 404) { this.log(`Online Trades: couldn't tell the server yet (${error.message}).`); return; }
       }
-      entry.stage = entry.evolvesInto ? 'evolving' : 'finished';
+      if (this.arrivals && entry.placed && !entry.received?.returned) {
+        this.arrivals.add({ game: entry.game, kind: 'trade', from: entry.received.from || '', data: entry.placed.data, identity: entry.placed.identity,
+          place: entry.placed.place, evolvesInto: entry.evolvesInto || 0, tradeId: entry.tradeId });
+        entry.stage = 'finished';
+      } else entry.stage = entry.evolvesInto ? 'evolving' : 'finished';
       this.save();
     }
     if (entry.stage === 'evolving') await this.evolve(entry);
@@ -367,7 +373,7 @@ class OnlineTrades extends EventEmitter {
       return;
     }
     entry.stage = 'given';
-    entry.placed = { identity, place: given.area ? { area: given.area, box: given.box, slot: given.slot } : null };
+    entry.placed = { identity, place: given.area ? { area: given.area, box: given.box, slot: given.slot } : null, data: b64(made.bytes) };
     entry.evolvesInto = entry.received.returned ? 0 : tradeEvolution(entry.game, made.bytes);
     entry.message = null;
     this.save();
@@ -393,9 +399,21 @@ class OnlineTrades extends EventEmitter {
 
   finish(entry) {
     this.state.journal = this.state.journal.filter(each => each !== entry);
+    // evolved: false while a trade evolution waits for the running game (arrivals.js), true once it has happened
+    const waits = Boolean(this.arrivals && entry.evolvesInto && this.arrivals.isWaiting(entry.tradeId));
     this.state.history.unshift({ tradeId: entry.tradeId, game: entry.game, sent: entry.sent.summary, received: entry.received?.summary || null,
-      from: entry.received?.from || null, returned: Boolean(entry.received?.returned), evolvedInto: entry.evolvesInto || 0, at: Date.now() });
+      from: entry.received?.from || null, returned: Boolean(entry.received?.returned), evolvedInto: entry.evolvesInto || 0, evolved: entry.evolvesInto ? !waits : false, at: Date.now() });
     this.state.history = this.state.history.slice(0, HISTORY);
+    this.save();
+  }
+
+  // The running game has shown a Pokémon that came (arrivals.js): result.evolved, the species it evolved into (0 none)
+  arrived(tradeId, result) {
+    const item = this.state.history.find(each => each.tradeId === tradeId);
+    if (!item) return;
+    item.evolved = Boolean(result?.evolved) || (item.evolvedInto && result?.already) || false;
+    if (item.evolvedInto && !item.evolved && result?.ok) item.evolvedInto = 0;   // it didn't evolve after all (an Everstone, say)
+    item.shown = true;
     this.save();
   }
 
