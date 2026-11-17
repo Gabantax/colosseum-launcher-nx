@@ -5,7 +5,8 @@
       "Walk through Rui: in Colosseum, Wes walks straight through Rui instead of pushing her back a step at a time, so turning round on a narrow walkway is easy. Turn it off under Gameplay.",
       "Fixed Pokémon XD freezing on the Matchup page of the P★DA's Strategy Memo for a Pokémon with a Generation 4 ability, such as Eevee's Adaptability under Platinum battle rules. The page now shows that ability's description on two lines.",
       "Fixed fast-forward barely speeding up on slower PCs, in battles and the story alike. It only holds back to normal steps while you walk, so you still can't walk through walls.",
-      "Fixed a move that hits both foes, such as Razor Leaf or Water Spout, hitting its user's partner in Colosseum double battles under Generation 4 rules when both foes had already fainted. It now says there was no target."
+      "Fixed a move that hits both foes, such as Razor Leaf or Water Spout, hitting its user's partner in Colosseum double battles under Generation 4 rules when both foes had already fainted. It now says there was no target.",
+      "Fixed Colosseum double battles under Generation 4 rules where one side could be left with no Pokémon out while its trainer still had one to send, so the battle carried on with nothing there, as after snagging a Pokémon once your own had all fainted."
     ]
   },
   "releases": [
