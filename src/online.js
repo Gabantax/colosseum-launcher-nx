@@ -670,4 +670,4 @@ class Session extends EventEmitter {
   }
 }
 
-module.exports = { PROTOCOL, STAGES, WATCHING, parseRoomCode, formatRoomCode, buildId, crossBuildId, isCrossBuild, battleOf, serverUrl, listRooms, lookup, configLine, startLines, createBridge, Session };
+module.exports = { PROTOCOL, STAGES, WATCHING, openSocket, socketUrl, parseRoomCode, formatRoomCode, buildId, crossBuildId, isCrossBuild, battleOf, serverUrl, listRooms, lookup, configLine, startLines, createBridge, Session };

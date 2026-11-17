@@ -89,6 +89,19 @@ function cardAccess({ game, saveDir, randomized = false, backup = () => {} }) {
       const done = savePokemon.editCard(saveDir, game, ctx => savePokemon.restoreTo(ctx, data));
       return done && !done.refused ? { ok: true, area: done.area, box: done.box, slot: done.slot, already: Boolean(done.already) } : { ok: false, code: done?.refused || 'full' };
     },
+    // Online Trades (online-trades.js): any Pokémon not a Shadow out, one made this game's in (trade-convert.js)
+    async tradeTake(identity, place) {
+      backup('before-trade');
+      const done = savePokemon.editCard(saveDir, game, ctx => savePokemon.takeFrom(ctx, identity, place));
+      return done ? { ok: true, area: done.area, box: done.box, slot: done.slot } : { ok: false, code: 'missing' };
+    },
+    async tradeGive(data) {
+      backup('before-trade');
+      const done = savePokemon.editCard(saveDir, game, ctx => savePokemon.restoreTo(ctx, data));
+      return done && !done.refused ? { ok: true, area: done.area, box: done.box, slot: done.slot, already: Boolean(done.already) } : { ok: false, code: done?.refused || 'full' };
+    },
+    // a trade evolution needs the game's own scene: it waits for the game (online-trades.js sends it then)
+    async evolve() { return { ok: false, code: 'later' }; },
     has(identity) {
       const { copies } = savePokemon.cardCopies(saveDir, game);
       return Boolean(copies.length && savePokemon.findPokemon(copies[0].ctx, identity));
@@ -230,6 +243,16 @@ function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms =
     give(data, record) { return command(`give ${data.toString('hex')}${record ? ` record ${record.toString('hex')}` : ''}`); },
     // one of the save's own story Shadows back as it was (a cancelled trade), needs a game with the return command
     restore(data) { return command(`return ${data.toString('hex')}`); },
+    // Online Trades (online-trades.js; the game's trade-take, trade-give and evolve: a game whose hello says trade.1, evolve.1)
+    tradeTake(identity, place) {
+      const hex = n => (n >>> 0).toString(16);
+      return command(`trade-take ${place.area} ${place.box} ${place.slot} ${hex(identity.species)} ${hex(identity.rnd)} ${hex(identity.trainer)}`);
+    },
+    tradeGive(data) { return command(`trade-give ${data.toString('hex')}`); },
+    evolve(identity, place) {
+      const hex = n => (n >>> 0).toString(16);
+      return command(`evolve ${place.area} ${place.box} ${place.slot} ${hex(identity.species)} ${hex(identity.rnd)} ${hex(identity.trainer)}`);
+    },
     has(identity) {
       const now = current();
       return Boolean(now?.ctx && savePokemon.findPokemon(now.ctx, identity));

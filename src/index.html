@@ -245,8 +245,31 @@
             <section id="pokemon-detail" class="pokemon-detail" hidden>
               <div class="pokemon-detail-head"><div id="pokemon-detail-sprite" class="pokemon-detail-sprite"></div><div><h2 id="pokemon-detail-name"></h2><p id="pokemon-detail-meta" class="helper"></p><div id="pokemon-detail-badges" class="pokemon-detail-badges"></div></div></div>
               <div id="pokemon-heart" class="pokemon-heart" hidden><div class="pokemon-heart-bar"><i id="pokemon-heart-fill"></i></div><small id="pokemon-heart-text"></small></div>
+              <button id="pokemon-offer" class="solid pokemon-trade" type="button" hidden>Offer for trade</button>
               <button id="pokemon-trade" class="solid pokemon-trade" type="button" hidden>Send to Shadowtrade</button>
               <p id="pokemon-trade-note" class="helper"></p>
+            </section>
+            <section class="trade-panel" aria-labelledby="trade-title">
+              <h2 id="trade-title">Online Trade</h2>
+              <div id="trade-start">
+                <p class="helper">Trade with a friend: make a trade code and share it, or join theirs. Colosseum and XD players can trade with each other, and a Pokémon that evolves by trade evolves when it arrives.</p>
+                <div class="trade-start-actions"><button id="trade-host" class="solid" type="button">Make a trade code</button></div>
+                <form id="trade-join-form" class="trade-join"><input id="trade-join-code" type="text" maxlength="9" autocomplete="off" spellcheck="false" placeholder="Trade code" aria-label="Trade code"><button id="trade-join" class="subtle" type="submit">Join</button></form>
+              </div>
+              <div id="trade-room" class="trade-room" hidden>
+                <div class="trade-code-row"><span class="helper">Trade code</span><strong id="trade-code" class="trade-code"></strong><button id="trade-copy" class="subtle" type="button">Copy</button></div>
+                <p id="trade-peer" class="helper" role="status" aria-live="polite"></p>
+                <div class="trade-offers">
+                  <div class="trade-offer"><h3>You offer</h3><div id="trade-mine" class="trade-card"></div></div>
+                  <div class="trade-offer"><h3 id="trade-theirs-title">They offer</h3><div id="trade-theirs" class="trade-card"></div></div>
+                </div>
+                <p id="trade-progress" class="trade-progress" role="status" aria-live="polite" hidden></p>
+                <div class="trade-actions"><button id="trade-ready" class="solid" type="button" disabled>Ready</button><button id="trade-withdraw" class="subtle" type="button" hidden>Take back my offer</button><button id="trade-leave" class="subtle" type="button">Leave</button></div>
+              </div>
+              <p id="trade-notice" class="helper trade-notice" role="status" hidden></p>
+              <div id="trade-journal" class="shadowtrade-trades"></div>
+              <h3 id="trade-history-title" class="shadowtrade-history-title" hidden>Recent online trades</h3>
+              <ul id="trade-history" class="shadowtrade-history"></ul>
             </section>
             <section class="shadowtrade-panel" aria-labelledby="shadowtrade-title">
               <h2 id="shadowtrade-title">Shadowtrade</h2>

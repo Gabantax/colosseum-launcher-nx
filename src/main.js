@@ -71,6 +71,7 @@ const { retrying, httpError } = require('./retry');
 const savePokemon = require('./save-pokemon');
 const shadowtrade = require('./shadowtrade');
 const { GameLink } = require('./game-link');
+const { OnlineTrades } = require('./online-trades');
 
 const DISCORD_INVITE = 'https://discord.gg/pkVwBrSwsZ';
 // The game chosen on the Play page (games.js): its checkout, disc and game source are config's own fields.
@@ -1661,7 +1662,7 @@ async function play(installation = null, battle = null) {
       closeStoryLink(storyLink);
       broadcast('pokemon-changed', chosen.id);
       // trades waiting for the save can go to the card now
-      setTimeout(() => syncTrades(), 0);
+      setTimeout(() => { syncTrades(); if (onlineTradesInstance?.state.journal.length) syncOnlineTrades(); }, 0);
     }
     if (!battle) {
       try { makeSaveBackup('after-play'); }
@@ -1702,13 +1703,15 @@ async function openStoryLink(game) {
   closeStoryLink(storyLive?.link);
   const link = new GameLink({ log });
   await link.listen();
-  let refresh = null, synced = false;
+  let refresh = null, synced = false, onlineSynced = false;
   storyLive = new shadowtrade.LiveGame(link, { onChange: ({ whole, closed }) => {
     if (!refresh) refresh = setTimeout(() => { refresh = null; broadcast('pokemon-changed', game); }, LIVE_REFRESH_MS);
     if (closed) return;
     // a live game can take trades that were waiting for it: once its save is in, and when it changes
     const pending = trades().state.journal.some(entry => entry.game === game && ['received', 'giving', 'taking'].includes(entry.stage));
     if (pending && storyLive?.current()?.head.loaded && (whole || !synced)) { synced = true; syncTrades(); }
+    const tradesWaiting = onlineTradesInstance?.state.journal.some(entry => entry.game === game);
+    if (tradesWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !onlineSynced) { onlineSynced = true; syncOnlineTrades(); }
   } });
   link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
   return link;
@@ -1799,8 +1802,50 @@ function syncTrades() {
 
 function startShadowtrade() {
   clearInterval(shadowtradeTimer);
-  shadowtradeTimer = setInterval(() => { if (trades().state.journal.length) syncTrades(); }, SHADOWTRADE_SYNC_MS);
+  shadowtradeTimer = setInterval(() => {
+    if (trades().state.journal.length) syncTrades();
+    if (onlineTrades().state.journal.length) syncOnlineTrades();
+  }, SHADOWTRADE_SYNC_MS);
   if (trades().state.journal.length) syncTrades();
+  if (onlineTrades().state.journal.length) syncOnlineTrades();
+}
+
+// --- Online Trades (src/online-trades.js): a trade code, a trade window on the Pokémon page, and the swap. The save is
+// reached as Shadowtrade reaches it: the running game's (a build whose hello says trade.1) or the card.
+let onlineTradesInstance = null;
+function onlineTrades() {
+  if (!onlineTradesInstance) onlineTradesInstance = new OnlineTrades({ folder: path.join(app.getPath('userData'), 'online-trades'),
+    url: shadowtrade.serverUrl(), fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('online-trades', view),
+    accessFor: onlineTradeAccess, receiverFor: tradeReceiver, launcher: app.getVersion(),
+    name: game => { try { return (storyGame === game ? storyLive?.current()?.model?.trainer : null) || savePokemon.readCard(saveDirectoryOf(game), game)?.trainer || 'Trainer'; } catch (_) { return 'Trainer'; } } });
+  return onlineTradesInstance;
+}
+
+function onlineTradeAccess(game) {
+  if (storyGame === game) {
+    const live = storyLive?.current();
+    if (!live?.head.loaded || !storyLive.link.has('trade.1')) return null;
+    let cardTrainerId = null;
+    try { cardTrainerId = savePokemon.readCard(saveDirectoryOf(game), game)?.trainerId ?? null; } catch (_) { /* no card save: the game's is new */ }
+    return shadowtrade.liveAccess({ game, live: storyLive, cardTrainerId, onWaiting: () => broadcast('shadowtrade-waiting', game) });
+  }
+  return shadowtrade.cardAccess({ game, saveDir: saveDirectoryOf(game),
+    backup: reason => {
+      const result = saves.backupSaves(saveDirectoryOf(game), saves.backupRoot(), reason);
+      if (!result.empty) log(`Saved ${result.count} memory card file(s) to ${result.directory}`);
+    } });
+}
+
+// What a game's save can take (src/trade-convert.js problems): the fourth generation's Pokémon, moves and held items only
+// with the settings that put them in the game
+function tradeReceiver(game) {
+  const settings = config.settings || {}, later = (settings.generationPokemon || []).map(Number).includes(4);
+  const rules = Number(settings.battleRules) || 0;
+  return { game, laterPokemon: later, laterMoves: later || rules >= 4, laterItems: rules >= 4 };
+}
+
+function syncOnlineTrades() {
+  return onlineTrades().sync().catch(error => log(`Online Trades: ${error.message}`));
 }
 
 // --- Discord activity (src/discord.js, src/presence.js): only while the game runs, and only with the setting on.
@@ -2960,6 +3005,17 @@ function registerHandlers() {
   });
   ipcMain.handle('shadowtrade-sync', () => syncTrades().then(() => trades().view()));
   ipcMain.handle('shadowtrade-cancel', (_event, id) => trades().cancel(String(id), tradeAccess));
+  ipcMain.handle('online-trade', async (_event, action, value) => {
+    const manager = onlineTrades();
+    if (action === 'view') return manager.view();
+    if (action === 'open') return manager.open(config.game, value ? String(value) : null);
+    if (action === 'offer') return manager.offer(value ? { area: value.area === 'box' ? 'box' : 'party', box: Number(value.box) || 0, slot: Number(value.slot) || 0 } : null);
+    if (action === 'ready') { manager.ready(); return manager.view(); }
+    if (action === 'unready') { manager.unready(); return manager.view(); }
+    if (action === 'leave') { manager.leave(); return manager.view(); }
+    if (action === 'sync') return manager.sync();
+    throw new Error('No such trade action.');
+  });
   ipcMain.handle('online-save', (_event, value) => {
     config.online = parties.normalize(value);
     saveConfig();

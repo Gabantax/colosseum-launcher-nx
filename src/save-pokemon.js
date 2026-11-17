@@ -326,6 +326,19 @@ function offerProblem(saveModel, pokemon) {
   return null;
 }
 
+// Why `pokemon` can't go to an Online Trade (online-trades.js), or null: an egg, a Shadow Pokémon (a purified one can),
+// or the party's last Pokémon able to battle.
+function tradeProblem(saveModel, pokemon) {
+  if (!pokemon) return 'There is no Pokémon there.';
+  if (pokemon.egg) return 'Eggs can\'t be traded.';
+  if (pokemon.shadow) return 'A Shadow Pokémon can\'t be traded until it\'s purified. Shadowtrade trades Shadow Pokémon.';
+  if (pokemon.area === 'party') {
+    const others = saveModel.party.filter(each => each && each.key !== pokemon.key && !each.egg && each.hp > 0);
+    if (!others.length) return 'You can\'t trade your last Pokémon that can battle: keep one in your party.';
+  }
+  return null;
+}
+
 const allPokemon = saveModel => [...saveModel.party, ...saveModel.boxes.flatMap(box => box.pokemon)].filter(Boolean);
 
 // The Shadow ids this save can take a Pokémon of: [n]. A received Shadow gets an entry of its own (shadow-entries.js), so
@@ -505,4 +518,4 @@ function editCard(saveDir, gameId, change) {
 }
 
 module.exports = { COLOSSEUM, XD, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, liveFrom, parseLive, cardCopies,
-  colosseumFlag, offerProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };
+  colosseumFlag, offerProblem, tradeProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };

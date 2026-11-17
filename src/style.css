@@ -1525,6 +1525,30 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .pokemon-heart-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6d3aa8, #b07cf0); }
 .pokemon-heart small { color: var(--dex-muted); font-size: 11px; }
 .pokemon-trade { justify-self: start; }
+/* Online Trade: the trade window (src/pokemon-page.js) */
+.trade-panel { display: grid; gap: 8px; align-content: start; padding-bottom: 12px; border-bottom: 1px solid var(--dex-line); }
+.trade-start-actions { display: flex; gap: 8px; }
+.trade-join { display: flex; gap: 6px; }
+.trade-join input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: 0.12em; font-family: ui-monospace, monospace; }
+.trade-room { display: grid; gap: 8px; }
+.trade-code-row { display: flex; align-items: center; gap: 8px; }
+.trade-code { font-family: ui-monospace, monospace; font-size: 20px; letter-spacing: 0.14em; }
+.trade-offers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.trade-offer { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.trade-offer h3 { font-size: 12px; margin: 0; color: var(--dex-muted); }
+.trade-card { min-height: 112px; padding: 8px; border: 1px solid var(--dex-line); border-radius: 10px; }
+.trade-card-empty { display: grid; place-items: center; min-height: 96px; text-align: center; font-size: 11.5px; }
+.trade-card-body { display: grid; gap: 4px; }
+.trade-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.trade-card-head div { display: grid; gap: 1px; min-width: 0; }
+.trade-card-head strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-card-head small, .trade-card-line { color: var(--dex-muted); font-size: 11px; line-height: 1.35; }
+.trade-evolves { margin: 2px 0 0; font-size: 11.5px; color: var(--good, #2f8f5b); }
+.trade-problem { margin: 2px 0 0; font-size: 11.5px; color: var(--danger, #c0392b); }
+.trade-progress { margin: 0; font-size: 12px; line-height: 1.4; }
+.trade-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#trade-ready.pressed { opacity: 0.85; }
+.trade-notice { margin: 0; }
 .shadowtrade-panel { display: grid; gap: 8px; align-content: start; }
 .shadowtrade-trades { display: grid; gap: 6px; }
 .shadowtrade-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--dex-line); border-radius: 9px; }

@@ -1,11 +1,19 @@
 // The Pokémon page: the party and PC boxes of the chosen game's save, from the card, or live from the game while it
 // runs (main.js pokemonPage). A Shadow Pokémon can go to Shadowtrade from here: it leaves the save and another
-// player's Shadow Pokémon comes back (src/shadowtrade.js).
+// player's Shadow Pokémon comes back (src/shadowtrade.js). The Online Trade panel is the trade window
+// (src/online-trades.js): a trade code made or joined, each player's offer picked from this grid, and Ready.
 
 const $ = id => document.getElementById(id);
 const message = error => String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 let data = null, tab = 'party', box = 0, selected = null, visible = false, loading = null, dex = null, dexFor = null, waitingGame = false;
+let tradeView = null, names = null, tradeHistorySeen = null;
+const NATURES = ['Hardy', 'Lonely', 'Brave', 'Adamant', 'Naughty', 'Bold', 'Docile', 'Relaxed', 'Impish', 'Lax', 'Timid', 'Hasty', 'Serious',
+  'Jolly', 'Naive', 'Modest', 'Mild', 'Quiet', 'Bashful', 'Rash', 'Calm', 'Gentle', 'Sassy', 'Careful', 'Quirky'];
+const TRADE_STAGE = {
+  taking: 'Your Pokémon is leaving your save…', taken: 'Sent: waiting for the other player\'s Pokémon',
+  received: 'Arrived: going into your save', giving: 'Going into your save…', given: 'In your save', evolving: 'Evolving…'
+};
 const STAGE = {
   taking: 'Leaving your save…', taken: 'Waiting to reach the Shadowtrade server', waiting: 'In the pool: a Shadow Pokémon comes back when another player trades one your save can take',
   received: 'Received: going into your save', giving: 'Going into your save…', given: 'In your save'
@@ -83,6 +91,7 @@ function current() {
 function renderDetail() {
   const pokemon = current();
   $('pokemon-detail').hidden = !pokemon;
+  renderOfferButton(pokemon);
   if (!pokemon) return;
   $('pokemon-detail-sprite').replaceChildren(sprite(pokemon, 96));
   $('pokemon-detail-name').textContent = shown(pokemon);
@@ -176,6 +185,7 @@ function render() {
   renderGrid();
   renderDetail();
   renderTrades();
+  if (tradeView) renderTradePanel();
 }
 
 async function refresh() {
@@ -217,7 +227,144 @@ async function confirmTrade() {
   await refresh();
 }
 
-function show() { visible = true; refresh(); window.colo.shadowtradeSync().then(refresh).catch(() => {}); }
+// ---- Online Trade: the trade window ----
+
+// Move and item names (the team builder's), read once; numbers when the game data isn't there.
+async function tradeNames() {
+  if (names) return names;
+  names = { moves: new Map(), items: new Map() };
+  try {
+    const battle = await window.colo.battleData();
+    for (const move of battle.moves || []) names.moves.set(move.id, move.name);
+    for (const item of battle.items || []) names.items.set(item.id, item.name);
+    for (const each of Object.values(battle.generations || {})) for (const item of each.items || []) if (!names.items.has(item.id)) names.items.set(item.id, item.name);
+  } catch (_) { /* numbers */ }
+  return names;
+}
+
+function offerProblem(pokemon) {
+  if (pokemon.egg) return 'Eggs can\'t be traded.';
+  if (pokemon.shadow) return 'Purify it first: Shadow Pokémon go to Shadowtrade instead.';
+  if (pokemon.area === 'party' && !data.model.party.some(each => each && each.key !== pokemon.key && !each.egg && each.hp > 0))
+    return 'You can\'t trade your last Pokémon that can battle.';
+  return null;
+}
+
+function renderOfferButton(pokemon) {
+  const button = $('pokemon-offer'), room = tradeView?.room;
+  button.hidden = !room || !pokemon;
+  if (button.hidden) return;
+  const busy = Boolean(room.trade), problem = offerProblem(pokemon);
+  const offered = room.you?.offer?.place;
+  const same = offered && offered.area === pokemon.area && offered.box === pokemon.box && offered.slot === pokemon.slot;
+  button.disabled = busy || Boolean(problem) || same;
+  button.textContent = same ? 'Offered for trade' : 'Offer for trade';
+  if (problem && !pokemon.shadow) $('pokemon-trade-note').textContent = problem;
+}
+
+// A Pokémon's card in the trade window: what the other player sees of it, and you of theirs.
+function tradeCard(summary, { problems = [], evolvesInto = 0, empty = '' } = {}) {
+  const card = document.createElement('div');
+  if (!summary) { card.className = 'trade-card-empty helper'; card.textContent = empty; return card; }
+  card.className = 'trade-card-body';
+  const head = document.createElement('div');
+  head.className = 'trade-card-head';
+  head.append(sprite(summary, 64));
+  const title = document.createElement('div');
+  title.append(Object.assign(document.createElement('strong'), { textContent: `${shown(summary)}${summary.shiny ? ' ★' : ''}` }),
+    Object.assign(document.createElement('small'), { textContent: `${speciesName(summary)} · Lv. ${summary.level} · ${NATURES[summary.nature] || ''}` }),
+    Object.assign(document.createElement('small'), { textContent: `OT ${summary.otName || '?'} (${String(summary.otId).padStart(5, '0')})${summary.game ? ` · from ${summary.game === 'xd' ? 'XD' : 'Colosseum'}` : ''}` }));
+  head.append(title);
+  card.append(head);
+  const item = summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
+  card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `Holds: ${item}` }));
+  const moves = summary.moves.map(id => names?.moves.get(id) || `Move #${id}`).join(', ');
+  card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `Moves: ${moves || 'none'}` }));
+  card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `IVs ${summary.ivs.join('/')} · HP ${summary.hp}/${summary.maxHp}${summary.ribbons ? ` · ${summary.ribbons} ribbon${summary.ribbons > 1 ? 's' : ''}` : ''}` }));
+  if (evolvesInto) card.append(Object.assign(document.createElement('p'), { className: 'trade-evolves', textContent: `Evolves into ${dex?.get(evolvesInto)?.name || `#${evolvesInto}`} when it arrives.` }));
+  for (const problem of problems) card.append(Object.assign(document.createElement('p'), { className: 'trade-problem', textContent: problem.text || problem }));
+  return card;
+}
+
+function tradeProgress(room) {
+  const trade = room.trade;
+  if (!trade) {
+    if (room.last?.outcome === 'traded') return 'Traded! Pick another Pokémon to trade again.';
+    if (room.last?.outcome === 'aborted') return `The trade was called off${room.last.reason && room.last.reason !== 'cancelled' ? ` (${room.last.reason === 'timeout' ? 'a game took too long' : room.last.reason})` : ''}. Your Pokémon stays yours.`;
+    return '';
+  }
+  if (trade.message) return trade.message;
+  if (trade.mine && TRADE_STAGE[trade.mine]) return TRADE_STAGE[trade.mine] + (data?.source === 'live' && ['taking', 'giving', 'evolving'].includes(trade.mine) ? ' The game does it at a quiet moment in the field and saves.' : '');
+  if (trade.stage === 'committed') return 'Both ready: trading…';
+  return 'Trading…';
+}
+
+function renderTradePanel() {
+  const view = tradeView, room = view?.room;
+  $('trade-start').hidden = Boolean(room);
+  $('trade-room').hidden = !room;
+  $('trade-notice').hidden = !view?.notice;
+  $('trade-notice').textContent = view?.notice || '';
+  if (room) {
+    $('trade-code').textContent = room.code || '…';
+    const peer = room.peer;
+    $('trade-peer').textContent = room.connection === 'reconnecting' ? 'Reconnecting to the trade room…'
+      : !peer?.here ? 'Share this code with the other player. Waiting for them to join…'
+      : !peer.present ? `${peer.name || 'The other player'} lost their connection: waiting for them to come back…`
+      : `${peer.name || 'The other player'} (${peer.game === 'xd' ? 'XD' : 'Colosseum'}) is here.${peer.ready ? ' They\'re ready.' : ''}`;
+    $('trade-theirs-title').textContent = `${peer?.name || 'They'} offer${peer?.name ? 's' : ''}`;
+    const you = room.you;
+    $('trade-mine').replaceChildren(tradeCard(you?.offer?.summary, { problems: you?.refusedBecause ? [`Their game can't take it: ${you.refusedBecause}`] : [],
+      empty: 'Pick a Pokémon from your party or boxes, then press Offer for trade.' }));
+    const theirs = peer?.offer;
+    $('trade-theirs').replaceChildren(tradeCard(theirs?.summary, { problems: theirs?.problems || [], evolvesInto: theirs?.evolvesInto || 0,
+      empty: peer?.here ? 'They haven\'t picked yet.' : '' }));
+    const ready = $('trade-ready');
+    ready.textContent = you?.ready ? (peer?.ready ? 'Trading…' : 'Ready: waiting for them') : 'Ready';
+    ready.disabled = Boolean(room.trade) || (!you?.ready && !room.canReady);
+    ready.classList.toggle('pressed', Boolean(you?.ready));
+    $('trade-withdraw').hidden = !you?.offer || Boolean(room.trade);
+    $('trade-leave').disabled = Boolean(room.trade);
+    const progress = tradeProgress(room);
+    $('trade-progress').hidden = !progress;
+    $('trade-progress').textContent = progress;
+  }
+  // trades still on their way (from a room that has closed, or the game closed)
+  const pending = (view?.journal || []).filter(entry => entry.game === data?.game && (!room?.trade || entry.tradeId !== tradeView.room.trade?.tradeId));
+  $('trade-journal').replaceChildren(...pending.map(entry => {
+    const row = document.createElement('div');
+    row.className = 'shadowtrade-row';
+    const text = document.createElement('div');
+    text.append(Object.assign(document.createElement('strong'), { textContent: entry.received && !entry.returned ? `${entry.sent.nickname} for ${entry.received.nickname}` : `Trading ${entry.sent.nickname}` }),
+      Object.assign(document.createElement('small'), { textContent: entry.message || TRADE_STAGE[entry.stage] || entry.stage }));
+    row.append(text);
+    return row;
+  }));
+  const history = (view?.history || []).filter(item => item.game === data?.game).slice(0, 6);
+  $('trade-history').replaceChildren(...history.map(item => {
+    const li = document.createElement('li');
+    li.textContent = item.returned ? `${item.sent.nickname} came back (the trade was called off)`
+      : `${item.sent.nickname} for ${item.received?.nickname || '?'} from ${item.from || 'another player'}${item.evolvedInto ? `, which evolved` : ''}`;
+    return li;
+  }));
+  $('trade-history-title').hidden = !history.length;
+  renderOfferButton(current());
+}
+
+async function tradeAction(action, value) {
+  try {
+    tradeView = await window.colo.onlineTrade(action, value);
+    setStatus('');
+  } catch (error) { setStatus(message(error)); }
+  renderTradePanel();
+}
+
+function show() {
+  visible = true;
+  refresh();
+  window.colo.shadowtradeSync().then(refresh).catch(() => {});
+  tradeNames().then(() => window.colo.onlineTrade('view')).then(view => { tradeView = view; renderTradePanel(); }).catch(() => {});
+}
 function hide() { visible = false; }
 
 $('pokemon-tab-party').addEventListener('click', () => { tab = 'party'; render(); });
@@ -231,5 +378,20 @@ $('shadowtrade-confirm-send').addEventListener('click', confirmTrade);
 window.colo.onPokemonChanged(() => { if (visible) refresh(); });
 window.colo.onShadowtrade(view => { if (data) { data.trades = view; if (visible) { renderTrades(); renderDetail(); } } });
 window.colo.onShadowtradeWaiting(() => { waitingGame = true; if (visible) renderTrades(); });
+$('trade-host').addEventListener('click', () => tradeAction('open'));
+$('trade-join-form').addEventListener('submit', event => { event.preventDefault(); tradeAction('open', $('trade-join-code').value); });
+$('trade-copy').addEventListener('click', () => { navigator.clipboard?.writeText(tradeView?.room?.code || '').catch(() => {}); });
+$('trade-ready').addEventListener('click', () => tradeAction(tradeView?.room?.you?.ready ? 'unready' : 'ready'));
+$('trade-withdraw').addEventListener('click', () => tradeAction('offer', null));
+$('trade-leave').addEventListener('click', () => tradeAction('leave'));
+$('pokemon-offer').addEventListener('click', () => { const pokemon = current(); if (pokemon) tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }); });
+window.colo.onOnlineTrades(view => {
+  tradeView = view;
+  // a trade finished: the save changed
+  const done = view.history.length ? view.history[0].tradeId : null;
+  if (tradeHistorySeen !== null && done !== tradeHistorySeen && visible) refresh();
+  tradeHistorySeen = done;
+  if (visible) renderTradePanel();
+});
 
 window.coloPokemon = { show, hide, refresh };
