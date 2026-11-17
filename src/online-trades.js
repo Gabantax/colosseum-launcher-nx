@@ -40,16 +40,19 @@ function tradeEvolution(game, bytes) {
   return into ? convert.speciesFromColosseum(game, into[1]) : 0;
 }
 
-// What the trade window shows of a Pokémon, in the viewer's game's numbers: from its bytes, whichever game's.
+// What the trade window shows of a Pokémon: every stat it has, in the viewer's game's numbers, from its bytes, whichever
+// game's (the page works out from them what the game would show: gender, ability, nature's effect, Hidden Power).
 function summary(game, bytes, viewerGame = game) {
   const p = convert.read(game, bytes);
   const text = codes => { const end = codes.indexOf(0); return String.fromCharCode(...(end < 0 ? codes : codes.slice(0, end))); };
-  return { game, species: convert.speciesFromColosseum(viewerGame, p.species), nickname: p.nicknameText, level: p.level,
+  return { game, species: convert.speciesFromColosseum(viewerGame, p.species), nickname: p.nicknameText, level: p.level, exp: p.exp,
     item: Math.max(convert.itemFromColosseum(viewerGame, Math.max(p.item, 0)), 0), heldKeyItem: p.item < 0,
-    moves: p.moves.filter(m => !m.shadow).map(m => convert.moveFromColosseum(viewerGame, m.id)),
-    shiny: (((p.otId >>> 16) ^ (p.otId & 0xffff) ^ (p.rnd >>> 16) ^ (p.rnd & 0xffff)) >>> 0) < 8,
-    nature: p.rnd % 25, ball: p.ball, hp: p.hp, maxHp: p.stats[0], stats: p.stats, ivs: p.ivs, evs: p.evs, friendship: p.friendship,
-    otName: text(p.otName), otId: p.otId & 0xffff, ribbons: p.ribbons.filter(Boolean).length,
+    moves: p.moves.filter(m => !m.shadow).map(m => ({ id: convert.moveFromColosseum(viewerGame, m.id), pp: m.pp, ppUps: m.ppUps })),
+    personality: p.rnd, shiny: (((p.otId >>> 16) ^ (p.otId & 0xffff) ^ (p.rnd >>> 16) ^ (p.rnd & 0xffff)) >>> 0) < 8,
+    nature: p.rnd % 25, abilitySlot: p.abilitySlot, ball: p.ball, hp: p.hp, maxHp: p.stats[0], stats: p.stats, ivs: p.ivs, evs: p.evs,
+    friendship: p.friendship, otName: text(p.otName), otId: p.otId & 0xffff, otGender: p.otGender,
+    ribbons: p.ribbons, contest: p.contest, contestRanks: p.ranks, sheen: p.sheen, pokerus: p.pokerus, markings: p.markings,
+    metLevel: p.metLevel, origin: p.attest[0], language: p.attest[3], event: p.event,
     evolvesInto: viewerGame === game ? tradeEvolution(game, bytes) : 0 };
 }
 

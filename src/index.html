@@ -263,6 +263,7 @@
                   <div class="trade-offer"><h3>You offer</h3><div id="trade-mine" class="trade-card"></div></div>
                   <div class="trade-offer"><h3 id="trade-theirs-title">They offer</h3><div id="trade-theirs" class="trade-card"></div></div>
                 </div>
+                <button id="trade-compare" class="subtle trade-compare" type="button" hidden>Compare every stat</button>
                 <p id="trade-progress" class="trade-progress" role="status" aria-live="polite" hidden></p>
                 <div class="trade-actions"><button id="trade-ready" class="solid" type="button" disabled>Ready</button><button id="trade-withdraw" class="subtle" type="button" hidden>Take back my offer</button><button id="trade-leave" class="subtle" type="button">Leave</button></div>
               </div>
@@ -618,6 +619,10 @@
         <p id="update-warn" class="update-warn" hidden></p>
         <div class="actions update-actions"><label id="update-auto-row" class="update-check" hidden><input id="update-auto" type="checkbox"><span id="update-auto-label">Update automatically from now on</span></label><span class="nav-spacer" aria-hidden="true"></span><button id="update-secondary" class="subtle" hidden></button><button id="update-primary" class="update-primary"></button></div>
       </div>
+    </dialog>
+    <dialog id="trade-stats" class="launcher-modal trade-stats" aria-labelledby="trade-stats-title">
+      <div class="modal-head"><div><p class="eyebrow">ONLINE TRADE</p><h1 id="trade-stats-title">Every stat</h1><p>Both Pokémon as the games keep them.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
+      <div class="modal-body"><div id="trade-stats-sheets" class="trade-stats-sheets"></div></div>
     </dialog>
     <dialog id="shadowtrade-confirm" class="launcher-modal shadowtrade-confirm" aria-labelledby="shadowtrade-confirm-title">
       <div class="modal-head"><div><p class="eyebrow">SHADOWTRADE</p><h1 id="shadowtrade-confirm-title">Send <span id="shadowtrade-confirm-name"></span>?</h1><p>Another player gets it, and you get a Shadow Pokémon someone sent.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>

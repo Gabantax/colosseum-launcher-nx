@@ -232,12 +232,17 @@ async function confirmTrade() {
 // Move and item names (the team builder's), read once; numbers when the game data isn't there.
 async function tradeNames() {
   if (names) return names;
-  names = { moves: new Map(), items: new Map() };
+  names = { moves: new Map(), items: new Map(), moveData: new Map(), itemData: new Map(), species: {} };
   try {
     const battle = await window.colo.battleData();
-    for (const move of battle.moves || []) names.moves.set(move.id, move.name);
-    for (const item of battle.items || []) names.items.set(item.id, item.name);
-    for (const each of Object.values(battle.generations || {})) for (const item of each.items || []) if (!names.items.has(item.id)) names.items.set(item.id, item.name);
+    for (const move of battle.moves || []) { names.moves.set(move.id, move.name); names.moveData.set(move.id, move); }
+    for (const item of battle.items || []) { names.items.set(item.id, item.name); names.itemData.set(item.id, item); }
+    for (const each of Object.values(battle.generations || {})) {
+      for (const item of each.items || []) if (!names.items.has(item.id)) { names.items.set(item.id, item.name); names.itemData.set(item.id, item); }
+      for (const move of each.moves || []) if (!names.moves.has(move.id)) { names.moves.set(move.id, move.name); names.moveData.set(move.id, move); }
+      Object.assign(names.species, Object.fromEntries(Object.entries(each.species || {}).filter(([id]) => !battle.species?.[id])));
+    }
+    Object.assign(names.species, battle.species || {});
   } catch (_) { /* numbers */ }
   return names;
 }
@@ -278,12 +283,131 @@ function tradeCard(summary, { problems = [], evolvesInto = 0, empty = '' } = {})
   card.append(head);
   const item = summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
   card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `Holds: ${item}` }));
-  const moves = summary.moves.map(id => names?.moves.get(id) || `Move #${id}`).join(', ');
+  const moves = summary.moves.map(move => names?.moves.get(move.id) || `Move #${move.id}`).join(', ');
   card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `Moves: ${moves || 'none'}` }));
-  card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `IVs ${summary.ivs.join('/')} · HP ${summary.hp}/${summary.maxHp}${summary.ribbons ? ` · ${summary.ribbons} ribbon${summary.ribbons > 1 ? 's' : ''}` : ''}` }));
+  const ts = TS(), species = names?.species?.[summary.species];
+  const abilities = species?.abilities || [], ability = abilities.find(a => a.slot === summary.abilitySlot) || abilities[0];
+  const line = text => card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: text }));
+  line(`${ts ? ts.natureLabel(summary.nature) : ''}${ability ? ` · ${ability.name}` : ''}`);
+  const short = ['HP', 'Atk', 'Def', 'SpA', 'SpD', 'Spe'];
+  line(`Stats ${short.map((name, i) => `${name} ${i === 0 ? `${summary.hp}/${summary.stats[0]}` : summary.stats[i]}`).join(' · ')}`);
+  line(`IVs ${summary.ivs.join('/')} · EVs ${summary.evs.join('/')}`);
+  const ribbons = summary.ribbons.filter(Boolean).length;
+  if (ribbons) line(`${ribbons} ribbon${ribbons > 1 ? 's' : ''}`);
+  card.append(Object.assign(document.createElement('span'), { className: 'trade-card-more', textContent: 'Every stat ›' }));
   if (evolvesInto) card.append(Object.assign(document.createElement('p'), { className: 'trade-evolves', textContent: `Evolves into ${dex?.get(evolvesInto)?.name || `#${evolvesInto}`} when it arrives.` }));
   for (const problem of problems) card.append(Object.assign(document.createElement('p'), { className: 'trade-problem', textContent: problem.text || problem }));
+  card.classList.add('trade-card-open');
+  card.title = 'Every stat';
+  card.tabIndex = 0;
+  card.addEventListener('click', openStats);
+  card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openStats(); } });
   return card;
+}
+
+// ---- every stat: the two offers side by side (the trade window's Compare every stat) ----
+const TS = () => window.coloTeamSets;
+const BALLS = ['', 'Master Ball', 'Ultra Ball', 'Great Ball', 'Poké Ball', 'Safari Ball', 'Net Ball', 'Dive Ball', 'Nest Ball', 'Repeat Ball', 'Timer Ball', 'Luxury Ball', 'Premier Ball'];
+const RIBBONS = ['Champion', 'Winning', 'Victory', 'Artist', 'Effort', 'Marine', 'Land', 'Sky', 'Country', 'National', 'Earth', 'World'];
+const CONTEST = ['Cool', 'Beauty', 'Cute', 'Smart', 'Tough'];
+const RANKS = ['', 'Normal', 'Super', 'Hyper', 'Master'];
+const ORIGINS = { 1: 'FireRed', 2: 'LeafGreen', 8: 'Sapphire', 9: 'Ruby', 10: 'Emerald', 11: 'Colosseum or XD' };
+const LANGUAGES = { 1: 'Japanese', 2: 'English', 3: 'German', 4: 'French', 5: 'Italian', 6: 'Spanish' };
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const child of children) if (child !== null && child !== undefined) node.append(child);
+  return node;
+}
+
+function statSheet(summary, heading, { problems = [], evolvesInto = 0 } = {}) {
+  const sheet = el('section', { className: 'trade-sheet' }, el('h2', { textContent: heading }));
+  if (!summary) { sheet.append(el('p', { className: 'helper', textContent: 'No Pokémon offered yet.' })); return sheet; }
+  const ts = TS(), species = names?.species?.[summary.species] || null, entry = dex?.get(summary.species);
+  const gender = ts && species ? ts.genderOf(summary.personality >>> 0, species.gender) : '';
+  const abilities = species?.abilities || [];
+  const ability = abilities.find(a => a.slot === summary.abilitySlot) || abilities[0] || null;
+  const effect = ts?.natureEffect(summary.nature);
+  const head = el('div', { className: 'trade-sheet-head' }, sprite(summary, 72),
+    el('div', {}, el('strong', { textContent: `${shown(summary)}${gender === 'M' ? ' ♂' : gender === 'F' ? ' ♀' : ''}${summary.shiny ? ' ★' : ''}` }),
+      el('small', { textContent: `${speciesName(summary)} · Lv. ${summary.level}${entry?.types?.length ? ` · ${entry.types.join('/')}` : ''}` }),
+      el('small', { textContent: `From ${summary.game === 'xd' ? 'XD' : 'Colosseum'}${summary.shiny ? ' · Shiny' : ''}` })));
+  sheet.append(head);
+  // the six stats: value, base, IV, EV, and the nature's tenth up or down
+  const base = entry?.stats || [];
+  const table = el('table', { className: 'trade-sheet-stats' });
+  table.append(el('thead', {}, el('tr', {}, ...['Stat', 'Value', 'Base', 'IV', 'EV'].map(text => el('th', { textContent: text })))));
+  const body = el('tbody');
+  (ts?.STAT_NAMES || ['HP', 'Attack', 'Defense', 'Sp. Atk', 'Sp. Def', 'Speed']).forEach((statName, i) => {
+    const mark = effect?.up === i ? ' ↑' : effect?.down === i ? ' ↓' : '';
+    body.append(el('tr', { className: effect?.up === i ? 'up' : effect?.down === i ? 'down' : '' },
+      el('th', { textContent: statName + mark }), el('td', { textContent: i === 0 ? `${summary.hp}/${summary.stats[0]}` : String(summary.stats[i]) }),
+      el('td', { textContent: base[i] ?? '?' }), el('td', { textContent: String(summary.ivs[i]) }), el('td', { textContent: String(summary.evs[i]) })));
+  });
+  const sum = list => list.reduce((a, v) => a + (Number(v) || 0), 0);
+  body.append(el('tr', { className: 'total' }, el('th', { textContent: 'Total' }), el('td', { textContent: String(sum(summary.stats)) }),
+    el('td', { textContent: base.length ? String(sum(base)) : '?' }), el('td', { textContent: `${sum(summary.ivs)}/186` }), el('td', { textContent: `${sum(summary.evs)}/510` })));
+  table.append(body);
+  sheet.append(table);
+  // moves
+  const moves = el('table', { className: 'trade-sheet-moves' });
+  moves.append(el('thead', {}, el('tr', {}, ...['Move', 'Type', 'Kind', 'Power', 'Acc.', 'PP', 'PP Ups'].map(text => el('th', { textContent: text })))));
+  const moveBody = el('tbody');
+  for (const move of summary.moves) {
+    const data = names?.moveData.get(move.id);
+    const most = data?.pp ? Math.floor(data.pp * (5 + move.ppUps) / 5) : null;
+    moveBody.append(el('tr', {}, el('th', { textContent: data?.name || `Move #${move.id}` }), el('td', { textContent: data?.type || '?' }),
+      el('td', { textContent: data?.category || '' }), el('td', { textContent: data?.power ? String(data.power) : '—' }),
+      el('td', { textContent: data?.accuracy ? String(data.accuracy) : '—' }), el('td', { textContent: most !== null ? `${move.pp}/${most}` : String(move.pp) }),
+      el('td', { textContent: String(move.ppUps) })));
+  }
+  moves.append(moveBody);
+  sheet.append(moves);
+  // everything else it has
+  const hidden = ts?.hiddenPower(summary.ivs);
+  const item = summary.heldKeyItem ? 'A key item (it can\'t travel)' : summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
+  const pokerus = !summary.pokerus ? 'Never had it' : summary.pokerus & 0xf ? 'Has Pokérus' : 'Cured of Pokérus';
+  const marks = ['●', '■', '▲', '♥'].filter((_, i) => summary.markings & (1 << i)).join(' ') || 'None';
+  const facts = [
+    ['Nature', ts ? ts.natureLabel(summary.nature) : String(summary.nature)],
+    ['Ability', ability ? ability.name : '?', ability?.doc],
+    ['Held item', item, summary.item ? names?.itemData.get(summary.item)?.doc : null],
+    ['Hidden Power', hidden ? `${hidden.type}, power ${hidden.power}` : '?'],
+    ['Friendship', `${summary.friendship}/255`],
+    ['Experience', `${summary.exp.toLocaleString()} points`],
+    ['Pokérus', pokerus],
+    ['Ball', BALLS[summary.ball] || `Ball #${summary.ball}`],
+    ['Met', `at level ${summary.metLevel || '?'}`],
+    ['Original trainer', `${summary.otName || '?'}${summary.otGender === 1 ? ' ♀' : summary.otGender === 0 ? ' ♂' : ''}, ID ${String(summary.otId).padStart(5, '0')}`],
+    ['From game', `${ORIGINS[summary.origin] || `#${summary.origin}`}${LANGUAGES[summary.language] ? `, ${LANGUAGES[summary.language]}` : ''}`],
+    ['Markings', marks]
+  ];
+  const list = el('dl', { className: 'trade-sheet-facts' });
+  for (const [term, value, doc] of facts) list.append(el('dt', { textContent: term }), el('dd', {}, value, doc ? el('small', { textContent: doc }) : null));
+  sheet.append(list);
+  // contest and ribbons
+  const contest = el('dl', { className: 'trade-sheet-facts' });
+  CONTEST.forEach((stat, i) => contest.append(el('dt', { textContent: stat }), el('dd', { textContent: `${summary.contest[i]}${summary.contestRanks[i] ? ` · ${RANKS[summary.contestRanks[i]]} rank ribbon` : ''}` })));
+  contest.append(el('dt', { textContent: 'Sheen' }), el('dd', { textContent: `${summary.sheen}/255` }));
+  sheet.append(el('h3', { textContent: 'Contest' }), contest);
+  const earned = RIBBONS.filter((_, i) => summary.ribbons[i]);
+  sheet.append(el('h3', { textContent: 'Ribbons' }), el('p', { className: 'trade-sheet-ribbons', textContent: earned.length ? earned.map(name => `${name} Ribbon`).join(', ') : 'None' }));
+  if (evolvesInto) sheet.append(el('p', { className: 'trade-evolves', textContent: `Evolves into ${dex?.get(evolvesInto)?.name || `#${evolvesInto}`} when it arrives.` }));
+  for (const problem of problems) sheet.append(el('p', { className: 'trade-problem', textContent: problem.text || problem }));
+  return sheet;
+}
+
+function renderStats() {
+  const room = tradeView?.room;
+  if (!room) { if ($('trade-stats').open) $('trade-stats').close(); return; }
+  const theirs = room.peer?.offer;
+  $('trade-stats-sheets').replaceChildren(statSheet(room.you?.offer?.summary, 'You offer'),
+    statSheet(theirs?.summary, `${room.peer?.name || 'They'} offer${room.peer?.name ? 's' : ''}`, { problems: theirs?.problems || [], evolvesInto: theirs?.evolvesInto || 0 }));
+}
+
+function openStats() {
+  renderStats();
+  if (!$('trade-stats').open) $('trade-stats').showModal();
 }
 
 function tradeProgress(room) {
@@ -324,6 +448,7 @@ function renderTradePanel() {
     ready.disabled = Boolean(room.trade) || (!you?.ready && !room.canReady);
     ready.classList.toggle('pressed', Boolean(you?.ready));
     $('trade-withdraw').hidden = !you?.offer || Boolean(room.trade);
+    $('trade-compare').hidden = !you?.offer && !theirs;
     $('trade-leave').disabled = Boolean(room.trade);
     const progress = tradeProgress(room);
     $('trade-progress').hidden = !progress;
@@ -349,6 +474,7 @@ function renderTradePanel() {
   }));
   $('trade-history-title').hidden = !history.length;
   renderOfferButton(current());
+  if ($('trade-stats').open) renderStats();
 }
 
 async function tradeAction(action, value) {
@@ -384,6 +510,7 @@ $('trade-copy').addEventListener('click', () => { navigator.clipboard?.writeText
 $('trade-ready').addEventListener('click', () => tradeAction(tradeView?.room?.you?.ready ? 'unready' : 'ready'));
 $('trade-withdraw').addEventListener('click', () => tradeAction('offer', null));
 $('trade-leave').addEventListener('click', () => tradeAction('leave'));
+$('trade-compare').addEventListener('click', openStats);
 $('pokemon-offer').addEventListener('click', () => { const pokemon = current(); if (pokemon) tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }); });
 window.colo.onOnlineTrades(view => {
   tradeView = view;
