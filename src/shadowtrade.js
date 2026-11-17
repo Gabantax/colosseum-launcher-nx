@@ -63,7 +63,7 @@ function checkReceived(game, received) {
   return { data, record };
 }
 
-// ---- access to a save: the card (game closed) or the running game (live.bin + commands) ----
+// ---- access to a save: the card (game closed) or the running game (its live picture + commands, over the launcher link) ----
 
 // The card: read it, and change it with a backup first. backup(reason) makes one (main.js makeSaveBackup).
 function cardAccess({ game, saveDir, randomized = false, backup = () => {} }) {
@@ -118,44 +118,110 @@ function parseResult(text) {
   return { id, ok: false, code: words[1] || 'error', message: words.slice(2).join(' ') };
 }
 
-// The running game: it shows its save in live.bin and makes changes itself (SPEC: host/shadowtrade.c). Commands only
-// go to a game playing the card's own save (its trainer), so a new game never saved can't save over it.
-function liveAccess({ game, liveDir, cardTrainerId, randomized = false, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), timeoutMs = COMMAND_TIMEOUT_MS, onWaiting = () => {} }) {
-  const liveFile = path.join(liveDir, 'live.bin'), commandFile = path.join(liveDir, 'command.txt'), resultFile = path.join(liveDir, 'result.txt');
-  const current = () => savePokemon.readLive(liveFile);
-  async function command(lines) {
-    const live = current();
-    if (!live?.head.loaded) throw new Error('Load your save in the game first.');
-    if (cardTrainerId !== null && cardTrainerId !== undefined && live.head.trainerId !== cardTrainerId)
-      throw new Error('The game is playing a game that isn\'t saved yet. Save it in the game first.');
-    const id = crypto.randomBytes(8).toString('hex');
-    fs.rmSync(resultFile, { force: true });
-    writeAtomic(commandFile, `id ${id}\n${lines}\n`);
-    // The game's save ends on its own "saved" message, which waits for A: while it says it's busy with the command, the
-    // command is under way however long that takes, and it's left for the game to finish.
-    let until = Date.now() + timeoutMs;
-    let told = false;
+// The running game over the launcher link (game-link.js): the game sends its live picture ("live": the whole of it when
+// its save changes, its 0x40-byte header alone when only that does; save-pokemon.js parseLive reads it), takes a
+// "command" at a safe moment, does it and saves, and answers "result" (SPEC: host/shadowtrade.c, host/shadowtrade_io.c).
+const LIVE_HEADER = 0x40;
+const CANCEL_WAIT_MS = 30 * 1000;   // how long a cancelled command's answer is waited for (more while the game is busy)
+
+class LiveGame {
+  constructor(link, { onChange = () => {} } = {}) {
+    this.link = link;
+    this.bytes = null;
+    this.parsed = undefined;
+    this.results = new Map();
+    this.waiters = new Map();
+    this.closed = false;
+    link.on('message:live', ({ fields, data }) => {
+      if (fields.part === 'head' && this.bytes && data.length === LIVE_HEADER) data.copy(this.bytes, 0);
+      else if (fields.part === 'all' || !this.bytes) this.bytes = Buffer.from(data);
+      else return;
+      this.parsed = undefined;
+      onChange({ whole: fields.part === 'all' });
+    });
+    link.on('message:result', ({ data }) => {
+      const result = parseResult(data.toString('latin1'));
+      if (!result) return;
+      const waiter = this.waiters.get(result.id);
+      if (waiter) { this.waiters.delete(result.id); waiter(result); } else this.results.set(result.id, result);
+    });
+    link.on('close', () => {
+      this.closed = true;
+      for (const waiter of this.waiters.values()) waiter(null);
+      this.waiters.clear();
+      onChange({ closed: true });
+    });
+  }
+
+  get linked() { return this.link.linked; }
+
+  // { head, model, ctx } as save-pokemon.js readLive gives, or null before the game's first picture
+  current() {
+    if (this.parsed === undefined) this.parsed = this.bytes ? savePokemon.liveFrom(this.bytes) : null;
+    return this.parsed;
+  }
+
+  send(verb, fields, text) { this.link.send(verb, fields, text === undefined ? null : Buffer.from(text, 'latin1')); }
+
+  // the result of command `id` once it comes, or null if the link closes first (forget(id) stops waiting)
+  result(id) {
+    if (this.results.has(id)) { const done = this.results.get(id); this.results.delete(id); return Promise.resolve(done); }
+    if (this.closed) return Promise.resolve(null);
+    return new Promise(resolve => this.waiters.set(id, resolve));
+  }
+
+  forget(id) { this.waiters.get(id)?.(null); this.waiters.delete(id); this.results.delete(id); }
+}
+
+// What Shadowtrade asks of the running game. Commands only go to a game playing the card's own save (its trainer), so
+// a new game never saved can't save over it.
+function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), timeoutMs = COMMAND_TIMEOUT_MS, onWaiting = () => {} }) {
+  const current = () => live.current();
+  // waits for the answer to `id` until `deadline` says it is time to stop (it may move it on): the result, or null
+  async function waitFor(answer, deadline) {
     for (;;) {
-      let result = null;
-      try { result = parseResult(fs.readFileSync(resultFile, 'utf8')); } catch (_) { /* not yet */ }
-      if (result?.id === id) {
-        fs.rmSync(resultFile, { force: true });
-        return result;
-      }
-      const head = current()?.head;
-      if (head?.busy) until = Math.max(until, Date.now() + COMMAND_POLL_MS * 8);
-      if (Date.now() >= until) break;
-      if (!told && head && !(head.safe && head.canSave)) { told = true; onWaiting(); }
-      await wait(COMMAND_POLL_MS);
+      const result = await Promise.race([answer, wait(COMMAND_POLL_MS).then(() => undefined)]);
+      if (result !== undefined) return result;   // (null: the link closed)
+      if (live.closed) return null;
+      if (deadline(current()?.head)) return undefined;
     }
-    fs.rmSync(commandFile, { force: true });
-    return { ok: false, code: 'timeout' };
+  }
+  async function command(lines) {
+    const now = current();
+    if (!now?.head.loaded) throw new Error('Load your save in the game first.');
+    if (cardTrainerId !== null && cardTrainerId !== undefined && now.head.trainerId !== cardTrainerId)
+      throw new Error('The game is playing a game that isn\'t saved yet. Save it in the game first.');
+    if (!live.linked) return { ok: false, code: 'timeout' };
+    const id = crypto.randomBytes(8).toString('hex');
+    const answer = live.result(id);
+    live.send('command', {}, `id ${id}\n${lines}\n`);
+    try {
+      // The game's save ends on its own "saved" message, which waits for A: while it says it's busy with the command,
+      // the command is under way however long that takes, and it's left for the game to finish.
+      let until = Date.now() + timeoutMs, told = false;
+      let result = await waitFor(answer, head => {
+        if (head?.busy) until = Math.max(until, Date.now() + COMMAND_POLL_MS * 8);
+        if (!told && head && !(head.safe && head.canSave)) { told = true; onWaiting(); }
+        return Date.now() >= until;
+      });
+      if (result) return result;
+      if (result === null) return { ok: false, code: 'unknown' };
+      // given up: the game lets the command go if it hasn't started it ("error cancelled"), else it answers how it went
+      live.send('cancel', { id });
+      let limit = Date.now() + CANCEL_WAIT_MS;
+      result = await waitFor(answer, head => {
+        if (head?.busy) limit = Math.max(limit, Date.now() + COMMAND_POLL_MS * 8);
+        return Date.now() >= limit;
+      });
+      if (!result) return { ok: false, code: 'unknown' };
+      return result.code === 'cancelled' ? { ok: false, code: 'timeout' } : result;
+    } finally { live.forget(id); }
   }
   return {
     game, mode: 'live', pool: poolFor(game, randomized),
     read() {
-      const live = current();
-      return live?.ctx ? { model: live.model, ctx: live.ctx, head: live.head } : null;
+      const now = current();
+      return now?.ctx ? { model: now.model, ctx: now.ctx, head: now.head } : null;
     },
     take(identity, place) {
       const hex = n => (n >>> 0).toString(16);
@@ -165,8 +231,8 @@ function liveAccess({ game, liveDir, cardTrainerId, randomized = false, wait = m
     // one of the save's own story Shadows back as it was (a cancelled trade), needs a game with the return command
     restore(data) { return command(`return ${data.toString('hex')}`); },
     has(identity) {
-      const live = current();
-      return Boolean(live?.ctx && savePokemon.findPokemon(live.ctx, identity));
+      const now = current();
+      return Boolean(now?.ctx && savePokemon.findPokemon(now.ctx, identity));
     }
   };
 }
@@ -238,6 +304,12 @@ class Shadowtrade {
       this.state.journal.push(entry);
       this.save();
       const taken = await access.take(identity, place);
+      if (!taken.ok && taken.code === 'unknown') {
+        // the game didn't say how it went (it closed, or stopped answering): sync() looks at the save and sends it if it left
+        entry.message = 'The game didn\'t say whether it traded. Shadowtrade checks your save, and sends the Pokémon if it left.';
+        this.save();
+        throw new Error(entry.message);
+      }
       if (!taken.ok) {
         if (taken.code === 'missing' && !access.has(identity)) this.log('Shadowtrade: the Pokémon had already left the save.');
         else {
@@ -259,6 +331,7 @@ class Shadowtrade {
     return { 'last-pokemon': 'You can\'t trade your last Pokémon that can battle: keep one in your party.', 'not-shadow': 'Only Shadow Pokémon can go to Shadowtrade.',
       lugia: 'XD-001 can\'t be traded.', full: 'Your party and PC boxes are full: make room for the Pokémon you\'ll receive.',
       save: 'The game couldn\'t save, so nothing was traded.', timeout: 'The game didn\'t reach a moment it could trade in: walk around in the field, outside menus and battles, and try again.',
+      unknown: 'The game didn\'t say whether it traded. Shadowtrade looks at your save and tries again.',
       invalid: 'The game refused the Pokémon received. Update the game if Shadowtrade is new to it.',
       entries: 'Your save holds as many traded-in Shadow Pokémon as it can: purify some, and the next one comes.', missing: 'That Pokémon isn\'t in the save any more.' }[result.code] || `The game couldn't trade (${result.code}${result.message ? `: ${result.message}` : ''}).`;
   }
@@ -414,4 +487,4 @@ class Shadowtrade {
   }
 }
 
-module.exports = { Shadowtrade, cardAccess, liveAccess, checkReceived, poolFor, parseResult, serverUrl, COMMAND_TIMEOUT_MS };
+module.exports = { Shadowtrade, LiveGame, cardAccess, liveAccess, checkReceived, poolFor, parseResult, serverUrl, COMMAND_TIMEOUT_MS };

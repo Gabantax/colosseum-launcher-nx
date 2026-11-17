@@ -7,7 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 const gciSave = require('../src/gci-save');
 const sp = require('../src/save-pokemon');
-const { Shadowtrade, cardAccess, liveAccess, parseResult, checkReceived } = require('../src/shadowtrade');
+const { Shadowtrade, LiveGame, cardAccess, liveAccess, parseResult, checkReceived } = require('../src/shadowtrade');
+const { GameLink, createReader } = require('../src/game-link');
+const net = require('node:net');
 
 const utf16 = (bytes, offset, value) => Buffer.from(value, 'utf16le').swap16().copy(bytes, offset);
 function pokemon({ species, rnd, trainer, nickname, shadowId = 0, heart = -100 }) {
@@ -200,22 +202,24 @@ test('received Pokémon are checked before they go into a save', () => {
   assert.throws(() => checkReceived('colosseum', { pokemon: { data: odd.toString('base64') } }), /isn't one this game has/);
 });
 
-test('the running game: commands go to it, and only for the card\'s own save', async t => {
-  const dir = folder(t), liveDir = path.join(dir, 'live');
-  fs.mkdirSync(liveDir);
-  const plain = plainSave(A_ID, [UMBREON, MAKUHITA]);
-  const writeLive = () => {
+// A game on the other end of a real launcher link (src/game-link.js): it sends its live picture and does each
+// command at its next frame (or holds it, while `held`), as host/shadowtrade_io.c does.
+async function linkedGame(t, plain, { trainer = A_ID } = {}) {
+  const link = new GameLink();
+  await link.listen();
+  const socket = net.connect(link.port, '127.0.0.1');
+  t.after(() => { socket.destroy(); link.close(); });
+  const game = { held: false, pending: null, done: new Map(), commands: 0 };
+  const send = (verb, data) => socket.write(Buffer.concat([Buffer.from(`${verb} bytes=${data.length}\n`), data]));
+  game.live = () => {
     const body = plain.subarray(8), head = Buffer.alloc(0x40);
     head.writeUInt32BE(0x4353544c, 0); head.writeUInt32BE(1, 4); head.writeUInt32BE(0, 8); head.writeUInt32BE(1, 0x0c);
-    head.writeUInt32BE(7, 0x10); head.writeUInt32BE(A_ID, 0x14); head.writeUInt32BE(4, 0x18); head.writeUInt32BE(body.length, 0x20);
-    fs.writeFileSync(path.join(liveDir, 'live.bin'), Buffer.concat([head, body]));
+    head.writeUInt32BE(7, 0x10); head.writeUInt32BE(trainer, 0x14); head.writeUInt32BE(4, 0x18); head.writeUInt32BE(body.length, 0x20);
+    head.writeUInt32BE(2, 0x30);
+    send('live part=all', Buffer.concat([head, body]));
   };
-  writeLive();
-  // the game: takes the command at its next frame
-  const game = setInterval(() => {
-    const file = path.join(liveDir, 'command.txt');
-    if (!fs.existsSync(file)) return;
-    const [idLine, line] = fs.readFileSync(file, 'utf8').trim().split('\n');
+  const run = text => {
+    const [idLine, line] = text.trim().split('\n');
     const words = line.split(' ');
     const ctx = { game: 'colosseum', plain, extra: null };
     let result;
@@ -226,22 +230,73 @@ test('the running game: commands go to it, and only for the card\'s own save', a
       const done = sp.giveTo(ctx, Buffer.from(words[1], 'hex'));
       result = done ? `ok ${done.already ? 'already ' : ''}${done.area} ${done.box} ${done.slot}` : 'error full';
     }
-    fs.rmSync(file);
-    writeLive();
-    fs.writeFileSync(path.join(liveDir, 'result.txt'), `${idLine}\n${result}\n`);
-  }, 20);
-  t.after(() => clearInterval(game));
+    game.commands++;
+    game.done.set(idLine.slice(3), result);
+    game.live();
+    send('result', Buffer.from(`${idLine}\n${result}\n`));
+  };
+  const push = createReader(({ verb, fields, data }) => {
+    if (verb === 'command') { if (game.held) game.pending = data.toString(); else setTimeout(() => run(data.toString()), 5); }
+    if (verb === 'cancel') {
+      const id = fields.id;
+      if (game.pending?.startsWith(`id ${id}`)) { game.pending = null; send('result', Buffer.from(`id ${id}\nerror cancelled\n`)); }
+      else send('result', Buffer.from(`id ${id}\n${game.done.get(id) || 'error cancelled'}\n`));
+    }
+  });
+  socket.on('data', chunk => push(chunk));
+  const hello = new Promise(resolve => link.once('hello', resolve));
+  await new Promise(resolve => socket.once('connect', resolve));
+  socket.write(`hello link=1 token=${link.token} game=colosseum caps=shadowtrade.2\n`);
+  await hello;
+  const live = new LiveGame(link);
+  const first = new Promise(resolve => link.once('message:live', resolve));
+  game.live();
+  await first;
+  return { link, live, game, socket };
+}
+
+test('the running game: commands go to it over the link, and only for the card\'s own save', async t => {
+  const plain = plainSave(A_ID, [UMBREON, MAKUHITA]);
+  const { live, link } = await linkedGame(t, plain);
+  assert.equal(link.has('shadowtrade.2'), true);
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const access = liveAccess({ game: 'colosseum', liveDir, cardTrainerId: A_ID, wait });
+  const access = liveAccess({ game: 'colosseum', live, cardTrainerId: A_ID, wait });
   assert.deepEqual(access.read().model.party.filter(Boolean).map(p => p.nickname), ['UMBREON', 'MAKUHITA']);
   const taken = await access.take({ species: 296, rnd: 2, trainer: A_ID }, { area: 'party', box: 0, slot: 1 });
   assert.deepEqual([taken.ok, taken.area, taken.slot], [true, 'party', 1]);
+  await wait(30);   // the picture after it
   assert.equal(access.has({ species: 296, rnd: 2, trainer: A_ID }), false);
   const given = await access.give(MAKUHITA);
   assert.deepEqual([given.ok, given.slot], [true, 1]);
   assert.equal((await access.give(MAKUHITA)).already, true);
   // a game playing a new, unsaved game (another trainer) gets no commands
-  const other = liveAccess({ game: 'colosseum', liveDir, cardTrainerId: 0x9999, wait });
+  const other = liveAccess({ game: 'colosseum', live, cardTrainerId: 0x9999, wait });
   await assert.rejects(other.take({ species: 296, rnd: 2, trainer: A_ID }, { area: 'party', box: 0, slot: 1 }), /isn't saved yet/);
   assert.deepEqual(parseResult('id 0123456789abcdef\nerror last-pokemon\n'), { id: '0123456789abcdef', ok: false, code: 'last-pokemon', message: '' });
+});
+
+test('the running game: a command it never reached is cancelled, and never happens after', async t => {
+  const plain = plainSave(A_ID, [UMBREON, MAKUHITA]);
+  const { live, game } = await linkedGame(t, plain);
+  game.held = true;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const access = liveAccess({ game: 'colosseum', live, cardTrainerId: A_ID, wait, timeoutMs: 100 });
+  const taken = await access.take({ species: 296, rnd: 2, trainer: A_ID }, { area: 'party', box: 0, slot: 1 });
+  assert.deepEqual(taken, { ok: false, code: 'timeout' });
+  assert.equal(game.pending, null);
+  assert.equal(game.commands, 0);
+  assert.equal(access.has({ species: 296, rnd: 2, trainer: A_ID }), true);
+});
+
+test('the running game: when the link closes mid-command, the outcome is unknown and the trade is kept for sync', async t => {
+  const dir = folder(t);
+  const plain = plainSave(A_ID, [UMBREON, MAKUHITA]);
+  const { live, game, socket } = await linkedGame(t, plain);
+  game.held = true;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const access = liveAccess({ game: 'colosseum', live, cardTrainerId: A_ID, wait });
+  const trades = new Shadowtrade({ folder: dir, url: 'http://server', fetch: async () => { throw new Error('no server in this test'); } });
+  setTimeout(() => socket.destroy(), 50);
+  await assert.rejects(trades.offer(access, { area: 'party', box: 0, slot: 1 }), /didn't say whether it traded/);
+  assert.deepEqual(trades.state.journal.map(entry => entry.stage), ['taking']);
 });

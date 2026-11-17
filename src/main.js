@@ -70,6 +70,7 @@ const titleLogo = require('./title-logo');
 const { retrying, httpError } = require('./retry');
 const savePokemon = require('./save-pokemon');
 const shadowtrade = require('./shadowtrade');
+const { GameLink } = require('./game-link');
 
 const DISCORD_INVITE = 'https://discord.gg/pkVwBrSwsZ';
 // The game chosen on the Play page (games.js): its checkout, disc and game source are config's own fields.
@@ -1604,13 +1605,10 @@ async function play(installation = null, battle = null) {
   // they come, while the game runs, and one left by a game that crashed is kept now
   const gameSettingsFile = path.join(cacheFolder, 'game-settings.json');
   keepGameSettings(gameSettingsFile);
-  // The game shows its save to the Pokémon page and takes Shadowtrade's commands here (host/shadowtrade.c); what an
-  // earlier game left is gone, so the page never shows a stale save
-  if (!battle) {
-    if (trades().busy) throw new Error('Shadowtrade is changing your save. Play again in a moment.');
-    fs.mkdirSync(liveFolder(chosen.id), { recursive: true });
-    for (const name of ['live.bin', 'live.bin.tmp', 'command.txt', 'command.txt.tmp', 'result.txt', 'result.txt.tmp']) fs.rmSync(path.join(liveFolder(chosen.id), name), { force: true });
-  }
+  // The launcher link (src/game-link.js): the game shows its save to the Pokémon page over it and takes Shadowtrade's
+  // commands (host/launcherlink.c, host/shadowtrade.c)
+  if (!battle && trades().busy) throw new Error('Shadowtrade is changing your save. Play again in a moment.');
+  const storyLink = !battle ? await openStoryLink(chosen.id) : null;
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
@@ -1628,7 +1626,7 @@ async function play(installation = null, battle = null) {
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
     SMS_TEXTURE_PACK_CACHE: path.join(cacheFolder, 'texture-mips'),
     COLO_SETTINGS_SAVE: gameSettingsFile,
-    ...(!battle ? { COLO_SHADOWTRADE_DIR: liveFolder(chosen.id) } : {}),
+    ...(storyLink ? storyLink.environment() : {}),
     ...(battle ? { COLO_ONLINE: String(battle.port), COLO_SKIP_MOVIES: '1', COLO_NOCARD: '1' } : {}),
     ...(config.settings.discordPresence && supports('discordPresence') ? { COLO_PRESENCE: '1' } : {}),
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
@@ -1643,7 +1641,7 @@ async function play(installation = null, battle = null) {
   const startedAt = Date.now();
   startPresence(startedAt, Boolean(battle));
   const settingsWatch = setInterval(() => keepGameSettings(gameSettingsFile), GAME_SETTINGS_POLL_MS);
-  if (!battle) { storyGame = chosen.id; watchLive(chosen.id); }
+  if (!battle) storyGame = chosen.id;
   try {
     return await launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, playLabel(), true);
   } catch (error) {
@@ -1660,7 +1658,7 @@ async function play(installation = null, battle = null) {
     keepGameSettings(gameSettingsFile);
     if (!battle) {
       storyGame = null;
-      clearInterval(livePoll);
+      closeStoryLink(storyLink);
       broadcast('pokemon-changed', chosen.id);
       // trades waiting for the save can go to the card now
       setTimeout(() => syncTrades(), 0);
@@ -1689,18 +1687,38 @@ function keepGameSettings(file) {
 }
 
 // --- The Pokémon page and Shadowtrade (src/save-pokemon.js, src/shadowtrade.js). The page shows the chosen game's save:
-// while that game's story runs, the game's own live copy (live.bin in COLO_SHADOWTRADE_DIR, written by the game), else
-// the card. Shadowtrade changes a save the same two ways: the card only while its game is closed, the running game by
-// a command it carries out and saves itself.
+// while that game's story runs, the game's own live picture (sent over the launcher link, src/game-link.js), else the
+// card. Shadowtrade changes a save the same two ways: the card only while its game is closed, the running game by a
+// command it carries out and saves itself.
 let storyGame = null;            // the game whose story is running ('colosseum' or 'xd'), or null
+let storyLive = null;            // its live picture and commands (shadowtrade.LiveGame), while it runs
 let shadowtradeTrades = null;
-let livePoll = null, liveSequence = null;
 let shadowtradeTimer = null;
-const LIVE_POLL_MS = 1000;
 const SHADOWTRADE_SYNC_MS = 2 * 60 * 1000;
+const LIVE_REFRESH_MS = 250;     // the Pokémon page is told of a change at most this often
 
-function liveFolder(game) { return path.join(app.getPath('userData'), 'shadowtrade', `live-${game}`); }
-function liveFile(game) { return path.join(liveFolder(game), 'live.bin'); }
+// The link to the story's game, for this run: open before the game starts (it connects as it starts)
+async function openStoryLink(game) {
+  closeStoryLink(storyLive?.link);
+  const link = new GameLink({ log });
+  await link.listen();
+  let refresh = null, synced = false;
+  storyLive = new shadowtrade.LiveGame(link, { onChange: ({ whole, closed }) => {
+    if (!refresh) refresh = setTimeout(() => { refresh = null; broadcast('pokemon-changed', game); }, LIVE_REFRESH_MS);
+    if (closed) return;
+    // a live game can take trades that were waiting for it: once its save is in, and when it changes
+    const pending = trades().state.journal.some(entry => entry.game === game && ['received', 'giving', 'taking'].includes(entry.stage));
+    if (pending && storyLive?.current()?.head.loaded && (whole || !synced)) { synced = true; syncTrades(); }
+  } });
+  link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
+  return link;
+}
+
+function closeStoryLink(link) {
+  if (!link) return;
+  link.close();
+  if (storyLive?.link === link) storyLive = null;
+}
 function trades() {
   if (!shadowtradeTrades) shadowtradeTrades = new shadowtrade.Shadowtrade({ folder: path.join(app.getPath('userData'), 'shadowtrade'),
     fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view) });
@@ -1726,17 +1744,17 @@ function shadowtradeReady(game) {
 function saveDirectoryOf(game) { return game === config.game ? currentSaveDirectory() : saves.saveDirectory(process.env, process.platform, game); }
 function saveRandomized(game) { try { return Boolean(saveRun(saveDirectoryOf(game), game).run); } catch (_) { return false; } }
 
-// How a game's save can be reached now: the running game's (once it has a save loaded and writes live.bin), the card
+// How a game's save can be reached now: the running game's (once it has a save loaded and sends its live picture), the card
 // while that game isn't running, or null.
 function tradeAccess(game) {
   const randomized = saveRandomized(game);
   if (!shadowtradeReady(game) && storyGame !== game) return null;
   if (storyGame === game) {
-    const live = savePokemon.readLive(liveFile(game));
-    if (!live?.head.loaded || !(live.head.entries >= 2)) return null;
+    const live = storyLive?.current();
+    if (!live?.head.loaded || !(live.head.entries >= 2) || !storyLive.link.has('shadowtrade.2')) return null;
     let cardTrainerId = null;
     try { cardTrainerId = savePokemon.readCard(saveDirectoryOf(game), game)?.trainerId ?? null; } catch (_) { /* no card save: the game's is new */ }
-    return shadowtrade.liveAccess({ game, liveDir: liveFolder(game), cardTrainerId, randomized, onWaiting: () => broadcast('shadowtrade-waiting', game) });
+    return shadowtrade.liveAccess({ game, live: storyLive, cardTrainerId, randomized, onWaiting: () => broadcast('shadowtrade-waiting', game) });
   }
   return shadowtrade.cardAccess({ game, saveDir: saveDirectoryOf(game), randomized,
     backup: reason => {
@@ -1750,7 +1768,7 @@ function tradeAccess(game) {
 function pokemonPage() {
   const game = config.game;
   let model = null, source = null, notice = null, canTrade = true;
-  const live = storyGame === game ? savePokemon.readLive(liveFile(game)) : null;
+  const live = storyGame === game ? storyLive?.current() : null;
   if (live?.model) {
     model = live.model; source = 'live';
     if (!(live.head.safe && live.head.canSave)) notice = 'A trade happens once you are walking around in the field, outside menus, battles and scenes.';
@@ -1772,21 +1790,6 @@ function pokemonPage() {
   }
   return { game, source, model, notice, canTrade: canTrade && Boolean(model), pool: shadowtrade.poolFor(game, saveRandomized(game)),
     trades: trades().view(), live: live?.head || null };
-}
-
-function watchLive(game) {
-  clearInterval(livePoll);
-  liveSequence = null;
-  livePoll = setInterval(() => {
-    let sequence = null;
-    try { sequence = fs.statSync(liveFile(game)).mtimeMs; } catch (_) { /* not yet */ }
-    if (sequence === liveSequence) return;
-    liveSequence = sequence;
-    broadcast('pokemon-changed', game);
-    // a live game can take trades that were waiting for it
-    if (sequence !== null && trades().state.journal.some(entry => entry.game === game && ['received', 'giving', 'taking'].includes(entry.stage)))
-      syncTrades();
-  }, LIVE_POLL_MS);
 }
 
 function syncTrades() {

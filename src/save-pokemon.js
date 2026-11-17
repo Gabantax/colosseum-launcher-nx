@@ -3,8 +3,8 @@
 // The Pokémon in a save, Colosseum's or XD's: the party and every PC box, as the Pokémon page shows them, and the two
 // changes Shadowtrade makes (src/shadowtrade.js): taking a Shadow Pokémon out, and putting the one received in.
 //
-// A save is read either from its card file (the game closed) or from the game's own live copy (live.bin, written by
-// the running game in COLO_SHADOWTRADE_DIR: host/shadowtrade.c). Both give the same model. Only the card file is ever
+// A save is read either from its card file (the game closed) or from the game's own live picture (sent by the running
+// game over the launcher link: game-link.js, host/shadowtrade.c). Both give the same model. Only the card file is ever
 // edited here, and only with the game closed: while it runs, the game makes the change itself (a command) and saves.
 //
 // Colosseum's save (gci-save.js): three scrambled copies, each a slot whose plain bytes hold the trainer at 0x78, its
@@ -42,7 +42,7 @@ const XD = {
   meetCount: 0x938, recordSize: 0x48, records: 128,
   at: { species: 0x00, item: 0x02, hp: 0x04, ball: 0x0f, level: 0x11, flags: 0x1d, trainer: 0x24, rnd: 0x28, nickname: 0x4e,
     moves: 0x80, maxHp: 0x90, shadow: 0xba },
-  // where each section is in the game's memory (live.bin), as the pack's table gives it for a card copy
+  // where each section is in the game's memory (the live picture), as the pack's table gives it for a card copy
   ram: { hero: 0x140, pcBox: 0xad0, dayCare: 0xc790, darkPokemon: 0xe380, chamber: 0x1d690 }
 };
 // XD's record: status in the top 3 bits (0 not met, 1 met, 2 missed, 3 snagged, 4 purified); where it is in bits
@@ -256,7 +256,7 @@ function readCard(saveDir, gameId) {
   return { ...model(copies[0].ctx), saveCount: copies[0].count, source: 'card' };
 }
 
-// live.bin, from the running game (SPEC.md): its header and its context, or null while it has no save in memory.
+// The live picture, from the running game (SPEC.md): its header and its context, or null while it has no save in memory.
 const LIVE_MAGIC = 0x4353544c, LIVE_HEADER = 0x40;
 function parseLive(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length < LIVE_HEADER || bytes.readUInt32BE(0) !== LIVE_MAGIC || bytes.readUInt32BE(4) !== 1) return null;
@@ -282,6 +282,11 @@ function parseLive(bytes) {
 function readLive(file) {
   let bytes;
   try { bytes = fs.readFileSync(file); } catch (_) { return null; }
+  return liveFrom(bytes);
+}
+
+// the live picture's bytes (as the game sends them over the launcher link): its header, model and context, or null
+function liveFrom(bytes) {
   const live = parseLive(bytes);
   if (!live) return null;
   return { head: live.head, model: live.ctx ? { ...model(live.ctx), saveCount: live.head.saveCount, source: 'live' } : null, ctx: live.ctx };
@@ -499,5 +504,5 @@ function editCard(saveDir, gameId, change) {
   return result;
 }
 
-module.exports = { COLOSSEUM, XD, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, parseLive, cardCopies,
+module.exports = { COLOSSEUM, XD, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, liveFrom, parseLive, cardCopies,
   colosseumFlag, offerProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };
