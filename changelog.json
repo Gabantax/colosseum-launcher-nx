@@ -2,7 +2,8 @@
   "beta": {
     "launcher": [],
     "game": [
-      "Fixed Pokémon XD freezing on the Matchup page of the P★DA's Strategy Memo for a Pokémon with a Generation 4 ability, such as Eevee's Adaptability under Platinum battle rules. The page now shows that ability's description on two lines."
+      "Fixed Pokémon XD freezing on the Matchup page of the P★DA's Strategy Memo for a Pokémon with a Generation 4 ability, such as Eevee's Adaptability under Platinum battle rules. The page now shows that ability's description on two lines.",
+      "Fixed fast-forward barely speeding up on slower PCs, in battles and the story alike. It only holds back to normal steps while you walk, so you still can't walk through walls."
     ]
   },
   "releases": [
