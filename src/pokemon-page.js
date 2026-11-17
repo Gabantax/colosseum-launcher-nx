@@ -1,7 +1,7 @@
 // The Pokémon page: the party and PC boxes of the chosen game's save, from the card, or live from the game while it
 // runs (main.js pokemonPage). A Shadow Pokémon can go to Shadowtrade from here: it leaves the save and another
-// player's Shadow Pokémon comes back (src/shadowtrade.js). The Online Trade panel is the trade window
-// (src/online-trades.js): a trade code made or joined, each player's offer picked from this grid, and Ready.
+// player's Shadow Pokémon comes back (src/shadowtrade.js). Online Trade (src/online-trades.js): a trade code made or
+// joined from the card beside the grid, then the trade window takes the page over until the room closes.
 
 const $ = id => document.getElementById(id);
 const message = error => String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -91,7 +91,6 @@ function current() {
 function renderDetail() {
   const pokemon = current();
   $('pokemon-detail').hidden = !pokemon;
-  renderOfferButton(pokemon);
   if (!pokemon) return;
   $('pokemon-detail-sprite').replaceChildren(sprite(pokemon, 96));
   $('pokemon-detail-name').textContent = shown(pokemon);
@@ -247,64 +246,6 @@ async function tradeNames() {
   return names;
 }
 
-function offerProblem(pokemon) {
-  if (pokemon.egg) return 'Eggs can\'t be traded.';
-  if (pokemon.shadow) return 'Purify it first: Shadow Pokémon go to Shadowtrade instead.';
-  if (pokemon.area === 'party' && !data.model.party.some(each => each && each.key !== pokemon.key && !each.egg && each.hp > 0))
-    return 'You can\'t trade your last Pokémon that can battle.';
-  return null;
-}
-
-function renderOfferButton(pokemon) {
-  const button = $('pokemon-offer'), room = tradeView?.room;
-  button.hidden = !room || !pokemon;
-  if (button.hidden) return;
-  const busy = Boolean(room.trade), problem = offerProblem(pokemon);
-  const offered = room.you?.offer?.place;
-  const same = offered && offered.area === pokemon.area && offered.box === pokemon.box && offered.slot === pokemon.slot;
-  button.disabled = busy || Boolean(problem) || same;
-  button.textContent = same ? 'Offered for trade' : 'Offer for trade';
-  if (!pokemon.shadow) $('pokemon-trade-note').textContent = problem || (same ? 'The other player sees it in the trade window.' : busy ? 'A trade is under way.' : 'Offer it to the other player in the trade window.');
-}
-
-// A Pokémon's card in the trade window: what the other player sees of it, and you of theirs.
-function tradeCard(summary, { problems = [], evolvesInto = 0, empty = '' } = {}) {
-  const card = document.createElement('div');
-  if (!summary) { card.className = 'trade-card-empty helper'; card.textContent = empty; return card; }
-  card.className = 'trade-card-body';
-  const head = document.createElement('div');
-  head.className = 'trade-card-head';
-  head.append(sprite(summary, 48));
-  const title = document.createElement('div');
-  title.append(Object.assign(document.createElement('strong'), { textContent: `${shown(summary)}${summary.shiny ? ' ★' : ''}` }),
-    Object.assign(document.createElement('small'), { textContent: `${speciesName(summary)} · Lv. ${summary.level} · ${NATURES[summary.nature] || ''}` }),
-    Object.assign(document.createElement('small'), { textContent: `OT ${summary.otName || '?'} (${String(summary.otId).padStart(5, '0')})${summary.game ? ` · from ${summary.game === 'xd' ? 'XD' : 'Colosseum'}` : ''}` }));
-  head.append(title);
-  card.append(head);
-  const item = summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
-  card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `Holds: ${item}` }));
-  const moves = summary.moves.map(move => names?.moves.get(move.id) || `Move #${move.id}`).join(', ');
-  card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: `Moves: ${moves || 'none'}` }));
-  const ts = TS(), species = names?.species?.[summary.species];
-  const abilities = species?.abilities || [], ability = abilities.find(a => a.slot === summary.abilitySlot) || abilities[0];
-  const line = text => card.append(Object.assign(document.createElement('small'), { className: 'trade-card-line', textContent: text }));
-  line(`${ts ? ts.natureLabel(summary.nature) : ''}${ability ? ` · ${ability.name}` : ''}`);
-  const short = ['HP', 'Atk', 'Def', 'SpA', 'SpD', 'Spe'];
-  line(`Stats ${short.map((name, i) => `${name} ${i === 0 ? `${summary.hp}/${summary.stats[0]}` : summary.stats[i]}`).join(' · ')}`);
-  line(`IVs ${summary.ivs.join('/')} · EVs ${summary.evs.join('/')}`);
-  const ribbons = summary.ribbons.filter(Boolean).length;
-  if (ribbons) line(`${ribbons} ribbon${ribbons > 1 ? 's' : ''}`);
-  card.append(Object.assign(document.createElement('span'), { className: 'trade-card-more', textContent: 'Every stat ›' }));
-  if (evolvesInto) card.append(Object.assign(document.createElement('p'), { className: 'trade-evolves', textContent: `Evolves into ${dex?.get(evolvesInto)?.name || `#${evolvesInto}`} when it arrives.` }));
-  for (const problem of problems) card.append(Object.assign(document.createElement('p'), { className: 'trade-problem', textContent: problem.text || problem }));
-  card.classList.add('trade-card-open');
-  card.title = 'Every stat';
-  card.tabIndex = 0;
-  card.addEventListener('click', openStats);
-  card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openStats(); } });
-  return card;
-}
-
 // ---- every stat: the two offers side by side (the trade window's Compare every stat) ----
 const TS = () => window.coloTeamSets;
 const BALLS = ['', 'Master Ball', 'Ultra Ball', 'Great Ball', 'Poké Ball', 'Safari Ball', 'Net Ball', 'Dive Ball', 'Nest Ball', 'Repeat Ball', 'Timer Ball', 'Luxury Ball', 'Premier Ball'];
@@ -410,70 +351,332 @@ function openStats() {
   if (!$('trade-stats').open) $('trade-stats').showModal();
 }
 
+// ---- the trade window: while a room is open it takes the page over ----
+// Left: your party and boxes to pick from. Middle: your offer and theirs facing each other, every stat that matters at
+// a glance (the full sheet behind Compare every stat). Below: what's happening and Ready. Over the offers while a trade
+// runs: both Pokémon swapping places and the steps; once it's done, what came.
+let twTab = 'party', twBox = 0, twNote = null, dismissed = null, tradeCache = null, copiedAt = 0;
+const STAT_COLORS = [['#3fb984', '#7ed9a8'], ['#e2663a', '#f4a06c'], ['#d9a51c', '#f2cb5c'], ['#4b7fe0', '#86aaf2'], ['#3aa6a0', '#76cdc6'], ['#d8508a', '#f08bb6']];
+const SHORT = ['HP', 'Atk', 'Def', 'SpA', 'SpD', 'Spe'];
+const gameLabel = game => (game === 'xd' ? 'XD' : 'Colosseum');
+const samePlace = (a, b) => Boolean(a && b && a.area === b.area && a.box === b.box && a.slot === b.slot);
+const pokeName = id => dex?.get(id)?.name || `#${id}`;
+
+function ball(extra = '') {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 64 64');
+  svg.setAttribute('class', `tw-ball ${extra}`);
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = '<circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" stroke-width="4"/><path d="M4 32h19M41 32h19" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="32" r="8" fill="none" stroke="currentColor" stroke-width="4"/>';
+  return svg;
+}
+
+function stage(summary, size = 96) {
+  const box = el('div', { className: 'tw-stage' }, sprite(summary, size));
+  if (summary.shiny) box.append(el('span', { className: 'tw-shiny', textContent: '★', title: 'Shiny' }));
+  return box;
+}
+
+function genderMark(summary) {
+  const ts = TS(), species = names?.species?.[summary.species];
+  const gender = ts && species ? ts.genderOf(summary.personality >>> 0, species.gender) : '';
+  return gender === 'M' ? el('span', { className: 'm', textContent: ' ♂' }) : gender === 'F' ? el('span', { className: 'f', textContent: ' ♀' }) : null;
+}
+
+function copyCode(button) {
+  navigator.clipboard?.writeText(tradeView?.room?.code || '').catch(() => {});
+  copiedAt = Date.now();
+  for (const each of [$('trade-copy'), button].filter(Boolean)) {
+    each.textContent = 'Copied!';
+    setTimeout(() => { each.textContent = 'Copy'; }, 1500);
+  }
+}
+
+// One side's offer: the Pokémon, or what that side is waiting on.
+function offerSide(side, room, scale) {
+  const mine = side === 'mine', peer = room.peer, you = room.you;
+  const offer = mine ? you?.offer : peer?.offer, summary = offer?.summary || null;
+  const ready = mine ? Boolean(you?.ready) : Boolean(peer?.ready);
+  const problems = mine ? (you?.refusedBecause ? [`${peer?.name || 'Their'}'s game can't take it: ${you.refusedBecause}`] : [])
+    : (offer?.problems || []).map(problem => problem.text || problem);
+  const node = $(mine ? 'tw-mine' : 'tw-theirs');
+  node.className = `tw-offer ${side}${ready && summary ? ' ready' : ''}${problems.length ? ' refused' : ''}`;
+  // who
+  const dot = mine ? 'here' : !peer?.here ? '' : peer.present ? 'here' : 'away';
+  const who = el('div', { className: 'tw-who' }, el('i', { className: `tw-dot ${dot}` }),
+    el('span', { textContent: mine ? `You${you?.name ? ` · ${you.name}` : ''}` : peer?.here ? peer.name || 'The other player' : 'Waiting for a player' }));
+  const game = mine ? data?.game : peer?.here ? peer.game : null;
+  if (game) who.append(el('small', { className: 'tw-game', textContent: gameLabel(game) }));
+  const state = summary ? el('span', { className: `tw-state${ready ? ' ready' : ''}`, textContent: ready ? 'Ready ✓' : 'Not ready' }) : null;
+  const more = summary ? el('button', { className: 'tw-more', type: 'button', textContent: 'Every stat ›' }) : null;
+  more?.addEventListener('click', openStats);
+  const children = [el('header', { className: 'tw-offer-head' }, who, el('span', { className: 'tw-offer-tools' }, more, state))];
+  if (!summary) {
+    const empty = el('div', { className: 'tw-empty' });
+    if (mine) empty.append(ball(), el('strong', { textContent: 'Pick a Pokémon to offer' }),
+      el('p', { textContent: 'Choose one from your party or boxes on the left. You can change it until you both ready up.' }));
+    else if (!peer?.here) {
+      const copy = el('button', { className: 'subtle', type: 'button', textContent: 'Copy' });
+      copy.addEventListener('click', () => copyCode(copy));
+      empty.append(ball('wait'), el('strong', { textContent: 'Waiting for someone to join' }), el('div', { className: 'tw-share' }, el('strong', { textContent: room.code || '…' }), copy),
+        el('p', { textContent: 'Send this code to the player you\'re trading with. It works from Colosseum or XD.' }));
+    } else if (!peer.present) empty.append(ball('wait'), el('strong', { textContent: `${peer.name || 'They'} lost their connection` }), el('p', { textContent: 'Waiting for them to come back…' }));
+    else empty.append(ball('wait'), el('strong', { textContent: `${peer.name || 'They'} ${peer.name ? 'is' : 'are'} choosing…` }), el('p', { textContent: 'Their Pokémon shows here as soon as they pick it.' }));
+    children.push(empty);
+    node.replaceChildren(...children);
+    return;
+  }
+  const ts = TS(), species = names?.species?.[summary.species], entry = dex?.get(summary.species);
+  // the Pokémon
+  const title = el('strong', {}, shown(summary), genderMark(summary));
+  const types = el('div', { className: 'tw-types' }, ...(entry?.types || []).map(type => el('span', { className: 'pokedex-type', textContent: type })));
+  for (const pill of types.children) pill.dataset.type = pill.textContent.toLowerCase();
+  const from = summary.game ? ` · from ${gameLabel(summary.game)}` : '';
+  const evolves = !mine && offer.evolvesInto ? el('span', { className: 'tw-evolve-pill', title: 'A trade evolution: it evolves as it arrives in your game' }, sprite({ species: offer.evolvesInto }, 24), `Evolves into ${pokeName(offer.evolvesInto)} on arrival`) : null;
+  children.push(el('div', { className: 'tw-hero' }, stage(summary, 96),
+    el('div', { className: 'tw-name' }, title, el('small', { textContent: `${speciesName(summary)} · Lv. ${summary.level}${from}` }), types, evolves)));
+  for (const problem of problems) children.push(el('div', { className: 'tw-banner problem', textContent: problem }));
+  // facts
+  const effect = ts?.natureEffect(summary.nature);
+  const nature = el('dd', {}, NATURES[summary.nature] || '?');
+  if (effect && effect.up !== effect.down && effect.up !== undefined && effect.up !== null) {
+    nature.append(' ', el('span', { className: 'up', textContent: `+${SHORT[effect.up]}` }), ' ', el('span', { className: 'down', textContent: `−${SHORT[effect.down]}` }));
+  }
+  const abilities = species?.abilities || [], ability = abilities.find(a => a.slot === summary.abilitySlot) || abilities[0];
+  const itemName = summary.heldKeyItem ? 'A key item' : summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
+  const hidden = ts?.hiddenPower(summary.ivs);
+  const fact = (term, value, title = '') => el('div', { title: [typeof value === 'string' ? value : value.textContent, title].filter(Boolean).join('\n') }, el('dt', { textContent: term }), typeof value === 'string' ? el('dd', { textContent: value }) : value);
+  children.push(el('dl', { className: 'tw-facts' },
+    fact('Nature', nature, ts ? ts.natureLabel(summary.nature) : ''),
+    fact('Ability', ability?.name || '?', ability?.doc || ''),
+    fact('Held item', itemName, summary.item ? names?.itemData.get(summary.item)?.doc || '' : ''),
+    fact('Hidden Power', hidden ? `${hidden.type} ${hidden.power}` : '?'),
+    fact('Trainer', `${summary.otName || '?'}${summary.otGender === 1 ? ' ♀' : summary.otGender === 0 ? ' ♂' : ''} · ${String(summary.otId).padStart(5, '0')}`),
+    fact('Ball', BALLS[summary.ball] || 'Poké Ball')));
+  // stats
+  const stats = el('div', { className: 'tw-stats' }, el('div', { className: 'tw-stats-head' }, el('span', { textContent: 'Stat' }), el('span', { textContent: '' }), el('span', { textContent: '' }), el('span', { textContent: 'IV' }), el('span', { textContent: 'EV' })));
+  SHORT.forEach((name, i) => {
+    const bar = el('i');
+    bar.style.width = `${Math.max(3, Math.min(100, (summary.stats[i] / scale) * 100))}%`;
+    bar.style.setProperty('--c1', STAT_COLORS[i][0]); bar.style.setProperty('--c2', STAT_COLORS[i][1]);
+    stats.append(el('div', { className: 'tw-stat' }, el('b', { className: effect?.up === i && effect.up !== effect.down ? 'up' : effect?.down === i && effect.up !== effect.down ? 'down' : '', textContent: name }),
+      el('span', { className: 'value', textContent: i === 0 ? `${summary.hp}/${summary.stats[0]}` : String(summary.stats[i]) }),
+      el('span', { className: 'tw-bar-track' }, bar),
+      el('span', { className: `iv${summary.ivs[i] === 31 ? ' max' : ''}`, textContent: String(summary.ivs[i]) }), el('span', { className: 'ev', textContent: String(summary.evs[i]) })));
+  });
+  const total = list => list.reduce((a, v) => a + (Number(v) || 0), 0);
+  stats.append(el('div', { className: 'tw-stats-foot' }, el('span', { textContent: `Total ${total(summary.stats)}${entry?.stats ? ` · base ${total(entry.stats)}` : ''}` }),
+    el('span', { textContent: `IVs ${total(summary.ivs)}/186 · EVs ${total(summary.evs)}/510` })));
+  children.push(stats);
+  // moves
+  const moves = el('div', { className: 'tw-moves' });
+  for (let i = 0; i < 4; i++) {
+    const move = summary.moves[i];
+    if (!move) { moves.append(el('div', { className: 'tw-move none' }, el('strong', { textContent: '—' }), el('small', { textContent: ' ' }))); continue; }
+    const info = names?.moveData.get(move.id);
+    const most = info?.pp ? Math.floor(info.pp * (5 + move.ppUps) / 5) : null;
+    const tile = el('div', { className: 'tw-move', title: info?.doc || '' }, el('strong', { textContent: info?.name || `Move #${move.id}` }),
+      el('small', {}, el('span', { textContent: `${info?.type || '?'}${info?.power ? ` · ${info.power}` : ''}` }), el('span', { textContent: `PP ${most !== null ? `${move.pp}/${most}` : move.pp}` })));
+    if (info?.type) tile.dataset.type = info.type.toLowerCase();
+    moves.append(tile);
+  }
+  children.push(moves);
+  node.replaceChildren(...children);
+}
+
+function offerProblem(pokemon) {
+  if (pokemon.egg) return 'Eggs can\'t be traded.';
+  if (pokemon.shadow) return 'Purify it first: Shadow Pokémon go to Shadowtrade instead.';
+  if (pokemon.area === 'party' && !data.model.party.some(each => each && each.key !== pokemon.key && !each.egg && each.hp > 0))
+    return 'You can\'t trade your last Pokémon that can battle.';
+  return null;
+}
+
+function renderPicker(room) {
+  const boxes = data?.model?.boxes || [];
+  if (twBox >= boxes.length) twBox = 0;
+  $('tw-tab-party').setAttribute('aria-selected', String(twTab === 'party'));
+  $('tw-tab-boxes').setAttribute('aria-selected', String(twTab === 'boxes'));
+  $('tw-box-bar').hidden = twTab !== 'boxes' || !boxes.length;
+  if (boxes[twBox]) $('tw-box-name').textContent = `${boxes[twBox].name} · ${boxes[twBox].pokemon.filter(Boolean).length}/${boxes[twBox].pokemon.length}`;
+  const grid = $('tw-grid');
+  grid.classList.toggle('boxes', twTab === 'boxes');
+  const list = !data?.model ? [] : twTab === 'party' ? data.model.party : boxes[twBox]?.pokemon || [];
+  const busy = Boolean(room.trade), offered = busy ? null : room.you?.offer?.place;
+  if (busy) twNote = null;
+  grid.replaceChildren(...list.map(pokemon => {
+    const button = el('button', { type: 'button', className: 'tw-pick' });
+    button.setAttribute('role', 'option');
+    if (!pokemon) { button.classList.add('empty'); button.disabled = true; button.setAttribute('aria-label', 'Empty'); return button; }
+    const problem = offerProblem(pokemon), isOffered = samePlace(offered, pokemon);
+    button.classList.toggle('blocked', Boolean(problem));
+    button.classList.toggle('offered', isOffered);
+    button.classList.toggle('shadow', Boolean(pokemon.shadow));
+    button.setAttribute('aria-selected', String(isOffered));
+    button.disabled = busy;
+    button.title = `${shown(pokemon)}, Lv. ${pokemon.level}${problem ? ` — ${problem}` : isOffered ? ' — your offer' : ''}`;
+    button.append(sprite(pokemon, twTab === 'party' ? 44 : 40));
+    if (twTab === 'party') button.append(el('span', {}, el('strong', { textContent: shown(pokemon) }), el('small', { textContent: pokemon.egg ? 'Egg' : `Lv. ${pokemon.level}` })));
+    button.addEventListener('click', () => {
+      if (problem) { twNote = { text: `${shown(pokemon)}: ${problem}`, problem: true }; renderPickNote(room); return; }
+      if (isOffered) return;
+      twNote = null;
+      if (room.last) dismissed = room.last.tradeId;
+      tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot });
+    });
+    return button;
+  }));
+  renderPickNote(room);
+}
+
+function renderPickNote(room) {
+  const note = $('tw-pick-note');
+  const text = room.trade ? 'A trade is under way: your Pokémon stay put until it\'s done.'
+    : twNote?.text || (room.you?.offer ? 'Click another to offer it instead.' : 'Click a Pokémon to offer it.');
+  note.textContent = text;
+  note.classList.toggle('problem', Boolean(!room.trade && twNote?.problem));
+}
+
+function renderSteps(room, showing) {
+  const both = Boolean(room.you?.offer && room.peer?.offer);
+  const at = showing === 'done' ? 3 : room.trade ? 2 : both ? 1 : 0;
+  for (const [i, li] of [...$('trade-steps').children].entries()) {
+    li.classList.toggle('done', i < at || (showing === 'done' && i === 3));
+    li.classList.toggle('now', i === at && showing !== 'done');
+  }
+}
+
 function tradeProgress(room) {
   const trade = room.trade;
-  if (!trade) {
-    if (room.last?.outcome === 'traded') return 'Traded! Pick another Pokémon to trade again.';
-    if (room.last?.outcome === 'aborted') return `The trade was called off${room.last.reason && room.last.reason !== 'cancelled' ? ` (${room.last.reason === 'timeout' ? 'a game took too long' : room.last.reason})` : ''}. Your Pokémon stays yours.`;
-    return '';
-  }
   if (trade.message) return trade.message;
   if (trade.mine && TRADE_STAGE[trade.mine]) return TRADE_STAGE[trade.mine] + (data?.source === 'live' && ['taking', 'giving', 'evolving'].includes(trade.mine) ? ' The game does it at a quiet moment in the field and saves.' : '');
-  if (trade.stage === 'committed') return 'Both ready: trading…';
-  return 'Trading…';
+  if (trade.stage === 'returned' || trade.stage === 'aborted') return 'The trade was called off: your Pokémon is coming back to you.';
+  return 'Both ready: trading…';
+}
+
+// What's over the offers: the swap while a trade runs, and how it went once it's done (null: nothing).
+function renderOverlay(room, view) {
+  const overlay = $('tw-overlay');
+  const trade = room.trade;
+  if (trade) {
+    const entry = view.journal.find(each => each.tradeId === trade.tradeId);
+    if (!tradeCache || tradeCache.tradeId !== (trade.tradeId || tradeCache.tradeId)) tradeCache = { tradeId: trade.tradeId };
+    tradeCache.mine = room.you?.offer?.summary || entry?.sent || tradeCache.mine;
+    tradeCache.theirs = room.peer?.offer?.summary || entry?.received || tradeCache.theirs;
+    tradeCache.evolvesInto = room.peer?.offer?.evolvesInto || entry?.evolvesInto || tradeCache.evolvesInto || 0;
+    const steps = ['Sending yours', 'Receiving theirs', 'Saving', ...(tradeCache.evolvesInto ? ['Evolving'] : [])];
+    const at = { taking: 0, taken: 1, received: 2, giving: 2, given: tradeCache.evolvesInto ? 3 : 4, evolving: 3 }[trade.mine] ?? 0;
+    const pair = el('div', { className: 'tw-swapping moving' });
+    if (tradeCache.mine) pair.append(el('div', { className: 'a' }, stage(tradeCache.mine, 84)));
+    pair.append(el('div', { className: 'tw-link' }));
+    if (tradeCache.theirs) pair.append(el('div', { className: 'b' }, stage(tradeCache.theirs, 84)));
+    const called = trade.stage === 'returned' || trade.stage === 'aborted';
+    overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: called ? 'Calling the trade off…' : `Trading with ${room.peer?.name || 'the other player'}…` }), pair,
+      called ? null : el('ol', { className: 'tw-track' }, ...steps.map((text, i) => el('li', { className: i < at ? 'done' : i === at ? 'now' : '', textContent: text }))),
+      el('p', { textContent: tradeProgress(room) })));
+    overlay.hidden = false;
+    return 'trade';
+  }
+  const last = room.last;
+  if (!last || last.tradeId === dismissed) { overlay.hidden = true; return null; }
+  const button = el('button', { className: 'tw-ready', type: 'button', textContent: last.outcome === 'traded' ? 'Trade again' : 'OK' });
+  button.addEventListener('click', () => { dismissed = last.tradeId; renderTradePanel(); });
+  if (last.outcome !== 'traded') {
+    const why = last.reason && last.reason !== 'cancelled' ? ` (${last.reason === 'timeout' ? 'a game took too long' : last.reason})` : '';
+    overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: 'Trade called off' }), el('p', { textContent: `The trade didn't happen${why}. Your Pokémon stays yours.` }), button));
+    overlay.hidden = false;
+    return 'off';
+  }
+  const pending = view.journal.find(each => each.tradeId === last.tradeId), done = view.history.find(each => each.tradeId === last.tradeId);
+  const got = pending?.received || done?.received || tradeCache?.theirs || null;
+  const sent = pending?.sent || done?.sent || tradeCache?.mine || null;
+  const into = done?.evolvedInto || pending?.evolvesInto || 0;
+  const from = pending?.from || done?.from || room.peer?.name || 'the other player';
+  const picture = el('div', { className: 'tw-got' });
+  let text;
+  if (got && into && done) {
+    picture.append(el('div', { className: 'tw-stage small' }, sprite(got, 60)), el('span', { className: 'tw-arrow', textContent: '›' }), stage({ ...got, species: into }, 112));
+    text = `${shown(got)} from ${from} evolved into ${pokeName(into)}! It's in your save.`;
+  } else if (got) {
+    picture.append(stage(got, 112));
+    if (into && pending) picture.append(el('span', { className: 'tw-arrow', textContent: '›' }), el('div', { className: 'tw-stage small later', title: `${pokeName(into)}, once it evolves` }, sprite({ species: into }, 60)));
+    text = pending?.stage === 'evolving'
+      ? (data?.source === 'live' ? `${shown(got)} from ${from} is evolving into ${pokeName(into)} in your game…` : `${shown(got)} from ${from} is in your save. It evolves into ${pokeName(into)} the next time you play from the launcher.`)
+      : pending ? `${shown(got)} from ${from} is on its way into your save…` : `${shown(got)} from ${from} is in your save.`;
+  } else text = 'The trade is done.';
+  overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: 'Trade complete!' }), picture,
+    el('p', { textContent: text }), sent ? el('p', { textContent: `${shown(sent)} went to ${from}.` }) : null, button));
+  overlay.hidden = false;
+  return 'done';
+}
+
+function footStatus(room) {
+  const you = room.you, peer = room.peer, theirs = peer?.offer, name = peer?.name || 'the other player';
+  if (room.connection === 'reconnecting') return ['Reconnecting to the trade room…'];
+  if (room.trade) return [tradeProgress(room)];
+  if (!peer?.here) return [room.last ? 'The other player has left. Share the code to trade with someone else, or leave the room.' : 'Share the trade code. Everything fills in once they join.'];
+  if (!peer.present) return [`${peer.name || 'The other player'} lost their connection. Their place is kept for a minute.`];
+  if (!you?.offer) return [theirs ? `${peer.name || 'They'} offered ${shown(theirs.summary)}. Pick yours on the left.` : 'Pick a Pokémon on the left to offer it.'];
+  if (you.refusedBecause) return [`${peer.name || 'Their'}'s game can't take ${shown(you.offer.summary)}: ${you.refusedBecause}. Pick another.`, true];
+  if (!theirs) return [`Waiting for ${name} to pick.`];
+  if (theirs.problems?.length) return [`Your game can't take ${shown(theirs.summary)}: ${theirs.problems[0].text || theirs.problems[0]}`, true];
+  if (you.accepted === null) return [`Waiting for ${name}'s launcher to check your offer…`];
+  if (you.ready && !peer.ready) return [`You're ready. Waiting for ${name} to ready up…`];
+  if (peer.ready && !you.ready) return [`${peer.name || 'They'} ${peer.name ? 'is' : 'are'} ready! Look it over and ready up to trade.`];
+  return ['Look both over, then ready up. Changing either offer takes both of you out of ready.'];
+}
+
+function renderTradeWindow(view) {
+  const room = view.room;
+  $('trade-code').textContent = room.code || '…';
+  const offers = [room.you?.offer?.summary, room.peer?.offer?.summary].filter(Boolean);
+  const scale = Math.max(1, ...offers.flatMap(summary => summary.stats));
+  offerSide('mine', room, scale);
+  offerSide('theirs', room, scale);
+  renderPicker(room);
+  const showing = renderOverlay(room, view);
+  renderSteps(room, showing);
+  const [status, problem] = footStatus(room);
+  $('trade-progress').textContent = status;
+  $('trade-progress').classList.toggle('problem', Boolean(problem));
+  const you = room.you, peer = room.peer;
+  const ready = $('trade-ready');
+  ready.textContent = room.trade ? 'Trading…' : you?.ready ? 'Ready ✓  Undo' : peer?.ready && room.canReady ? 'Ready — let\'s trade!' : 'Ready to trade';
+  ready.title = you?.ready ? 'Take your ready back' : '';
+  ready.disabled = Boolean(room.trade) || (!you?.ready && !room.canReady);
+  ready.classList.toggle('pressed', Boolean(you?.ready) && !room.trade);
+  $('trade-withdraw').hidden = !you?.offer || Boolean(room.trade);
+  $('trade-compare').hidden = !offers.length;
+  $('trade-leave').disabled = Boolean(room.trade);
+  $('trade-leave').title = room.trade ? 'You can leave once the trade is done' : '';
+}
+
+function renderTradeStart(view) {
+  $('trade-notice').hidden = !view?.notice;
+  $('trade-notice').textContent = view?.notice || '';
+  // trades still on their way (from a room that has closed, or the game closed)
+  const pending = (view?.journal || []).filter(entry => entry.game === data?.game);
+  $('trade-journal').replaceChildren(...pending.map(entry => el('div', { className: 'shadowtrade-row trade-pending' }, sprite(entry.received && !entry.returned ? entry.received : entry.sent, 30),
+    el('div', {}, el('strong', { textContent: entry.received && !entry.returned ? `${shown(entry.received)} from ${entry.from || 'another player'}` : `Trading ${shown(entry.sent)}` }),
+      el('small', { textContent: entry.message || TRADE_STAGE[entry.stage] || entry.stage })))));
+  const history = (view?.history || []).filter(item => item.game === data?.game).slice(0, 6);
+  $('trade-history').replaceChildren(...history.map(item => {
+    if (item.returned || !item.received) return el('li', {}, sprite(item.sent, 30), el('span', {}, el('b', { textContent: shown(item.sent) }), ' came back (the trade was called off)'));
+    const got = item.evolvedInto ? { ...item.received, species: item.evolvedInto } : item.received;
+    return el('li', { title: item.at ? new Date(item.at).toLocaleString() : '' }, sprite(item.sent, 30), el('span', { className: 'arrow', textContent: '⇄' }), sprite(got, 30),
+      el('span', {}, el('b', { textContent: shown(item.sent) }), ' for ', el('b', { textContent: shown(item.received) }), ` from ${item.from || 'another player'}${item.evolvedInto ? `, now ${pokeName(item.evolvedInto)}` : ''}`));
+  }));
+  $('trade-history-title').hidden = !history.length;
 }
 
 function renderTradePanel() {
   const view = tradeView, room = view?.room;
-  $('trade-start').hidden = Boolean(room);
-  $('trade-room').hidden = !room;
-  $('trade-notice').hidden = !view?.notice;
-  $('trade-notice').textContent = view?.notice || '';
-  if (room) {
-    $('trade-code').textContent = room.code || '…';
-    const peer = room.peer;
-    $('trade-peer').textContent = room.connection === 'reconnecting' ? 'Reconnecting to the trade room…'
-      : !peer?.here ? 'Share this code with the other player. Waiting for them to join…'
-      : !peer.present ? `${peer.name || 'The other player'} lost their connection: waiting for them to come back…`
-      : `${peer.name || 'The other player'} (${peer.game === 'xd' ? 'XD' : 'Colosseum'}) is here.${peer.ready ? ' They\'re ready.' : ''}`;
-    $('trade-theirs-title').textContent = `${peer?.name || 'They'} offer${peer?.name ? 's' : ''}`;
-    const you = room.you;
-    $('trade-mine').replaceChildren(tradeCard(you?.offer?.summary, { problems: you?.refusedBecause ? [`Their game can't take it: ${you.refusedBecause}`] : [],
-      empty: 'Pick a Pokémon from your party or boxes, then press Offer for trade.' }));
-    const theirs = peer?.offer;
-    $('trade-theirs').replaceChildren(tradeCard(theirs?.summary, { problems: theirs?.problems || [], evolvesInto: theirs?.evolvesInto || 0,
-      empty: peer?.here ? 'They haven\'t picked yet.' : '' }));
-    const ready = $('trade-ready');
-    ready.textContent = you?.ready ? (peer?.ready ? 'Trading…' : 'Ready: waiting for them') : 'Ready';
-    ready.disabled = Boolean(room.trade) || (!you?.ready && !room.canReady);
-    ready.classList.toggle('pressed', Boolean(you?.ready));
-    $('trade-withdraw').hidden = !you?.offer || Boolean(room.trade);
-    $('trade-compare').hidden = !you?.offer && !theirs;
-    $('trade-leave').disabled = Boolean(room.trade);
-    const progress = tradeProgress(room);
-    $('trade-progress').hidden = !progress;
-    $('trade-progress').textContent = progress;
-  }
-  // trades still on their way (from a room that has closed, or the game closed)
-  const pending = (view?.journal || []).filter(entry => entry.game === data?.game && (!room?.trade || entry.tradeId !== tradeView.room.trade?.tradeId));
-  $('trade-journal').replaceChildren(...pending.map(entry => {
-    const row = document.createElement('div');
-    row.className = 'shadowtrade-row';
-    const text = document.createElement('div');
-    text.append(Object.assign(document.createElement('strong'), { textContent: entry.received && !entry.returned ? `${entry.sent.nickname} for ${entry.received.nickname}` : `Trading ${entry.sent.nickname}` }),
-      Object.assign(document.createElement('small'), { textContent: entry.message || TRADE_STAGE[entry.stage] || entry.stage }));
-    row.append(text);
-    return row;
-  }));
-  const history = (view?.history || []).filter(item => item.game === data?.game).slice(0, 6);
-  $('trade-history').replaceChildren(...history.map(item => {
-    const li = document.createElement('li');
-    li.textContent = item.returned ? `${item.sent.nickname} came back (the trade was called off)`
-      : `${item.sent.nickname} for ${item.received?.nickname || '?'} from ${item.from || 'another player'}${item.evolvedInto ? `, which evolved` : ''}`;
-    return li;
-  }));
-  $('trade-history-title').hidden = !history.length;
-  renderOfferButton(current());
+  const page = $('page-pokemon');
+  page.classList.toggle('trading', Boolean(room));
+  $('trade-window').hidden = !room;
+  renderTradeStart(view);
+  if (room) renderTradeWindow(view);
+  else { tradeCache = null; if ($('trade-stats').open) $('trade-stats').close(); }
   if ($('trade-stats').open) renderStats();
 }
 
@@ -506,12 +709,15 @@ window.colo.onShadowtrade(view => { if (data) { data.trades = view; if (visible)
 window.colo.onShadowtradeWaiting(() => { waitingGame = true; if (visible) renderTrades(); });
 $('trade-host').addEventListener('click', () => tradeAction('open'));
 $('trade-join-form').addEventListener('submit', event => { event.preventDefault(); tradeAction('open', $('trade-join-code').value); });
-$('trade-copy').addEventListener('click', () => { navigator.clipboard?.writeText(tradeView?.room?.code || '').catch(() => {}); });
+$('trade-copy').addEventListener('click', () => copyCode(null));
 $('trade-ready').addEventListener('click', () => tradeAction(tradeView?.room?.you?.ready ? 'unready' : 'ready'));
-$('trade-withdraw').addEventListener('click', () => tradeAction('offer', null));
+$('trade-withdraw').addEventListener('click', () => { twNote = null; tradeAction('offer', null); });
 $('trade-leave').addEventListener('click', () => tradeAction('leave'));
 $('trade-compare').addEventListener('click', openStats);
-$('pokemon-offer').addEventListener('click', () => { const pokemon = current(); if (pokemon) tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }); });
+$('tw-tab-party').addEventListener('click', () => { twTab = 'party'; twNote = null; renderTradePanel(); });
+$('tw-tab-boxes').addEventListener('click', () => { twTab = 'boxes'; twNote = null; renderTradePanel(); });
+$('tw-box-prev').addEventListener('click', () => { const n = data?.model?.boxes.length || 1; twBox = (twBox + n - 1) % n; renderTradePanel(); });
+$('tw-box-next').addEventListener('click', () => { const n = data?.model?.boxes.length || 1; twBox = (twBox + 1) % n; renderTradePanel(); });
 window.colo.onOnlineTrades(view => {
   tradeView = view;
   // a trade moved on (a Pokémon left the save, or came into it): the save changed

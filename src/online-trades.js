@@ -133,7 +133,7 @@ class OnlineTrades extends EventEmitter {
           accepted: s.you.verdict ? s.you.verdict.ok : null, refusedBecause: s.you.verdict && !s.you.verdict.ok ? s.you.verdict.reason : null, ready: s.you.ready } : null,
         peer: s ? { name: s.peer.name, game: s.peer.game, present: s.peer.present, here: s.peer.here, ready: s.peer.ready, offer: theirs } : null,
         canReady: Boolean(s && this.mine && s.you.offer && theirs && !theirs.problems.length && s.you.verdict?.ok && !s.trade),
-        trade: s?.trade ? { stage: s.trade.stage, deadline: s.trade.deadline, reason: s.trade.reason, mine: entry?.stage || null, message: entry?.message || null } : null,
+        trade: s?.trade ? { tradeId: s.trade.tradeId, stage: s.trade.stage, deadline: s.trade.deadline, reason: s.trade.reason, mine: entry?.stage || null, message: entry?.message || null } : null,
         last: s?.last || null } : null,
       notice: this.notice,
       journal: this.state.journal.map(entry => ({ tradeId: entry.tradeId, game: entry.game, stage: entry.stage, message: entry.message || null,
