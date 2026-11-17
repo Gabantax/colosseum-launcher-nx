@@ -1282,7 +1282,7 @@ function gameLogos() {
     if (!rom || !fs.existsSync(rom)) continue;
     const language = games.supports(id, 'languagePacks') ? languagePacks.normalizeLanguage(config.settings.language) : 'en';
     try {
-      const packFolder = language === 'en' ? null : languagePacks.chosenFolder(config.settings, languageFolder());
+      const packFolder = language === 'en' ? null : languagePacks.chosenFolder(config.settings, languageFolder(id));
       const { file, hdNames } = titleLogo.cachedLogo(path.join(app.getPath('userData'), 'title-logos'), id, rom, { language, packFolder });
       const hd = hdNames.length ? titleLogo.hdLogoFile(logoTextureIndex(fields, id), hdNames) : null;
       logos[id] = `data:image/png;base64,${fs.readFileSync(hd || file).toString('base64')}`;
@@ -1435,13 +1435,23 @@ function pokedexLook(key, form) {
   return { pkx: entry.files[form] };
 }
 
-// Language packs, in the launcher's own folder: every game version uses them (language-packs.js).
-function languageFolder() { return languagePacks.folder(app.getPath('userData')); }
+// Language packs, in the launcher's own folder: every game version uses them; each game has its own (language-packs.js).
+function languageFolder(id = config.game) { return languagePacks.folder(app.getPath('userData'), id); }
 
-// The chosen language's pack, downloaded first when this launcher's catalog has it and it isn't there yet.
+// Whether the game in a checkout reads language packs: host/language.c, which XD builds since it serves XD's archive
+// members (colo_language_open); before that the file was Colosseum's alone.
+function gameReadsLanguages(repo, id) {
+  try {
+    const source = fs.readFileSync(path.join(repo, 'host', 'language.c'), 'utf8');
+    return id !== 'xd' || source.includes('colo_language_open');
+  } catch (_) { return false; }
+}
+
+// The chosen language's pack, downloaded first when this launcher's catalog for the game has it and it isn't there yet.
 async function ensureLanguage(settings) {
-  if (!languagePacks.needsInstall(settings, languageFolder())) return;
-  const pack = languagePacks.catalogPack(settings.language);
+  const catalog = languagePacks.catalogFor(config.game);
+  if (!languagePacks.needsInstall(settings, languageFolder(), catalog)) return;
+  const pack = languagePacks.catalogPack(settings.language, catalog);
   log(`Downloading the ${pack.name} language pack (${(pack.size / 1048576).toFixed(1)} MB).`);
   try {
     await languagePacks.install(languageFolder(), pack, {
@@ -2514,9 +2524,11 @@ function state() {
     texturesInstalled: repoReady && supports('hdTextures') && port.texturePackInstalled(config.repo, config.game),
     pbr: pbrState(),
     texturePack: (pack => pack && { size: pack.size, unpacked: pack.unpacked })(port.texturePack(config.game)) || { size: 0, unpacked: 0 },
-    languages: languagePacks.choices(languageFolder()),
+    languages: languagePacks.choices(languageFolder(), languagePacks.catalogFor(config.game), config.settings.language),
+    // Whether this game has packs the launcher downloads, or only ones put in its folder (fan translations)
+    languageCatalog: languagePacks.catalogFor(config.game).packs.length > 0,
     // Whether the game on disk reads language packs.
-    languagesReady: repoReady && supports('languagePacks') && fs.existsSync(path.join(config.repo, 'host', 'language.c')),
+    languagesReady: repoReady && supports('languagePacks') && gameReadsLanguages(config.repo, config.game),
     binaryReady: ready,
     tools: toolsStatus(),
     gameSource: config.gameSource ? { override: config.gameSource.override, version: config.gameSource.resolved.version } : null,
@@ -3062,6 +3074,7 @@ function registerHandlers() {
     return shell.openPath(saves.backupRoot());
   });
   ipcMain.handle('open-languages', () => {
+    // (the chosen game's own folder)
     fs.mkdirSync(languageFolder(), { recursive: true });
     return shell.openPath(languageFolder());
   });

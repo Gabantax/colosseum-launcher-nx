@@ -57,9 +57,11 @@ const GAMES = {
     // has no shinyStarters. The randomizer is the port's shared host/randomizer.c, its stamp read from XD's save
     // (xd-save.js), as is the Story party (story-party.js), which XD's online battles take whole. The Pokédex and the
     // Jukebox read XD's own disc (xd-disc.js: its species, models, streamed cries and streamed music). TMs listed by their
-    // moves' names are host/tmnames.c's, with XD's own bag and shop calls
+    // moves' names are host/tmnames.c's, with XD's own bag and shop calls. Language packs are host/language.c's, XD's own
+    // packs in their own folder (language-packs.js): none official yet, fan translations from the extras tool's template
     features: ['online', 'teamBuilder', 'generations', 'widescreen', 'hdText', 'hdTextures', 'fastForward', 'skipMovies', 'gciSaves', 'discordPresence',
-      'battleSpeed', 'quickMoves', 'shiny', 'starters', 'pokemonPacks', 'pbrAssets', 'gbaLink', 'randomizer', 'storyParty', 'pokedex', 'jukebox', 'tmNames', 'playAs', 'customize']
+      'battleSpeed', 'quickMoves', 'shiny', 'starters', 'pokemonPacks', 'pbrAssets', 'gbaLink', 'randomizer', 'storyParty', 'pokedex', 'jukebox', 'tmNames', 'playAs', 'customize',
+      'languagePacks']
   }
 };
 

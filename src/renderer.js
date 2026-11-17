@@ -1082,7 +1082,8 @@ function refresh(data) {
   $('update-channel-field').hidden = data.portable;
   $('update-channel-note').hidden = data.portable;
   renderGameSource(data);
-  renderLanguages(data.languages, config.settings.language);
+  renderLanguages(data.languages, config.settings.language, data.currentGame?.shortName);
+  renderLanguageHelp(data.languageCatalog !== false, data.currentGame?.shortName || 'this game');
   $('language-note').hidden = data.languagesReady !== false || config.settings.language === 'en';
   $('language-note').textContent = 'Update your game to play in this language. This version of the game plays in English.';
   for (const key of SELECTS) $(key).value = String(config.settings[key]);
@@ -1125,15 +1126,26 @@ const SELECTS = ['buttonPrompts', 'promptPad', 'battleRules', 'widescreen', 'res
 const SWITCHES = ['randomizer', 'randomizerStarters', 'randomizerShadow', 'randomizerTrainers', 'randomizerGifts', 'randomizerGen1', 'randomizerGen2', 'randomizerGen3', 'randomizerGen4', 'randomizerPacks', 'randomizerSimilar', 'randomizerNoLegendaries', 'randomizerNoRepeats', 'randomizerBaseForms', 'generation4Pokemon', 'fullscreen', 'hudEdges', 'skipMovies', 'skipBattleAnimations', 'quickMoves', 'quickStatus', 'shinyShadow', 'shinyStarters', 'chooseHero', 'chooseStarters', 'tmNames', 'partnerPass', 'overlay', 'backgroundInput', 'gbaAutoPower', 'fxaa', 'textures', 'hdModels', 'shaderWarmup', 'autoUpdate', 'autoBackups', 'shareUsage', 'discordPresence', 'darkMode'];
 
 // The languages: English, the launcher's packs and any found in the languages folder. One chosen and then
-// removed from the folder stays listed, as the game plays in English without it.
-function renderLanguages(list = [{ code: 'en', name: 'English' }], chosen = 'en') {
+// removed from the folder stays listed, as the game plays in English without it; so does one this game has no pack
+// for (the language is one setting for both games, each with its own packs).
+function renderLanguages(list = [{ code: 'en', name: 'English' }], chosen = 'en', game = 'the game') {
   const items = list.some(item => item.code === chosen) ? list : list.concat({ code: chosen, name: chosen, missing: true });
   $('language').replaceChildren(...items.map(item => {
     const option = document.createElement('option');
     option.value = item.code;
-    option.textContent = item.missing ? `${item.name} (not found: plays in English)` : item.local ? `${item.name} (your folder)` : item.name;
+    option.textContent = item.missing ? `${item.name} (English in ${game})` : item.local ? `${item.name} (your folder)` : item.name;
     return option;
   }));
+}
+
+// What the Language setting says: a game with packs to download, or one with only fan translations so far (XD).
+function renderLanguageHelp(catalog, game) {
+  $('language-help').textContent = catalog
+    ? "The game's text, menus and title cards in French, German, Spanish or Italian, from the European release. A language downloads the first time you play with it."
+    : `There are no official translations of ${game} yet. A fan translation for ${game} in its languages folder shows in this list.`;
+  $('language-folder-help').textContent = catalog
+    ? 'A fan translation is a folder with a pack.json and a text.txt: put it in the languages folder and it shows in the list above.'
+    : `A fan translation is a folder with a pack.json and a text.txt, made for ${game}: each game has its own languages folder, and a pack for one doesn't fit the other.`;
 }
 
 let updateChannels = [{ id: 'stable', label: 'Stable' }];
