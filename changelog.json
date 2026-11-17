@@ -125,7 +125,8 @@
       "Language packs: the title's PRESS START and other translated menu pictures keep their own size, as in the European release, where they used to stretch to the English picture's box and the white outline behind PRESS START looked too thick.",
       "Randomizer: Similar strength now spreads its picks over every Pokémon close in strength to the one it replaces, so the same few no longer turn up for most trainers. With only Gen 4, Wormadam, Mothim and Chatot came up far more often than the rest, and Barboach did with every generation. Replacements stay as close in strength as before, or closer. It starts with your next New Game: a run you've started stays as it was.",
       "Fixed fast-forward showing fewer pictures than your display can: it showed 50 to 55 a second, unevenly, so it looked choppy, and never more than 60 on a 144 or 165 Hz display. It now shows as many as your display does, evenly spaced, in Colosseum and XD, at the same speed.",
-      "Fixed Tab on the keyboard and LB + RB on a controller doing nothing for fast-forward unless you had changed a control under Settings → Controls. They now fast-forward by default in Colosseum and XD, as the Controls page shows, and holding LB + RB no longer presses Z as well."
+      "Fixed Tab on the keyboard and LB + RB on a controller doing nothing for fast-forward unless you had changed a control under Settings → Controls. They now fast-forward by default in Colosseum and XD, as the Controls page shows, and holding LB + RB no longer presses Z as well.",
+      "Fixed Pokémon XD freezing on the Matchup page of the P★DA's Strategy Memo for a Pokémon with a Generation 4 ability, such as Eevee's Adaptability under Platinum battle rules. The page now shows that ability's description on two lines."
     ]
   },
   "releases": [
