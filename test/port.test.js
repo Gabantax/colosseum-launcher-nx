@@ -241,6 +241,21 @@ test('choosing starters is on unless turned off, and on leaves it to the game', 
   }
 });
 
+test('Walk through Rui is on unless turned off, and is Colosseum only', () => {
+  const env = (settings, options) => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port', options);
+  const saved = process.env.COLO_PARTNER_PASS;
+  delete process.env.COLO_PARTNER_PASS;
+  try {
+    assert.equal(port.normalizeSettings({}).partnerPass, true);
+    assert.equal(env({}).COLO_PARTNER_PASS, undefined);
+    assert.equal(env({ partnerPass: true }).COLO_PARTNER_PASS, undefined);
+    assert.equal(env({ partnerPass: false }).COLO_PARTNER_PASS, '0');
+    assert.equal(env({ partnerPass: false }, { game: 'xd' }).COLO_PARTNER_PASS, undefined, 'XD has no partner');
+  } finally {
+    if (saved !== undefined) process.env.COLO_PARTNER_PASS = saved;
+  }
+});
+
 test('TMs by move name are on unless turned off, and on leaves it to the game', () => {
   const env = settings => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port');
   const saved = process.env.COLO_TM_NAMES;
