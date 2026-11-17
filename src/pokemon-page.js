@@ -259,7 +259,7 @@ function renderOfferButton(pokemon) {
   const same = offered && offered.area === pokemon.area && offered.box === pokemon.box && offered.slot === pokemon.slot;
   button.disabled = busy || Boolean(problem) || same;
   button.textContent = same ? 'Offered for trade' : 'Offer for trade';
-  if (problem && !pokemon.shadow) $('pokemon-trade-note').textContent = problem;
+  if (!pokemon.shadow) $('pokemon-trade-note').textContent = problem || (same ? 'The other player sees it in the trade window.' : busy ? 'A trade is under way.' : 'Offer it to the other player in the trade window.');
 }
 
 // A Pokémon's card in the trade window: what the other player sees of it, and you of theirs.
@@ -269,7 +269,7 @@ function tradeCard(summary, { problems = [], evolvesInto = 0, empty = '' } = {})
   card.className = 'trade-card-body';
   const head = document.createElement('div');
   head.className = 'trade-card-head';
-  head.append(sprite(summary, 64));
+  head.append(sprite(summary, 48));
   const title = document.createElement('div');
   title.append(Object.assign(document.createElement('strong'), { textContent: `${shown(summary)}${summary.shiny ? ' ★' : ''}` }),
     Object.assign(document.createElement('small'), { textContent: `${speciesName(summary)} · Lv. ${summary.level} · ${NATURES[summary.nature] || ''}` }),
@@ -387,10 +387,10 @@ $('trade-leave').addEventListener('click', () => tradeAction('leave'));
 $('pokemon-offer').addEventListener('click', () => { const pokemon = current(); if (pokemon) tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }); });
 window.colo.onOnlineTrades(view => {
   tradeView = view;
-  // a trade finished: the save changed
-  const done = view.history.length ? view.history[0].tradeId : null;
-  if (tradeHistorySeen !== null && done !== tradeHistorySeen && visible) refresh();
-  tradeHistorySeen = done;
+  // a trade moved on (a Pokémon left the save, or came into it): the save changed
+  const progress = JSON.stringify([view.journal.map(entry => `${entry.tradeId}:${entry.stage}`), view.history[0]?.tradeId || null]);
+  if (tradeHistorySeen !== null && progress !== tradeHistorySeen && visible) refresh();
+  tradeHistorySeen = progress;
   if (visible) renderTradePanel();
 });
 
