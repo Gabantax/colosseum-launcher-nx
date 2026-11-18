@@ -8,7 +8,9 @@
       "Trades between your games: with a Colosseum save and an XD save, trade a Pokémon between them from the Pokémon tab, no one else needed. The trade window shows both saves side by side with every stat, and each Pokémon is made the other game's. The game you're playing shows its new Pokémon right away; the other shows it the next time you play it, and trade evolutions happen there.",
       "Fixed a randomizer's Gen 4 or Pokémon pack Shadow Pokémon not coming back to your save when you cancelled its Shadowtrade.",
       "Shadowtrade takes a randomizer's Generation 4 Shadow Pokémon too: it waits in the pool for a player whose game has Generation 4 Pokémon turned on, and only they receive it. Pokémon pack Shadow Pokémon can't go, as each launcher numbers them its own way.",
-      "Shadowtrade in Colosseum warns you before you send one of the story's Shadow Pokémon you haven't purified: Ho-Oh needs all 48 purified, and that one only counts again if Shadowtrade brings you another player's copy of it."
+      "Shadowtrade in Colosseum warns you before you send one of the story's Shadow Pokémon you haven't purified: Ho-Oh needs all 48 purified, and that one only counts again if Shadowtrade brings you another player's copy of it.",
+      "Make a pack: on one of the game's Pokémon in the Pokédex, it copies that Pokémon into your packs folder as a pack of your own, with every stat, move and evolution the game gives it and its model and sprites beside it, ready to change.",
+      "Pokémon packs: a pack Pokémon can be what one of the game's own Pokémon evolves into, such as a Kirlia that evolves into it with a Moon Stone, and the Pokédex shows that evolution. Packs can also use every way of evolving the game has, Tyrogue's, Wurmple's, Shedinja's and Feebas's included."
     ],
     "game": [
       "Fixed the game crashing when an opponent's Pokémon knows Heal Bell or Aromatherapy, such as in Pokémon XD's last battle with Miror B. Colosseum had the same fault, and it's fixed there too.",

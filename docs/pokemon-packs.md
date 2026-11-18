@@ -7,7 +7,7 @@ launcher's Pokédex as well.
 There are two ways to get a pack Pokémon in the game. On a New Game, answer No when the game asks whether to begin with
 Espeon and Umbreon, and pick it as a starter. Or turn on the randomizer with **Pokémon packs** on, and a randomized run can
 choose it as a starter, a Shadow Pokémon, a trainer's Pokémon or a gift. Nothing else in the game hands them out, apart from
-evolving one pack Pokémon into another.
+evolving: a pack Pokémon can evolve into another, and one of the game's own Pokémon can evolve into a pack's (`evolvesFrom`).
 
 ## Where packs go
 
@@ -33,6 +33,20 @@ mods/pokemon/
 
 Folder names may use letters, numbers, `-` and `_`. Press **Reload** in the Pokédex after you change a pack: it shows each Pokémon
 it could load, and says what's wrong with any it couldn't. The launcher reads the packs again each time you play.
+
+## Start from one of the game's Pokémon
+
+In the **Pokédex**, choose one of the game's Pokémon and press **Make a pack**. The launcher writes it into the packs folder
+as a pack of its own, `kirlia-copy/kirlia/`, and opens that folder. Its `pokemon.json` has every field the game has for that
+Pokémon: its types, abilities, stats, moves, TMs and evolutions. As it is, it plays exactly as the game's own does, so change
+what you want from there and press **Reload**. Until you rename it, there are two Pokémon called KIRLIA in your game.
+
+The game's own model and sprites for that Pokémon are in `originals/` beside it: `model.pkx` (and `model-shiny.pkx` when
+it has a shiny model of its own), `body.png`, `body-shiny.png`, `face.png` and `face-shiny.png`. The game doesn't read that
+folder. To start your own model or sprite from one of these, move it up beside `pokemon.json`. Without its own, the
+Pokémon looks just as its base does.
+
+Delete the pack's folder if you don't want it after all.
 
 `pack.json`:
 
@@ -88,7 +102,24 @@ without a model, a cry or sprites of its own looks and sounds like its base.
 | `moves` | The moves it learns by level, up to 20, as `[level, "Move"]`, the move by name or number. Replaces its base's list. |
 | `tms` | The TMs and HMs it can learn, such as `"TM06"` or `"HM01"`. Replaces its base's. |
 | `tmMoves` | Moves it can learn from a TM or HM in any game, by name or number: it can learn those this game's TMs and HMs teach, and the rest are let go. Replaces its base's, unless `tms` is there too. |
-| `evolutions` | Up to 5, replacing its base's. Each has `into`, and one of these: `"level": 30`, with `"gender": "male"` or `"female"` for one gender only; `"item": "Moon Stone"`; `"friendship": true` (`"day"` and `"night"` never happen, as the game keeps no time of day); `"trade": true`, or the item it holds while traded; `"knowsMove": "Ancient Power"`, levelling up while knowing that move; `"withPokemon": "Remoraid"`, levelling up with that Pokémon in the party. |
+| `evolutions` | Up to 5, replacing its base's. Each has `into`, and one of the ways below. |
+| `evolvesFrom` | Up to 5 of the game's own Pokémon that evolve into this one. Each has `from`, the game's Pokémon by name or number, and one of the ways below, such as `{ "from": "Kirlia", "item": "Moon Stone" }`. That Pokémon keeps its own evolutions, and this one is added to them. |
+
+How a Pokémon evolves, for `evolutions` and `evolvesFrom`:
+
+| Way | When it evolves |
+| --- | --- |
+| `"level": 30` | At that level or above. |
+| `"level": 30, "gender": "male"` | At that level, as a male only (or `"female"`). |
+| `"level": 20, "stats": "attack"` | At that level, with its Attack above its Defense (`"equal"`: the same; `"defense"`: Defense above), as Tyrogue does. |
+| `"level": 7, "personality": 1` | At that level, for half of all personalities (`2`: the other half), as Wurmple does. |
+| `"level": 20, "alongside": true` | It appears beside the Pokémon's other evolution, if there's room in the party, as Shedinja does beside Ninjask. |
+| `"item": "Moon Stone"` | With that item used on it. |
+| `"friendship": true` | Levelling up with high friendship. `"day"` and `"night"` never happen, as the game keeps no time of day. |
+| `"trade": true` | When traded, or `"trade": "Metal Coat"` traded holding that item. |
+| `"knowsMove": "Ancient Power"` | Levelling up while it knows that move. |
+| `"withPokemon": "Remoraid"` | Levelling up with that Pokémon in the party. |
+| `"beauty": 170` | Levelling up with that much Beauty, which this game has no way to raise, as Feebas. |
 
 Moves and abilities are numbered alike in every game from Ruby and Sapphire on, so a number from another game's data
 works as long as this game has the move or ability.
@@ -98,6 +129,11 @@ game's by name or number.
 
 Evolution items are the Sun, Moon, Fire, Thunder, Water and Leaf Stones, King's Rock, Deep Sea Tooth, Deep Sea Scale, Metal
 Coat, Dragon Scale and Up-Grade.
+
+With `evolvesFrom`, give a way the Pokémon's own evolutions don't use. A Kirlia that reaches level 30 becomes Gardevoir,
+so another evolution at level 30 clashes with it; a stone, a held item in a trade, or a move it has to know doesn't. A
+Pokémon has room for 5 evolutions in all, its own included: when they're full, the Pokédex says which was left out.
+The Pokédex shows the new evolution on that Pokémon's page too.
 
 ## Models
 
