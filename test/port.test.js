@@ -431,6 +431,32 @@ test('the texture installer gets the pinned pack', () => {
   assert.match(port.TEXTURE_PACK.url, /^https:\/\//);
 });
 
+test('Battle Revolution HD textures: off at first, their own installer and folder, read after the HD pack', t => {
+  assert.equal(port.normalizeSettings({}).pbrTextures, false);
+  assert.equal(port.normalizeSettings({ pbrTextures: true }).pbrTextures, true);
+  const work = path.join(temporary(t), 'battle-revolution');
+  const pack = port.PBR_TEXTURE_PACK;
+  const { args, cwd } = port.pbrTextureCommand(work, 'linux', {});
+  assert.equal(path.basename(args[0]), 'install-textures.py');
+  assert.deepEqual(args.slice(1), [path.join(work, 'textures'), pack.url, pack.sha256, String(pack.size), pack.folder]);
+  assert.equal(cwd, work);
+  assert.match(pack.sha256, /^[a-f0-9]{64}$/);
+  assert.match(pack.url, /^https:\/\//);
+  // installed once its marker names the pinned pack
+  assert.equal(port.pbrTexturesInstalled(work), false);
+  const folder = port.pbrTextureFolder(work);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, '.release'), JSON.stringify({ sha256: 'an older pack' }));
+  assert.equal(port.pbrTexturesInstalled(work), false);
+  fs.writeFileSync(path.join(folder, '.release'), JSON.stringify({ sha256: pack.sha256 }));
+  assert.equal(port.pbrTexturesInstalled(work), true);
+  const settings = port.normalizeSettings({});
+  assert.deepEqual(port.texturePackFolders(settings, '/port', null, folder), [path.join('/port', 'mods', 'textures'), folder]);
+  assert.deepEqual(port.texturePackFolders({ ...settings, textures: false }, '/port', null, folder), [folder]);
+  const env = port.buildEnvironment({ ...settings, textures: false }, '/disc.iso', '/port', { pbrTextures: folder });
+  assert.equal(env.SMS_TEXTURE_PACKS, folder);
+});
+
 test('a Windows folder too deep to build in is found before the build, with what to do', () => {
   assert.equal(port.longPathProblem('/game', { platform: 'linux' }), null);
   assert.equal(port.longPathProblem('C:\\Games\\game', { platform: 'win32' }), null);

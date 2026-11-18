@@ -16,6 +16,7 @@ const games = require('./games');
 const PORT_URL = 'https://git.softwareauralabs.com/chase/pokemon-colosseum.git';
 // The HD texture pack: the port's own release, unpacked into mods/textures/colo-upscale-4x.
 const TEXTURE_PACK = require('./texture-pack.json');
+const PBR_TEXTURE_PACK = require('./pbr-texture-pack.json');
 const release = require('./game-release.json');
 
 // The processor the game is built for. A game marked "rosetta" in game-release.json predates the native
@@ -205,6 +206,9 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     presentFilter: choiceSetting(input.presentFilter, ['bilinear', 'sharp', 'nearest', 'fsr', 'nis'], 'bilinear'),
     fsrMode: choiceSetting(input.fsrMode, ['native', 'quality', 'balanced', 'performance', 'ultraperformance'], 'quality'),
     textures: input.textures !== false,
+    // Battle Revolution HD textures: PBR's own textures for the models Make assets makes, upscaled (4×, at most 1024
+    // pixels), a download of their own (pbr-texture-pack.json). Off until the player turns it on.
+    pbrTextures: Boolean(input.pbrTextures),
     // People in the field drawn with their detailed models, made from the disc.
     hdModels: input.hdModels !== false,
     // When HD textures load: while each area loads (stage), the whole pack and kept (all), or each when first drawn (play).
@@ -320,11 +324,23 @@ function customTexturesPresent(directory) {
   return false;
 }
 
-// The texture folders the game reads, first match wins: the player's custom textures, then the HD pack.
-function texturePackFolders(settings, root, customTextures) {
+// Battle Revolution's HD textures (pbr-texture-pack.json): PBR's own textures of the Pokémon Make assets makes models
+// of, at full size (the converter halves those over 256 pixels) and upscaled 4×, each named after its texture in the
+// converted model. One pack for both games, kept with those models (`work`, main.js pbrWork) rather than in a game folder.
+function pbrTextureDirectory(work) { return path.join(work, 'textures'); }
+function pbrTexturesInstalled(work, pack = PBR_TEXTURE_PACK) {
+  try { return JSON.parse(fs.readFileSync(path.join(pbrTextureDirectory(work), pack.folder, '.release'), 'utf8')).sha256 === pack.sha256; }
+  catch (_) { return false; }
+}
+function pbrTextureFolder(work, pack = PBR_TEXTURE_PACK) { return path.join(pbrTextureDirectory(work), pack.folder); }
+
+// The texture folders the game reads, first match wins: the player's custom textures, then the HD pack, then
+// Battle Revolution's HD textures (`pbrTextures`, a folder, when they're on and installed).
+function texturePackFolders(settings, root, customTextures, pbrTextures = null) {
   const folders = [];
   if (customTextures && customTexturesPresent(customTextures)) folders.push(customTextures);
   if (settings.textures) folders.push(texturePackDirectory(root));
+  if (pbrTextures) folders.push(pbrTextures);
   return folders;
 }
 
@@ -351,7 +367,7 @@ const FEATURE_ENVIRONMENT = {
 // What the game reads when it starts, as run.sh and run.cmd set it up. `customTextures` is the custom
 // textures folder, for playing (texturePackFolders). `game` is which game (games.js): its renderer, display
 // and input settings are every game's, the rest only where the game has that feature.
-function buildEnvironment(settings, disc, root, { customTextures = null, laterGenerations = false, packPokemon = false, noRepeats = false, baseForms = false,
+function buildEnvironment(settings, disc, root, { customTextures = null, pbrTextures = null, laterGenerations = false, packPokemon = false, noRepeats = false, baseForms = false,
   spread = false, game = games.DEFAULT } = {}) {
   if (!root) throw new Error('The port folder is required to configure texture packs.');
   const env = {
@@ -384,7 +400,7 @@ function buildEnvironment(settings, disc, root, { customTextures = null, laterGe
     SMS_PRESENT_FILTER: settings.presentFilter || 'bilinear',
     SMS_FSR_MODE: settings.fsrMode || 'quality',
     // The game splits the list at ';' (and at ':' outside a drive letter) on every system.
-    SMS_TEXTURE_PACKS: texturePackFolders(settings, root, customTextures).join(';') || '0',
+    SMS_TEXTURE_PACKS: texturePackFolders(settings, root, customTextures, pbrTextures).join(';') || '0',
     SMS_TEXTURE_PACK_PRELOAD: { all: 'all', play: '0' }[settings.textureLoading] || '1',
     // Video memory kept for HD textures, as run.sh has it.
     SMS_TEXTURE_PACK_MB: '3000',
@@ -572,12 +588,20 @@ function buildCommand(root, platform = process.platform, base = process.env, gam
 function textureCommand(root, platform = process.platform, environment = process.env, game = games.DEFAULT) {
   const pack = texturePack(game);
   if (!pack) throw new Error(`${games.get(game).name} has no HD texture pack yet.`);
+  return packCommand(pack, texturePackDirectory(root), root, platform, environment);
+}
+// The same for Battle Revolution's HD textures, into pbrTextureDirectory(work).
+function pbrTextureCommand(work, platform = process.platform, environment = process.env, pack = PBR_TEXTURE_PACK) {
+  fs.mkdirSync(work, { recursive: true });
+  return packCommand(pack, pbrTextureDirectory(work), work, platform, environment);
+}
+function packCommand(pack, directory, cwd, platform, environment) {
   const [first, ...more] = pack.parts || [{ url: pack.url, sha256: pack.sha256, size: pack.size }];
-  const args = [launcherScript('install-textures.py'), texturePackDirectory(root), first.url, first.sha256,
+  const args = [launcherScript('install-textures.py'), directory, first.url, first.sha256,
     String(first.size), pack.folder, ...more.flatMap(part => [part.url, part.sha256, String(part.size)])];
-  if (platform !== 'win32') return { command: 'python3', args, cwd: root, env: environment };
+  if (platform !== 'win32') return { command: 'python3', args, cwd, env: environment };
   const { msys } = msysBash(environment);
-  return { command: path.join(msys, 'mingw64', 'bin', 'python.exe'), args, cwd: root, env: msysEnvironment(msys, environment) };
+  return { command: path.join(msys, 'mingw64', 'bin', 'python.exe'), args, cwd, env: msysEnvironment(msys, environment) };
 }
 
 // Battle Revolution models (the game's tools/pbr2pkx, src/pbr-models.js): its driver, run by the build tools' Python.
@@ -672,7 +696,8 @@ function gameRuntimeFolders(environment = process.env) {
   return [path.join(environment.MSYS2_ROOT || 'C:\\msys64', 'mingw64', 'bin')];
 }
 
-module.exports = { PORT_URL, TEXTURE_PACK, texturePack, gameArch, platformInfo, dependencyPaths, isPort, placeMainDol, validateRom, normalizeSettings, moveToMetal, turnOnQuickBattles,
+module.exports = { PORT_URL, TEXTURE_PACK, PBR_TEXTURE_PACK, texturePack, gameArch, platformInfo, dependencyPaths, isPort, placeMainDol, validateRom, normalizeSettings, moveToMetal, turnOnQuickBattles,
   texturePackDirectory, texturePackInstalled, hdVisualsInstalled, dropLeftOutTextures, customTextureDirectory, customTexturesPresent, texturePackFolders,
+  pbrTextureDirectory, pbrTexturesInstalled, pbrTextureFolder, pbrTextureCommand,
   buildEnvironment, binaryPath, longPathProblem, pathCharacterProblem, nonAsciiPathProblem, playableInstall, useLauncherScripts, launcherScript,
   gameBuildEnvironment, buildCommand, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsOwnModels, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };

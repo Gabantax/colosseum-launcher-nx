@@ -1071,6 +1071,7 @@ async function setupGame() {
   port.validateRom(config.rom, config.game);
   if (!game.isCurrent(config.repo, currentSource())) await build();
   else if (!hdVisualsReady(config.repo, config.settings)) await installTextures();
+  await ensurePbrTextures();
   return state();
 }
 
@@ -1209,6 +1210,7 @@ function pbrState() {
   return { disc: config.pbrDisc || null, discFound: Boolean(config.pbrDisc && fs.existsSync(config.pbrDisc)),
     discProblem: pbrDiscProblem(), choice: pbrDiscChoice,
     wanted: wanted.length, made: present.length - outdated.size - noCry, outdated: outdated.size, noCry, cries,
+    textures: { installed: port.pbrTexturesInstalled(pbrWork()), size: port.PBR_TEXTURE_PACK.size },
     supported: Boolean(config.repo && fs.existsSync(port.pbrModelsScript(config.repo))),
     // Replace all models: chosen, and whether the game can show them (else the switch asks for an update)
     replaceAll: Boolean(config.settings.pbrReplaceAll), ownModels: Boolean(config.repo && port.playsOwnModels(config.repo)),
@@ -1230,6 +1232,31 @@ async function makePbrModels() {
   const { made } = pbrState();
   log(`Battle Revolution assets: ${made} of ${wanted.length} Pokémon made. They show in the Pokédex, and in your next game.`);
   return state();
+}
+
+// Battle Revolution HD textures (port.js pbrTexturesInstalled): wanted when they're turned on and a later generation's
+// Pokémon are imported; the game and the Pokédex read them once they're downloaded (pbrTextureFolder: the folder, or null).
+function pbrTexturesWanted(settings = config.settings) { return supports('pbrAssets') && Boolean(settings.pbrTextures) && pbrWanted(settings).length > 0; }
+function pbrTextureFolder(settings = config.settings) {
+  return pbrTexturesWanted(settings) && port.pbrTexturesInstalled(pbrWork()) ? port.pbrTextureFolder(pbrWork()) : null;
+}
+function pbrTexturesMissing() { return pbrTexturesWanted() && !port.pbrTexturesInstalled(pbrWork()); }
+async function installPbrTextures() {
+  requireFeature('pbrAssets', 'Battle Revolution assets');
+  if (!config.settings.pbrTextures) return state();
+  if (port.pbrTexturesInstalled(pbrWork())) { log('Battle Revolution HD textures are already installed.'); return state(); }
+  await ensureBuildTools();
+  const cmd = port.pbrTextureCommand(pbrWork(), process.platform, toolEnv());
+  await launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, 'Install Battle Revolution HD textures');
+  if (!port.pbrTexturesInstalled(pbrWork())) throw new Error('The texture installer finished without the Battle Revolution HD textures.');
+  log('Battle Revolution HD textures are ready: your Generation 4 Pokémon show them in the Pokédex and your next game.');
+  return state();
+}
+// Before playing: a download that fails doesn't stop the game, which shows the models' own textures until it's done.
+async function ensurePbrTextures() {
+  if (!pbrTexturesMissing()) return;
+  try { await installPbrTextures(); }
+  catch (error) { log(`Battle Revolution HD textures couldn't be installed (${error.message}); the game shows the models' own textures. Try again from Settings → Gameplay.`); }
 }
 
 // The file of packs for the game to load, or null when there are none, and how many of its Pokémon are packs' own
@@ -1335,7 +1362,7 @@ function preparePlayPacks(rom, folder, battle = null) {
 let pokedexTextures = { key: null, index: new Map() };
 function pokedexTextureIndex(fresh = false) {
   const settings = { ...config.settings, textures: Boolean(config.repo && config.settings.textures && port.texturePackInstalled(config.repo, config.game)) };
-  const folders = port.texturePackFolders(settings, config.repo, customTextureDirectory()), key = folders.join('\n');
+  const folders = port.texturePackFolders(settings, config.repo, customTextureDirectory(), pbrTextureFolder()), key = folders.join('\n');
   if (fresh || key !== pokedexTextures.key) pokedexTextures = { key, index: texturePackLookup.indexFolders(folders) };
   return pokedexTextures.index;
 }
@@ -1718,7 +1745,7 @@ async function play(installation = null, battle = null) {
   // commands (host/launcherlink.c, host/shadowtrade.c)
   if (!battle && trades().busy) throw new Error('Shadowtrade is changing your save. Play again in a moment.');
   const storyLink = !battle ? await openStoryLink(chosen.id) : null;
-  const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
+  const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), pbrTextures: pbrTextureFolder(settings), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
     noRepeats: onlineFeatures(root).randomizerNoRepeats, baseForms: onlineFeatures(root).randomizerBaseForms,
@@ -2122,6 +2149,7 @@ async function launchGame(update = config.settings.autoUpdate) {
   port.validateRom(config.rom, config.game);
   if (!binaryReady() || (update && !game.isCurrent(config.repo, currentSource()))) await build();
   if (!hdVisualsReady(config.repo, config.settings)) await installTextures();
+  await ensurePbrTextures();
   return play();
 }
 
@@ -3524,7 +3552,8 @@ function registerHandlers() {
     return state();
   });
   const actions = { 'install-port': ['Download port source', installPort],
-    'update-port': ['Update game', updatePort], 'install-textures': ['Install HD textures', () => installTextures()], 'build': ['Build game', () => build(true)],
+    'update-port': ['Update game', updatePort], 'install-textures': ['Install HD textures', () => installTextures()],
+    'install-pbr-textures': ['Install Battle Revolution HD textures', installPbrTextures], 'build': ['Build game', () => build(true)],
     'make-pbr-models': ['Make Battle Revolution assets', makePbrModels],
     'setup-game': ['Build game', setupGame], 'prepare-game': ['Prepare game', prepareGame], 'play': [playLabel, playInstalled],
     'launch-game': ['Prepare game', () => launchGame()], 'update-and-play': ['Prepare game', () => launchGame(true)],
