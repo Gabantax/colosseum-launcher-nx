@@ -11,7 +11,8 @@
       "Shadowtrade in Colosseum warns you before you send one of the story's Shadow Pokémon you haven't purified: Ho-Oh needs all 48 purified, and that one only counts again if Shadowtrade brings you another player's copy of it.",
       "Make a pack: on one of the game's Pokémon in the Pokédex, it copies that Pokémon into your packs folder as a pack of your own, with every stat, move and evolution the game gives it and its model and sprites beside it, ready to change.",
       "Pokémon packs: a pack Pokémon can be what one of the game's own Pokémon evolves into, such as a Kirlia that evolves into it with a Moon Stone, and the Pokédex shows that evolution. Packs can also use every way of evolving the game has, Tyrogue's, Wurmple's, Shedinja's and Feebas's included.",
-      "Fixed Settings → Controls on Windows saying a GameCube adapter in Wii U mode was ready when Windows hadn't started it. It now says so and tells you to install WinUSB for it with Zadig, as Dolphin needs, and Get Zadig opens Zadig's site. With Windows' own driver, it suggests the same if the controller does nothing in the game."
+      "Fixed Settings → Controls on Windows saying a GameCube adapter in Wii U mode was ready when Windows hadn't started it. It now says so and tells you to install WinUSB for it with Zadig, as Dolphin needs, and Get Zadig opens Zadig's site. With Windows' own driver, it suggests the same if the controller does nothing in the game.",
+      "Replace all models: Bulbasaur to Deoxys can have their Pokémon Battle Revolution models too, in the game and the Pokédex, so every Pokémon looks as it does there. Turn it on under Gameplay, beside Battle Revolution assets, and Make assets makes them from your disc."
     ],
     "game": [
       "Fixed the game crashing when an opponent's Pokémon knows Heal Bell or Aromatherapy, such as in Pokémon XD's last battle with Miror B. Colosseum had the same fault, and it's fixed there too.",
@@ -19,7 +20,9 @@
       "Colosseum: purifying a Shadow Pokémon from Shadowtrade now counts toward Ho-Oh when it's a copy of a story Shadow Pokémon you sent away, so sending one doesn't lose Ho-Oh for good.",
       "Fixed Colosseum crashing on Windows when you opened the START menu or other menus, a fault in recent Beta builds. While you wait for an online challenger, START no longer opens a menu that could crash the game.",
       "More Poké Spot Pokémon: in XD, each Poké Spot can now bring about 60 kinds of Pokémon instead of its own three, sorted by type, with Generation 4 Pokémon too when you have them. It's on by default; turn it off under Gameplay to keep the original three.",
-      "On Windows, when the game can't read a GameCube adapter in Wii U mode, its log now says what Windows shows for the adapter in Device Manager and to install WinUSB for it with Zadig."
+      "On Windows, when the game can't read a GameCube adapter in Wii U mode, its log now says what Windows shows for the adapter in Device Manager and to install WinUSB for it with Zadig.",
+      "The game's own Pokémon can show Battle Revolution models made from your disc, in both games, including their own shiny models.",
+      "Make assets keeps going when one Pokémon's model can't be made, and says which one, instead of stopping there."
     ]
   },
   "releases": [

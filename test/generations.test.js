@@ -229,6 +229,19 @@ test('the game says whether it makes Battle Revolution cries, and whether it pla
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('Replace all models is off unless chosen, and waits for a game that shows the game\'s own Pokémon\'s models', () => {
+  const fs = require('fs'), os = require('os'), path = require('path'), port = require('../src/port');
+  assert.equal(port.normalizeSettings({}).pbrReplaceAll, false);
+  assert.equal(port.normalizeSettings({ pbrReplaceAll: true }).pbrReplaceAll, true);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pbr-looks-'));
+  try {
+    assert.equal(port.playsOwnModels(root), false, 'an older game skips the models');
+    fs.mkdirSync(path.join(root, 'host'));
+    fs.writeFileSync(path.join(root, 'host', 'packlooks.c'), '');
+    assert.equal(port.playsOwnModels(root), true);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("an ability Ruby writes as one word stays a Pokémon's under Generation 4's rules", () => {
   const data = generations.load(4);
   const row = Buffer.alloc(0x40); row[0x32] = 31; row[0x33] = 69;   // Rhydon: Lightning Rod, Rock Head

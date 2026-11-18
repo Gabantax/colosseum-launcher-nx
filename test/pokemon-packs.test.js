@@ -553,6 +553,40 @@ test('the models of the form a Battle Revolution Pokémon changes into go to the
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('Replace all models: the game\'s own Pokémon\'s Battle Revolution models go to the game in a chunk of their own', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-look-'));
+  try {
+    // Pikachu with both models, Umbreon with no shiny one, Raichu with one too small to be a model; Turtwig's folder
+    // (a later generation's) isn't the game's own
+    const model = byte => Buffer.alloc(0x100, byte);
+    const folders = { 25: { 'model.pkx': model(1), 'model-shiny.pkx': model(2) }, 197: { 'model.pkx': model(3) },
+      26: { 'model.pkx': Buffer.alloc(0x10) }, 387: { 'model.pkx': model(5) } };
+    for (const [number, files] of Object.entries(folders)) {
+      fs.mkdirSync(path.join(root, number), { recursive: true });
+      for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(root, number, name), data);
+    }
+    const looks = packs.ownModels(tables(), root);
+    assert.deepEqual(looks.map(each => [each.id, each.national, each.model[0], each.modelShiny?.[0] ?? null]), [[25, 25, 1, 2], [197, 197, 3, null]]);
+    assert.equal(packs.OWN_NATIONALS.length, 386);
+    assert.deepEqual([packs.OWN_NATIONALS[0], packs.OWN_NATIONALS.at(-1)], [1, 386]);
+    const file = packs.compile({ looks });
+    const chunks = {};
+    for (let at = 16; at < file.length;) {
+      const tag = file.toString('latin1', at, at + 4), size = file.readUInt32BE(at + 4);
+      chunks[tag] = file.subarray(at + 8, at + 8 + size);
+      at += 8 + Math.ceil(size / 4) * 4;
+    }
+    assert.deepEqual(Object.keys(chunks), ['LOOK'], 'only the looks: a file the game reads for them alone');
+    const look = chunks.LOOK;
+    assert.deepEqual([look.readUInt32BE(0), look.readUInt16BE(4), look.readUInt16BE(6)], [2, 25, 0], 'two Pokémon: Pikachu first');
+    assert.deepEqual([look.readUInt32BE(8), look[12], look.readUInt32BE(12 + 0x100), look[16 + 0x100]], [0x100, 1, 0x100, 2], 'its model, then its shiny one');
+    const umbreon = 16 + 0x200;
+    assert.deepEqual([look.readUInt16BE(umbreon), look.readUInt32BE(umbreon + 4), look[umbreon + 8], look.readUInt32BE(umbreon + 8 + 0x100)], [197, 0x100, 3, 0], 'no shiny model: an empty one');
+    assert.equal(look.length, umbreon + 12 + 0x100);
+    assert.equal(packs.compile({ looks: [] }).includes('LOOK'), false, 'no chunk without a look');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a pack\'s cry.wav and a Battle Revolution one are read beside their Pokémon; a bad one is said, or left out', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-cry-'));
   try {

@@ -1133,7 +1133,7 @@ function refresh(data) {
 
 // The settings that are a list or a range, and the ones that are a switch: each saves under its element's id.
 const SELECTS = ['buttonPrompts', 'promptPad', 'battleRules', 'widescreen', 'resolution', 'frameRate', 'vsync', 'fullscreenMode', 'exclusiveResolution', 'display', 'msaa', 'anisotropic', 'sharpen', 'brightness', 'aspect', 'presentFilter', 'fsrMode', 'textureLoading', 'renderer', 'hdText', 'language', 'battleSpeed', 'fastForward', 'fastForwardSpeed', 'padMode', 'updateChannel', 'randomizerSeed'];
-const SWITCHES = ['randomizer', 'randomizerStarters', 'randomizerShadow', 'randomizerTrainers', 'randomizerGifts', 'randomizerGen1', 'randomizerGen2', 'randomizerGen3', 'randomizerGen4', 'randomizerPacks', 'randomizerSimilar', 'randomizerNoLegendaries', 'randomizerNoRepeats', 'randomizerBaseForms', 'generation4Pokemon', 'fullscreen', 'hudEdges', 'skipMovies', 'skipBattleAnimations', 'quickMoves', 'quickStatus', 'shinyShadow', 'shinyStarters', 'chooseHero', 'chooseStarters', 'tmNames', 'partnerPass', 'pokeSpotPool', 'overlay', 'backgroundInput', 'gbaAutoPower', 'fxaa', 'textures', 'hdModels', 'shaderWarmup', 'autoUpdate', 'autoBackups', 'shareUsage', 'discordPresence', 'darkMode'];
+const SWITCHES = ['randomizer', 'randomizerStarters', 'randomizerShadow', 'randomizerTrainers', 'randomizerGifts', 'randomizerGen1', 'randomizerGen2', 'randomizerGen3', 'randomizerGen4', 'randomizerPacks', 'randomizerSimilar', 'randomizerNoLegendaries', 'randomizerNoRepeats', 'randomizerBaseForms', 'generation4Pokemon', 'pbrReplaceAll', 'fullscreen', 'hudEdges', 'skipMovies', 'skipBattleAnimations', 'quickMoves', 'quickStatus', 'shinyShadow', 'shinyStarters', 'chooseHero', 'chooseStarters', 'tmNames', 'partnerPass', 'pokeSpotPool', 'overlay', 'backgroundInput', 'gbaAutoPower', 'fxaa', 'textures', 'hdModels', 'shaderWarmup', 'autoUpdate', 'autoBackups', 'shareUsage', 'discordPresence', 'darkMode'];
 
 // The languages: English, the launcher's packs and any found in the languages folder. One chosen and then
 // removed from the folder stays listed, as the game plays in English without it; so does one this game has no pack
@@ -1461,13 +1461,18 @@ function renderPbr(data) {
   const pbr = data.pbr || {};
   $('pbr-note').textContent = pbrProgress(data.active)
     || (!pbr.supported ? 'Update your game to make models from your own Pokémon Battle Revolution disc.'
-      : !pbr.wanted ? `Turn on Generation 4 Pokémon above, then make their ${pbrAssets(pbr)} from your own Pokémon Battle Revolution disc. No Blender needed.`
+      : !pbr.wanted ? `Turn on Generation 4 Pokémon above or Replace all models below, then make their ${pbrAssets(pbr)} from your own Pokémon Battle Revolution disc. No Blender needed.`
         : !pbr.disc ? `Choose your own Pokémon Battle Revolution disc (RVZ, ISO or WBFS) and their ${pbrAssets(pbr, true)} are made from it. Until then, each has a Colosseum Pokémon standing in. ${pbr.made} of ${pbr.wanted} made.`
           : pbr.outdated ? `${pbr.disc}: ${pbr.made} of ${pbr.wanted} made. A fix changed ${pbr.outdated === 1 ? '1 Pokémon\'s model' : `${pbr.outdated} Pokémon's models`}: press Make assets to make ${pbr.outdated === 1 ? 'it' : 'them'} again.`
             : pbr.noCry ? `${pbr.disc}: ${pbr.made} of ${pbr.wanted} made. ${pbr.noCry === 1 ? '1 Pokémon has' : `${pbr.noCry} Pokémon have`} a model but no cry of its own yet: press Make assets to add ${pbr.noCry === 1 ? 'it' : 'them'}.`
               : `${pbr.disc}: ${pbr.made} of ${pbr.wanted} made. Making them takes a few minutes, and only makes what's missing.`);
   $('make-pbr-models').disabled = Boolean(data.active) || !pbr.supported || !pbr.wanted || !pbrDiscUsable(pbr);
   $('choose-pbr-disc').disabled = Boolean(data.active);
+  // Replace all models: the game's own Pokémon too, once the game can show them
+  $('pbrReplaceAll').disabled = Boolean(data.active) || !pbr.ownModels;
+  $('pbr-replace-all-note').textContent = !pbr.supported || !pbr.ownModels
+    ? 'Update your game to give its own Pokémon their Battle Revolution models.'
+    : 'Gives the game\'s own Pokémon, Bulbasaur to Deoxys, their Battle Revolution models too, so every Pokémon looks as it does there, in the game and the Pokédex. Make assets makes them from your disc: 386 more Pokémon, about 500 MB, and 10 to 20 minutes the first time.';
   renderPbrCheck('pbr-check', pbr);
   renderPbrBanner(data);
 }
@@ -1515,15 +1520,17 @@ function renderPbrBanner(data) {
   $('pbr-banner').hidden = !show;
   if (!show) return;
   const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  // with Replace all models, the game's own Pokémon are among them
+  const who = pbr.replaceAll && pbr.ownModels ? 'Pokémon' : 'Generation 4 Pokémon';
   $('pbr-banner-title').textContent = pbr.discProblem ? 'Your Battle Revolution disc can\'t be used'
     : pbr.outdated ? 'Your Battle Revolution assets need making again'
     : !missing && pbr.noCry ? 'Your Generation 4 Pokémon can have their own cries' : 'Some Battle Revolution assets aren\'t made yet';
   $('pbr-banner-detail').textContent = (pbr.discProblem && pbr.discFound
     ? `${pbr.discProblem} Choose it under Settings → Gameplay.`
     : !pbr.discFound ? `Your Battle Revolution disc isn't where it was. Choose it again under Settings → Gameplay, then make them.`
-    : pbr.outdated ? `A fix changed ${count(pbr.outdated, 'Generation 4 Pokémon\'s model', 'Generation 4 Pokémon\'s models')}. Until they're made again, they look as they did before the fix.`
+    : pbr.outdated ? `A fix changed ${count(pbr.outdated, `${who}'s model`, `${who}'s models`)}. Until they're made again, they look as they did before the fix.`
       : !missing && pbr.noCry ? `${count(pbr.noCry, 'Generation 4 Pokémon cries', 'Generation 4 Pokémon cry')} with a Colosseum Pokémon's voice. Battle Revolution's own is on your disc.`
-        : `${count(missing, 'Generation 4 Pokémon has', 'Generation 4 Pokémon have')} no model of its own yet.`);
+        : `${count(missing, `${who} has`, `${who} have`)} no ${who === 'Pokémon' ? 'Battle Revolution model' : 'model of its own'} yet.`);
   $('pbr-banner-make').textContent = pbrDiscUsable(pbr) ? 'Make assets' : 'Open Settings';
   $('pbr-banner-make').disabled = Boolean(data.active);
 }
@@ -2074,10 +2081,17 @@ $('pbr-banner-make').addEventListener('click', () => {
   else { showPage('settings'); showSettingsTab('gameplay'); }
 });
 $('open-languages').addEventListener('click', () => window.colo.openLanguages().catch(showError));
-for (const key of [...SELECTS, ...SWITCHES]) if (key !== 'generation4Pokemon') $(key).addEventListener('change', saveSettings);
+for (const key of [...SELECTS, ...SWITCHES]) if (key !== 'generation4Pokemon' && key !== 'pbrReplaceAll') $(key).addEventListener('change', saveSettings);
 $('generation4Pokemon').addEventListener('change', async () => {
   await saveSettings();
   if (current?.config.settings.generation4Pokemon) offerPbrModels();
+});
+// Replace all models turned on with the disc chosen makes the models at once, as choosing the disc does; without the
+// disc, the Settings row asks for it
+$('pbrReplaceAll').addEventListener('change', async () => {
+  await saveSettings();
+  const pbr = current?.pbr || {};
+  if (current?.config.settings.pbrReplaceAll && !current.active && pbr.supported && pbrDiscUsable(pbr) && pbr.made < pbr.wanted) action('makePbrModels');
 });
 // The offer stays open until a disc passes the check, showing why a file was turned away, so the player can choose
 // another without finding the setting

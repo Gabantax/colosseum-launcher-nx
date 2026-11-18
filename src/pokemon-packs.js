@@ -31,6 +31,9 @@ const MAX_MODEL = 8 << 20, MAX_PNG = 4 << 20, MAX_JSON = 256 << 10, MAX_WAV = 2 
 const CRY = { lowestRate: 8000, highestRate: 48000, longest: 32000 * 4 };
 const NAME_LENGTH = 10;
 const MAGIC = 0x43504b4d, VERSION = 2;
+// The game's own Pokémon by National Pokédex number, Bulbasaur to Deoxys: what Replace all models gives Battle
+// Revolution models (ownModels)
+const OWN_NATIONALS = Array.from({ length: 386 }, (_, i) => i + 1);
 
 // The species row (PokemonData in the decompilation).
 const ROW = {
@@ -688,11 +691,12 @@ function loadPacks(dir, tables, registry) {
 // --- The game's file ------------------------------------------------------------------------
 
 // The game's file (host/pokemonpacks.c): chunks of Pokémon (SPEC), new moves (MOVE), battle rules (MECH, host/
-// mechanics.c) and the game's own Pokémon as a later generation has them (ROWS, host/evolutions.c). `contents` is
-// { pokemon, moves, rules, ownRows, relearner } (src/generations.js build makes moves and rules, ownRows its
-// ownSpecies), or just the Pokémon. `relearner` has the Move Deleter offer to make a Pokémon remember a move too.
+// mechanics.c), the game's own Pokémon as a later generation has them (ROWS, host/evolutions.c) and the game's own
+// Pokémon with models of their own (LOOK, host/packlooks.c). `contents` is { pokemon, moves, rules, ownRows,
+// relearner, looks } (src/generations.js build makes moves and rules, ownRows its ownSpecies, ownModels the looks), or
+// just the Pokémon. `relearner` has the Move Deleter offer to make a Pokémon remember a move too.
 function compile(contents) {
-  const { pokemon = [], moves = [], rules = null, ownRows: own = [], relearner = false } = Array.isArray(contents) ? { pokemon: contents } : contents;
+  const { pokemon = [], moves = [], rules = null, ownRows: own = [], relearner = false, looks = [] } = Array.isArray(contents) ? { pokemon: contents } : contents;
   const padded = buffer => Buffer.concat([buffer, Buffer.alloc((4 - buffer.length % 4) % 4)]);
   const utf16 = text => { const out = Buffer.alloc(text.length * 2); [...text].forEach((c, i) => out.writeUInt16BE(c.charCodeAt(0), i * 2)); return out; };
   const u32 = value => { const out = Buffer.alloc(4); out.writeUInt32BE(value >>> 0, 0); return out; };
@@ -790,6 +794,18 @@ function compile(contents) {
     }
     chunk('ICON', parts);
   }
+  if (looks.length) {
+    // the game's own Pokémon's models (host/packlooks.c): u32 count, then each: u16 species, u16 0, then its model and
+    // its shiny model as SPEC's blobs. A game from before skips the chunk, and they look as on the disc.
+    const parts = [u32(looks.length)];
+    for (const each of looks) {
+      const head = Buffer.alloc(4);
+      head.writeUInt16BE(each.id, 0);
+      parts.push(head);
+      for (const data of [each.model, each.modelShiny || Buffer.alloc(0)]) parts.push(u32(data.length), padded(data));
+    }
+    chunk('LOOK', parts);
+  }
   const header = Buffer.alloc(16);
   header.writeUInt32BE(MAGIC, 0); header.writeUInt32BE(VERSION, 4); header.writeUInt32BE(chunks.length / 3, 8);
   return Buffer.concat([header, ...chunks]);
@@ -816,6 +832,28 @@ function ownLooks(folder, tables) {
       face: face ? sprite(() => spriteFile('face', tables.headers.face, face, faceShiny, battleRevolutionFace)) : undefined },
     images: { body, bodyShiny, face }, icon: boxIconOrNone(body, bodyShiny), cry, converted: true
   };
+}
+
+// The game's own Pokémon (Bulbasaur to Deoxys) whose Battle Revolution models are made, for the player who has them
+// replace every model: [{ id, national, model, modelShiny }] (modelShiny null without one), for compile's LOOK chunk.
+// modelsDirectory has a folder for each National Pokédex number, as generationPokemon's; a model that isn't there, or
+// can't be one, leaves that Pokémon looking as on the disc.
+function ownModels(tables, modelsDirectory, numbers = OWN_NATIONALS) {
+  const read = (folder, name) => {
+    const at = path.join(folder, name);
+    try {
+      const size = fs.statSync(at).size;
+      return size >= 0x100 && size <= MAX_MODEL ? fs.readFileSync(at) : null;
+    } catch { return null; }
+  };
+  const looks = [];
+  for (const national of numbers) {
+    const species = tables.species.find(each => each.national === national);
+    if (!species) continue;
+    const folder = path.join(modelsDirectory, String(national)), model = read(folder, FILES.model);
+    if (model) looks.push({ id: species.id, national, model, modelShiny: read(folder, FILES.modelShiny) });
+  }
+  return looks;
 }
 
 // A later generation's Pokémon (src/generations.js build), as packs' Pokémon are: rows of their own, standing in
@@ -1096,7 +1134,7 @@ function pokedexEntries(pokemon, tables) {
 }
 
 module.exports = { FIRST_ID, LAST_ID, FIRST_PAST_GAP, REGISTRY_FILE, FILES, packsDirectory, readGameTables, readRegistry, writeRegistry, assignIds,
-  decodePng, resize, encodeRgba8, spriteFile, battleRevolutionFace, boxIcon, buildRow, evolutionBytes, loadPacks, compile, generationPokemon, ownRows, pokedexEntries, readCry,
+  decodePng, resize, encodeRgba8, spriteFile, battleRevolutionFace, boxIcon, buildRow, evolutionBytes, loadPacks, compile, generationPokemon, ownRows, ownModels, OWN_NATIONALS, pokedexEntries, readCry,
   exportSpec, formatJson, ENTRY_FILE, PACK_FILE, FOLDER,
   // A species the original game hasn't: a pack's, or a later generation's
   isPackSpecies: id => (id >= FIRST_ID && id <= LAST_ID) || id >= 413 };
