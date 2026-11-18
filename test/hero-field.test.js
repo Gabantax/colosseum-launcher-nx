@@ -159,6 +159,13 @@ test('a Michael-style people model\'s slots: empty ones are null, the others the
   assert.equal(slots[1].flags, 0);
 });
 
+test('each slot\'s clip comes from the first of Michael\'s field models that has one', () => {
+  const clip = { end: 10, flags: 0 };
+  // rinto_0000 has idle and walk; another model adds a push and has its own walk, which rinto_0000's wins over
+  assert.deepEqual(field.clipSources([[null, clip, clip, null], [null, clip, null, clip], [clip, null, null, clip]]), [2, 0, 0, 1]);
+  assert.deepEqual(field.clipSources([[null, clip], []]), [-1, 0], 'a slot none has stays empty');
+});
+
 test('turns move as little as they can from frame to frame, and are exactly the rest angles when turned as at rest', () => {
   const rest = Float32Array.from([1, 1, 1, 2.9, 0.3, 2.9, 0, 0, 0]);
   const frames = [[3.0, 0.3, 3.0], [3.1, 0.3, 3.1], [-3.1, 0.3, -3.1], [2.9 + Math.PI, Math.PI - 0.3, 2.9 + Math.PI]];

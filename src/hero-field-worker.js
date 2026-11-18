@@ -16,6 +16,10 @@ const heroSnag = require('./hero-snag');
 const colors = require('./hero-colors');
 
 const MICHAEL_FIELD = 0x16c90400;   // rinto_0000 in people_archive.fsys
+// his other field models, people_archive's other rinto entries (host/xd/player.c's RINTO), whose clips fill the slots
+// rinto_0000 leaves empty, in this order: rinto_1000 (with the crate push 31-33 and the jump off a crate 34),
+// rinto_2000, rinto_0100, rinto_1100 (both), rinto_2100
+const MICHAEL_MORE = [0x169f0400, 0x20250400, 0x169e0400, 0x16a00400, 0x1edf0400, 0x1ee20400];
 
 try {
   const { rom, root } = workerData;
@@ -23,11 +27,15 @@ try {
   try {
     const heroes = colors.heroesFor('xd').filter(hero => hero.id !== 'michael');
     const files = new Map(heroes.map(hero => [hero.id, Buffer.from(fsys.entries(disc.file(hero.battle.file))[0].data())]));
-    const michael = fsys.entries(disc.file('people_archive.fsys')).find(entry => entry.id === MICHAEL_FIELD);
+    const archive = fsys.entries(disc.file('people_archive.fsys'));
+    const michael = archive.find(entry => entry.id === MICHAEL_FIELD);
     if (!michael) throw new Error('Michael\'s field model isn\'t on this disc.');
+    const more = MICHAEL_MORE.map(id => archive.find(entry => entry.id === id)).filter(Boolean).map(entry => Buffer.from(entry.data()));
     const people = Buffer.from(michael.data()), snag = Buffer.from(fsys.entries(disc.file(heroSnag.MICHAEL_SNAG))[0].data());
     const throwXd = Buffer.from(fsys.entries(disc.file(heroSnag.MICHAEL_BATTLE))[0].data());
-    const hash = crypto.createHash('sha256').update(`${heroField.VERSION}:${heroSnag.VERSION}`).update(people).update(snag).update(throwXd);
+    const hash = crypto.createHash('sha256').update(`${heroField.VERSION}:${heroSnag.VERSION}`).update(people);
+    for (const data of more) hash.update(data);
+    hash.update(snag).update(throwXd);
     for (const data of files.values()) hash.update(data);
     const key = hash.digest('hex').slice(0, 16), folder = path.join(root, key);
     if (!fs.existsSync(path.join(folder, 'made.json'))) {
@@ -35,7 +43,7 @@ try {
       fs.mkdirSync(temporary, { recursive: true });
       const snags = [], failed = {};
       for (const [id, data] of files) {
-        fs.writeFileSync(path.join(temporary, `${id}.dat`), heroField.buildFieldModel(data, people));
+        fs.writeFileSync(path.join(temporary, `${id}.dat`), heroField.buildFieldModel(data, people, { more }));
         try {
           fs.writeFileSync(path.join(temporary, `${id}.pkx`), heroSnag.buildSnagModel(data, snag, { throwXd, cameraScale: heroSnag.CAMERA_SCALE[id] }));
           snags.push(id);
