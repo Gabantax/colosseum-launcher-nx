@@ -1211,7 +1211,10 @@ function pbrState() {
     wanted: wanted.length, made: present.length - outdated.size - noCry, outdated: outdated.size, noCry, cries,
     supported: Boolean(config.repo && fs.existsSync(port.pbrModelsScript(config.repo))),
     // Replace all models: chosen, and whether the game can show them (else the switch asks for an update)
-    replaceAll: Boolean(config.settings.pbrReplaceAll), ownModels: Boolean(config.repo && port.playsOwnModels(config.repo)) };
+    replaceAll: Boolean(config.settings.pbrReplaceAll), ownModels: Boolean(config.repo && port.playsOwnModels(config.repo)),
+    // what the switch adds, and what's made without it, for its warning of how much longer making them takes
+    ownCount: pokemonPacks.OWN_NATIONALS.length, generationCount: pbrWanted({ ...config.settings, pbrReplaceAll: false }).length,
+    generation4Count: generations.load(4).newSpecies[1] - generations.load(4).newSpecies[0] + 1 };
 }
 async function makePbrModels() {
   requireFeature('pbrAssets', 'Battle Revolution assets');

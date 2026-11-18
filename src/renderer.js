@@ -1472,9 +1472,24 @@ function renderPbr(data) {
   $('pbrReplaceAll').disabled = Boolean(data.active) || !pbr.ownModels;
   $('pbr-replace-all-note').textContent = !pbr.supported || !pbr.ownModels
     ? 'Update your game to give its own Pokémon their Battle Revolution models.'
-    : 'Gives the game\'s own Pokémon, Bulbasaur to Deoxys, their Battle Revolution models too, so every Pokémon looks as it does there, in the game and the Pokédex. Make assets makes them from your disc: 386 more Pokémon, about 500 MB, and 10 to 20 minutes the first time.';
+    : `Gives the game's own Pokémon, Bulbasaur to Deoxys, their Battle Revolution models too, so every Pokémon looks as it does there, in the game and the Pokédex. Off unless you choose it: ${pbrReplaceAllCost(pbr)}`;
   renderPbrCheck('pbr-check', pbr);
   renderPbrBanner(data);
+}
+
+// How much longer Make assets takes with Replace all models, as a multiple of making it without: each Pokémon takes about
+// as long, so Generation 4's 107 and the game's own 386 take about 4½ times as long as Generation 4's alone. Without a
+// later generation, it's compared with making Generation 4's.
+function pbrReplaceAllTimes(pbr) {
+  const own = pbr.ownCount || 386, without = pbr.generationCount || 0, base = without || pbr.generation4Count || 107;
+  const times = Math.max(1.5, Math.round((without + own) / base * 2) / 2);
+  return `${Math.floor(times)}${times % 1 ? '½' : ''}`;
+}
+function pbrReplaceAllCost(pbr) {
+  const own = pbr.ownCount || 386, without = pbr.generationCount || 0;
+  return without
+    ? `it's ${own} more Pokémon to make from your disc, so Make assets takes about ${pbrReplaceAllTimes(pbr)} times as long as without it (${without + own} Pokémon instead of ${without}), and uses about 500 MB more space.`
+    : `it's ${own} Pokémon to make from your disc, so Make assets takes about ${pbrReplaceAllTimes(pbr)} times as long as making Generation 4's ${pbr.generation4Count || 107}, and uses about 500 MB of space.`;
 }
 
 // The disc chosen is there and is Battle Revolution
@@ -2088,7 +2103,21 @@ $('generation4Pokemon').addEventListener('change', async () => {
 });
 // Replace all models turned on with the disc chosen makes the models at once, as choosing the disc does; without the
 // disc, the Settings row asks for it
+// Turning it on asks first, saying how much longer making the models takes; turning it off doesn't.
 $('pbrReplaceAll').addEventListener('change', async () => {
+  if (!$('pbrReplaceAll').checked) { await saveSettings(); return; }
+  $('pbrReplaceAll').checked = false;
+  const pbr = current?.pbr || {};
+  $('pbr-replace-all-title').textContent = `Make models for ${(pbr.generationCount || 0) + (pbr.ownCount || 386)} Pokémon?`;
+  $('pbr-replace-all-times').textContent = `About ${pbrReplaceAllTimes(pbr)} times as long`;
+  $('pbr-replace-all-lead').textContent = `The game's own Pokémon, Bulbasaur to Deoxys, get their Battle Revolution models, in the game and the Pokédex. ${pbrReplaceAllCost(pbr).replace(/^it's/, 'That\'s')}`;
+  $('pbr-replace-all-confirm').textContent = pbrDiscUsable(pbr) ? 'Turn on and make them' : 'Turn on';
+  closeModal();
+  $('pbr-replace-all-warn').showModal();
+});
+$('pbr-replace-all-confirm').addEventListener('click', async () => {
+  $('pbr-replace-all-warn').close();
+  $('pbrReplaceAll').checked = true;
   await saveSettings();
   const pbr = current?.pbr || {};
   if (current?.config.settings.pbrReplaceAll && !current.active && pbr.supported && pbrDiscUsable(pbr) && pbr.made < pbr.wanted) action('makePbrModels');
