@@ -16,7 +16,8 @@
       "Fixed the game crashing when an opponent's Pokémon knows Heal Bell or Aromatherapy, such as in Pokémon XD's last battle with Miror B. Colosseum had the same fault, and it's fixed there too.",
       "Shadowtrade: with the game running, a Generation 4 Shadow Pokémon you receive goes straight into your save, as the third generation's do.",
       "Colosseum: purifying a Shadow Pokémon from Shadowtrade now counts toward Ho-Oh when it's a copy of a story Shadow Pokémon you sent away, so sending one doesn't lose Ho-Oh for good.",
-      "Fixed Colosseum crashing on Windows when you opened the START menu or other menus, a fault in recent Beta builds. While you wait for an online challenger, START no longer opens a menu that could crash the game."
+      "Fixed Colosseum crashing on Windows when you opened the START menu or other menus, a fault in recent Beta builds. While you wait for an online challenger, START no longer opens a menu that could crash the game.",
+      "More Poké Spot Pokémon: in XD, each Poké Spot can now bring about 60 kinds of Pokémon instead of its own three, sorted by type, with Generation 4 Pokémon too when you have them. It's on by default; turn it off under Gameplay to keep the original three."
     ]
   },
   "releases": [

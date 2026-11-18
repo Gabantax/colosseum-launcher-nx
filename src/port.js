@@ -180,6 +180,8 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     tmNames: input.tmNames !== false,
     // Colosseum: Wes walks through Rui in the field instead of pushing her back. On unless turned off.
     partnerPass: input.partnerPass !== false,
+    // XD: a Poké Spot draws from every Pokémon a player could find in the wild, not only its own three. Off unless chosen.
+    pokeSpotPool: input.pokeSpotPool !== false,
     // A New Game asks who to play as (Wes, or a Game Boy Advance hero Mt. Battle shows) before the name, and the save
     // keeps the choice. On unless turned off; off, a New Game is Wes's, and a save made before keeps its hero.
     chooseHero: input.chooseHero !== false,
@@ -336,6 +338,7 @@ const FEATURE_ENVIRONMENT = {
   starters: ['COLO_CHOOSE_STARTERS'],
   tmNames: ['COLO_TM_NAMES'],
   partnerPass: ['COLO_PARTNER_PASS'],
+  pokeSpots: ['COLO_POKESPOT_POOL'],
   playAs: ['COLO_CHOOSE_HERO', 'COLO_PLAYER'],
   battleSpeed: ['COLO_BATTLE_SPEED'],
   quickMoves: ['COLO_QUICK_MOVES', 'COLO_FAST_STATUS', 'SMS_BUTTON_PROMPTS', 'SMS_BUTTON_PROMPT_PAD'],
@@ -397,6 +400,7 @@ function buildEnvironment(settings, disc, root, { customTextures = null, laterGe
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.partnerPass === false) env.COLO_PARTNER_PASS = '0';
+  if (settings.pokeSpotPool === false) env.COLO_POKESPOT_POOL = '0';
   if (settings.chooseHero === false) env.COLO_CHOOSE_HERO = '0';
   if (settings.skipBattleAnimations) env.COLO_BATTLE_SPEED = 'skip';
   else if (settings.battleSpeed !== 1) env.COLO_BATTLE_SPEED = String(settings.battleSpeed);
