@@ -430,18 +430,24 @@ function renderBindings() {
 // GameCube adapter in Wii U mode (src/gc-adapter.js): shown while one is
 // plugged in. The game reads it directly, so the controller bindings above and
 // the launcher's own menus don't see it. On Linux the game needs a udev rule to
-// open it; Allow access installs one.
+// open it; Allow access installs one. On Windows, WinUSB from Zadig is the
+// driver seen to work, so Get Zadig shows with any other.
 function renderGcAdapter(status, message = '') {
   $('gc-adapter-note').hidden = !status?.present;
   if (!status?.present) return;
   const ready = 'The game reads it directly: plug the controller into any port (the first plugged port is player 1). It plays as on a GameCube, so the controller buttons set here and the launcher\'s menus don\'t apply to it.';
-  $('gc-adapter-text').textContent = status.readable ? `Plugged in and ready. ${ready}`
+  const zadig = 'Install WinUSB for it with Zadig, as Dolphin needs: in Zadig choose WUP-028 (tick Options → List All Devices if it isn\'t there), pick WinUSB and press Replace Driver, then unplug the adapter and plug it in again.';
+  const hid = status.readable && status.driver === 'HID';
+  $('gc-adapter-text').textContent = hid ? `Plugged in, with Windows' own driver. ${ready} If the controller does nothing in the game: ${zadig}`
+    : status.readable ? `Plugged in and ready. ${ready}`
     : status.fix === 'udev' ? 'Plugged in, but Linux doesn\'t let the game open it yet. Allow access adds a udev rule for it (as Dolphin needs), which asks for your password.'
-    : status.fix === 'driver' ? 'Plugged in, but Windows has no working driver for it. Unplug it and plug it in again; if that doesn\'t help, choose USB Input Device for WUP-028 in Device Manager.'
+    : status.fix === 'driver' && status.driver ? `Plugged in, but Windows hasn't started it (its status is ${status.status || 'unknown'}), so the game can't read it. ${zadig}`
+    : status.fix === 'driver' ? `Plugged in, but Windows has no working driver for it. ${zadig}`
     : 'Plugged in, but the game needs libusb to read it on a Mac. Install it with Homebrew: brew install libusb.';
-  $('gc-adapter-actions').hidden = status.readable;
+  $('gc-adapter-actions').hidden = status.readable && !hid;
   $('gc-adapter-allow').hidden = status.fix !== 'udev';
   $('gc-adapter-copy').hidden = status.fix !== 'udev';
+  $('gc-adapter-zadig').hidden = !(hid || status.fix === 'driver');
   $('gc-adapter-helper').textContent = message;
 }
 async function loadGcAdapter(message) {
@@ -449,6 +455,7 @@ async function loadGcAdapter(message) {
   catch (error) { renderGcAdapter({ present: true, readable: false }, error.message || String(error)); }
 }
 $('gc-adapter-check').addEventListener('click', () => loadGcAdapter());
+$('gc-adapter-zadig').addEventListener('click', () => window.colo.openZadig().catch(error => loadGcAdapter(errorText(error))));
 $('gc-adapter-allow').addEventListener('click', async () => {
   $('gc-adapter-allow').disabled = true;
   try {

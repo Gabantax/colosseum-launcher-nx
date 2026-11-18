@@ -55,18 +55,25 @@ function linuxStatus({ fsys = fs, sys = '/sys', dev = '/dev' } = {}) {
   };
 }
 
-// Windows: the driver Windows gave the adapter, from
+// Windows: the driver Windows gave the adapter and whether it started it, from
 // `Get-CimInstance Win32_PnPEntity` (windowsQuery): HidUsb is Windows' own
-// ("USB Input Device"), WinUSB the one Zadig or Dolphin installs. Either works.
+// ("USB Input Device"), WinUSB the one Zadig or Dolphin installs. The game reads
+// either, but only once Windows has started the adapter (Status OK): one with
+// a problem in Device Manager (Error, such as Code 10) has nothing to open.
+// WinUSB is the driver seen to work, so the fix is Zadig's (ZADIG_URL).
 const WINDOWS_QUERY = "Get-CimInstance Win32_PnPEntity -Filter \"DeviceID LIKE 'USB\\\\VID_057E&PID_0337%'\" | " +
   "ForEach-Object { \"$($_.Service)|$($_.Status)\" }";
+
+const ZADIG_URL = 'https://zadig.akeo.ie/';
 
 function windowsStatus(output) {
   const lines = String(output || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   if (!lines.length) return { present: false };
   const [service = '', status = ''] = lines[0].split('|');
   const driver = /^winusb$/i.test(service) ? 'WinUSB' : /^hidusb$/i.test(service) ? 'HID' : null;
-  return { present: true, readable: Boolean(driver), driver, status, fix: driver ? null : 'driver' };
+  const started = /^ok$/i.test(status);
+  const readable = Boolean(driver) && started;
+  return { present: true, readable, driver, status, started, fix: readable ? null : 'driver' };
 }
 
 // macOS: the adapter in `ioreg -p IOUSB -l -w0` output; the game reads it with
@@ -98,4 +105,4 @@ function terminalCommand() {
     'sudo udevadm control --reload-rules && sudo udevadm trigger --action=change --subsystem-match=usb --subsystem-match=hidraw';
 }
 
-module.exports = { VENDOR, PRODUCT, RULES, RULES_FILE, WINDOWS_QUERY, linuxStatus, windowsStatus, macStatus, allowCommand, terminalCommand };
+module.exports = { VENDOR, PRODUCT, RULES, RULES_FILE, WINDOWS_QUERY, ZADIG_URL, linuxStatus, windowsStatus, macStatus, allowCommand, terminalCommand };

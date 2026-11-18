@@ -61,11 +61,23 @@ test('Linux: hidraw or the USB device (Steam\'s rule, through libusb) is enough'
   }
 });
 
-test('Windows: the stock HID driver and WinUSB both work; no driver needs fixing', () => {
+test('Windows: the stock HID driver and WinUSB both work once Windows has started the adapter', () => {
   assert.deepEqual(gcAdapter.windowsStatus(''), { present: false });
-  assert.deepEqual(gcAdapter.windowsStatus('HidUsb|OK\r\n'), { present: true, readable: true, driver: 'HID', status: 'OK', fix: null });
+  assert.deepEqual(gcAdapter.windowsStatus('HidUsb|OK\r\n'), { present: true, readable: true, driver: 'HID', status: 'OK', started: true, fix: null });
   assert.equal(gcAdapter.windowsStatus('WINUSB|OK\r\n').driver, 'WinUSB');
-  assert.deepEqual(gcAdapter.windowsStatus('|Error\r\n'), { present: true, readable: false, driver: null, status: 'Error', fix: 'driver' });
+  assert.deepEqual(gcAdapter.windowsStatus('|Error\r\n'), { present: true, readable: false, driver: null, status: 'Error', started: false, fix: 'driver' });
+});
+
+test('Windows: a driver that did not start the adapter (Device Manager Code 10, say) is not readable', () => {
+  for (const line of ['HidUsb|Error', 'HidUsb|Degraded', 'WinUSB|Unknown', 'HidUsb|']) {
+    const status = gcAdapter.windowsStatus(`${line}\r\n`);
+    assert.equal(status.present, true, line);
+    assert.equal(status.readable, false, line);
+    assert.equal(status.started, false, line);
+    assert.equal(status.fix, 'driver', line);
+  }
+  assert.equal(gcAdapter.windowsStatus('HidUsb|Error\r\n').driver, 'HID');
+  assert.match(gcAdapter.ZADIG_URL, /^https:\/\/zadig\.akeo\.ie\//);
 });
 
 test('Windows: the query looks the adapter up by its USB id', () => {
