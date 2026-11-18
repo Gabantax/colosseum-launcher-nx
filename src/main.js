@@ -378,7 +378,8 @@ async function gcAdapterStatus() {
   const line = !status.present ? 'GameCube adapter: none plugged in (Wii U mode).'
     : status.readable ? `GameCube adapter: plugged in, the game can read it${status.via ? ` (${status.via})` : status.driver ? ` (${status.driver} driver)` : ''}.`
     : status.fix === 'udev' ? `GameCube adapter: plugged in, but this user can't open it (${[status.hidraw?.file, status.usb?.file].filter(Boolean).join(', ')}); it needs a udev rule.`
-    : status.fix === 'driver' ? `GameCube adapter: plugged in, but Windows has no working driver for it (${status.status || 'no status'}).`
+    : status.fix === 'driver' && status.driver ? `GameCube adapter: plugged in, but Windows hasn't started it (${status.status || 'no status'}, ${status.driver} driver); WinUSB from Zadig fixes it.`
+    : status.fix === 'driver' ? `GameCube adapter: plugged in, but Windows has no working driver for it (${status.status || 'no status'}); WinUSB from Zadig fixes it.`
     : 'GameCube adapter: plugged in, but libusb is not installed (brew install libusb).';
   if (line !== gcAdapterLogged && (status.present || gcAdapterLogged)) log(line);
   gcAdapterLogged = line;
@@ -3479,6 +3480,7 @@ function registerHandlers() {
   ipcMain.handle('gc-adapter-status', () => gcAdapterStatus());
   ipcMain.handle('gc-adapter-allow', () => allowGcAdapter());
   ipcMain.handle('gc-adapter-copy-command', () => clipboard.writeText(gcAdapter.terminalCommand()));
+  ipcMain.handle('gc-adapter-open-zadig', () => shell.openExternal(gcAdapter.ZADIG_URL));
   ipcMain.handle('import-dolphin-save', (_event, files) => exclusive('Import Dolphin save', async () => {
     requireFeature('gciSaves', 'Dolphin saves');
     if (files == null) {

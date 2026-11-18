@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('colo', {
   gcAdapterStatus: () => ipcRenderer.invoke('gc-adapter-status'),
   allowGcAdapter: () => ipcRenderer.invoke('gc-adapter-allow'),
   copyGcAdapterCommand: () => ipcRenderer.invoke('gc-adapter-copy-command'),
+  openZadig: () => ipcRenderer.invoke('gc-adapter-open-zadig'),
   importDolphinSave: files => {
     const filePaths = files ? Array.from(files, file => webUtils.getPathForFile(file)) : null;
     if (filePaths?.some(filePath => !filePath)) throw new Error('Drop .gci files from your computer.');
