@@ -1141,7 +1141,7 @@ function renderLanguages(list = [{ code: 'en', name: 'English' }], chosen = 'en'
 // What the Language setting says: a game with packs to download, or one with only fan translations so far (XD).
 function renderLanguageHelp(catalog, game) {
   $('language-help').textContent = catalog
-    ? "The game's text, menus and title cards in French, German, Spanish or Italian, from the European release. A language downloads the first time you play with it."
+    ? "The game's text, menus and title cards in French, German, Spanish, Italian or Japanese, from its European and Japanese releases. A language downloads the first time you play with it."
     : `There are no official translations of ${game} yet. A fan translation for ${game} in its languages folder shows in this list.`;
   $('language-folder-help').textContent = catalog
     ? 'A fan translation is a folder with a pack.json and a text.txt: put it in the languages folder and it shows in the list above.'

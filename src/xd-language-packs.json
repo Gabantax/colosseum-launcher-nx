@@ -1,4 +1,45 @@
 {
-  "release": null,
-  "packs": []
+  "release": "language-packs-1.1.0",
+  "packs": [
+    {
+      "code": "fr",
+      "name": "Français",
+      "version": "1.0.0",
+      "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.1.0/xd-language-fr-1.0.0.zip",
+      "sha256": "8a3e7c2e837032f24438c4fdfb05a45265f46bdce133cc860898f1faf13a7cbc",
+      "size": 1034144
+    },
+    {
+      "code": "de",
+      "name": "Deutsch",
+      "version": "1.0.0",
+      "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.1.0/xd-language-de-1.0.0.zip",
+      "sha256": "6dad8a503f27b48dcd98a0d6956384df777d2d8344f0d861c9a8ba63b4fcc4a6",
+      "size": 1050414
+    },
+    {
+      "code": "es",
+      "name": "Español",
+      "version": "1.0.0",
+      "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.1.0/xd-language-es-1.0.0.zip",
+      "sha256": "2c37dfa100fd80154cf3508c6965001c0ad7aeaf722ee8c231369cc81a8a0fa1",
+      "size": 1044785
+    },
+    {
+      "code": "it",
+      "name": "Italiano",
+      "version": "1.0.0",
+      "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.1.0/xd-language-it-1.0.0.zip",
+      "sha256": "dad843801c928c688774a40ff818eb6033ceec9d293b02b0b27483a6d98d8791",
+      "size": 1020621
+    },
+    {
+      "code": "ja",
+      "name": "日本語",
+      "version": "1.0.0",
+      "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.1.0/xd-language-ja-1.0.0.zip",
+      "sha256": "075f5c6199db97fbf241b0ba67580e1d8060c714ac3d30c066d16a5cc7ed15b8",
+      "size": 947033
+    }
+  ]
 }
