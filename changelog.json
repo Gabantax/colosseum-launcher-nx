@@ -7,7 +7,9 @@
       "Trade arrivals in your game: when a Pokémon from an Online Trade or Shadowtrade reaches your save, your game shows it with a P★DA-style notice at the top of the screen, then plays its trade evolution, then shows a card with the Pokémon, its stats and moves, and Open PC or Close. Open PC takes you straight to your Pokémon storage. It waits for a quiet moment in the field, never during a cutscene, battle or conversation. If your game was closed when the trade happened, it shows the next time you play from the launcher. While your game runs, a Shadowtrade on its way is checked every 30 seconds, so it arrives soon after it's matched.",
       "Trades between your games: with a Colosseum save and an XD save, trade a Pokémon between them from the Pokémon tab, no one else needed. The trade window shows both saves side by side with every stat, and each Pokémon is made the other game's. The game you're playing shows its new Pokémon right away; the other shows it the next time you play it, and trade evolutions happen there."
     ],
-    "game": []
+    "game": [
+      "Fixed the game crashing when an opponent's Pokémon knows Heal Bell or Aromatherapy, such as in Pokémon XD's last battle with Miror B. Colosseum had the same fault, and it's fixed there too."
+    ]
   },
   "releases": [
     {
