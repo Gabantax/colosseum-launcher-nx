@@ -4,8 +4,13 @@
 // (pokemon-colosseum-extras, tools/languages). The launcher keeps them in a folder of its own, so every game
 // version uses them, and names the chosen one to the game in COLO_LANGUAGE.
 //
-// The packs this launcher offers are in language-packs.json. Any other folder in the languages folder with a
-// pack.json is a pack too (a fan translation, say), and is offered as it is.
+// Each game has its own packs, as their text is each game's own: its folder (languages for Colosseum, as before
+// XD, languages-xd for XD) and its catalog (language-packs.json, xd-language-packs.json). A pack's pack.json names
+// the disc it is for in `game`; one without it is Colosseum's, as every pack before XD was. The language chosen is
+// one setting for both games: a language a game has no pack for plays in English there.
+//
+// The packs a catalog offers download by themselves. Any other folder in the languages folder with a pack.json
+// for that game is a pack too (a fan translation, say), and is offered as it is.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -13,10 +18,27 @@ const path = require('path');
 const zlib = require('zlib');
 
 const CATALOG = require('./language-packs.json');
+const GAMES = {
+  colosseum: { folder: 'languages', disc: 'GC6E01', catalog: CATALOG },
+  xd: { folder: 'languages-xd', disc: 'GXXE01', catalog: require('./xd-language-packs.json') }
+};
 const MARKER = '.release';
 const CODE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
 
-function folder(userData) { return path.join(userData, 'languages'); }
+function gameOf(id) { return GAMES[id] || GAMES.colosseum; }
+function folder(userData, game = 'colosseum') { return path.join(userData, gameOf(game).folder); }
+function catalogFor(game = 'colosseum') { return gameOf(game).catalog; }
+// The disc a game's packs are for, or null when the folder is no game's (a test's): then every pack is taken.
+function discOf(dir) {
+  const name = path.basename(dir);
+  const game = Object.values(GAMES).find(entry => entry.folder === name);
+  return game ? game.disc : null;
+}
+// Whether a pack's pack.json is for the game whose folder it is in.
+function forFolder(info, dir) {
+  const disc = discOf(dir);
+  return !disc || (info && typeof info.game === 'string' ? info.game : GAMES.colosseum.disc) === disc;
+}
 
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return null; }
@@ -38,19 +60,25 @@ function localPacks(dir) {
   for (const entry of entries) {
     if (!entry.isDirectory() || !CODE.test(entry.name)) continue;
     const info = readJson(path.join(dir, entry.name, 'pack.json'));
-    if (!info) continue;
+    if (!info || !forFolder(info, dir)) continue;
     packs.push({ code: entry.name, name: typeof info.name === 'string' && info.name.trim() ? info.name.trim() : entry.name,
       version: typeof info.version === 'string' ? info.version : '' });
   }
   return packs.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// What Settings offers: English, the catalog's packs, then the others found in the folder.
-function choices(dir, catalog = CATALOG) {
+// What Settings offers: English, the catalog's packs, then the others found in the folder. A language chosen that this
+// game has no pack for (one of the other game's, say) is listed last as `missing`, by its name where a catalog has it.
+function choices(dir, catalog = CATALOG, chosen = 'en') {
   const list = [{ code: 'en', name: 'English', builtIn: true }];
   for (const pack of catalog.packs) list.push({ code: pack.code, name: pack.name, installed: installed(dir, pack) });
   for (const pack of localPacks(dir))
     if (!catalog.packs.some(known => known.code === pack.code)) list.push({ ...pack, installed: true, local: true });
+  const code = normalizeLanguage(chosen);
+  if (!list.some(item => item.code === code)) {
+    const known = Object.values(GAMES).map(game => catalogPack(code, game.catalog)).find(Boolean);
+    list.push({ code, name: known ? known.name : code, missing: true });
+  }
   return list;
 }
 
@@ -60,8 +88,9 @@ function normalizeLanguage(value) { return typeof value === 'string' && CODE.tes
 function chosenFolder(settings, dir) {
   const code = normalizeLanguage(settings.language);
   if (code === 'en') return null;
-  const target = path.join(dir, code);
-  return fs.existsSync(path.join(target, 'pack.json')) || fs.existsSync(path.join(target, 'text.txt')) ? target : null;
+  const target = path.join(dir, code), info = path.join(target, 'pack.json');
+  if (fs.existsSync(info)) return forFolder(readJson(info), dir) ? target : null;
+  return fs.existsSync(path.join(target, 'text.txt')) ? target : null;
 }
 
 function environment(settings, dir) {
@@ -157,5 +186,5 @@ async function install(dir, pack, options = {}) {
   return target;
 }
 
-module.exports = { CATALOG, folder, catalogPack, installed, localPacks, choices, normalizeLanguage, chosenFolder, environment,
+module.exports = { CATALOG, folder, catalogFor, catalogPack, installed, localPacks, choices, normalizeLanguage, chosenFolder, environment,
   needsInstall, unzip, packFiles, install };

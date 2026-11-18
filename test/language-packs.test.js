@@ -46,8 +46,8 @@ function fakeFetch(data, status = 200) {
   return async () => ({ ok: status === 200, status, arrayBuffer: async () => data.buffer.slice(data.byteOffset, data.byteOffset + data.length) });
 }
 
-test('the catalog lists the four European languages, each a pinned download', () => {
-  assert.deepEqual(languagePacks.CATALOG.packs.map(pack => pack.code), ['fr', 'de', 'es', 'it']);
+test('the catalog lists the four European languages and Japanese, each a pinned download', () => {
+  assert.deepEqual(languagePacks.CATALOG.packs.map(pack => pack.code), ['fr', 'de', 'es', 'it', 'ja']);
   for (const pack of languagePacks.CATALOG.packs) {
     assert.match(pack.url, /^https:\/\/github\.com\/chasem-dev\/pokemon-colosseum-extras\/releases\/download\//);
     assert.match(pack.sha256, /^[0-9a-f]{64}$/);
@@ -126,4 +126,51 @@ test('a folder with a pack.json is a language too: a fan translation', () => {
     // a chosen pack that is gone plays in English
     assert.deepEqual(languagePacks.environment({ language: 'sv' }, dir), {});
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('each game has its own languages folder and catalog', () => {
+  const userData = tempDir();
+  try {
+    assert.equal(languagePacks.folder(userData), path.join(userData, 'languages'));
+    assert.equal(languagePacks.folder(userData, 'colosseum'), path.join(userData, 'languages'));
+    assert.equal(languagePacks.folder(userData, 'xd'), path.join(userData, 'languages-xd'));
+    assert.equal(languagePacks.catalogFor('colosseum'), languagePacks.CATALOG);
+    assert.deepEqual(languagePacks.catalogFor('colosseum').packs.map(pack => pack.code), ['fr', 'de', 'es', 'it', 'ja']);
+    assert.deepEqual(languagePacks.catalogFor('xd').packs.map(pack => pack.code), ['fr', 'de', 'es', 'it', 'ja']);
+    for (const game of ['colosseum', 'xd'])
+      for (const pack of languagePacks.catalogFor(game).packs) {
+        assert.match(pack.sha256, /^[0-9a-f]{64}$/);
+        assert.ok(pack.size > 0 && pack.url.startsWith('https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/'));
+        assert.equal(pack.url.includes(game === 'xd' ? '/xd-language-' : '/colosseum-language-'), true);
+      }
+    // French chosen for Colosseum is XD's French too: XD downloads its own, into its own folder
+    const xd = languagePacks.folder(userData, 'xd');
+    assert.equal(languagePacks.needsInstall({ language: 'fr' }, xd, languagePacks.catalogFor('xd')), true);
+    assert.deepEqual(languagePacks.choices(xd, languagePacks.catalogFor('xd'), 'fr').map(item => item.code), ['en', 'fr', 'de', 'es', 'it', 'ja']);
+    // a language no catalog has and the folder lacks plays in English, listed last as missing
+    assert.equal(languagePacks.needsInstall({ language: 'pl' }, xd, languagePacks.catalogFor('xd')), false);
+    assert.deepEqual(languagePacks.environment({ language: 'pl' }, xd), {});
+    assert.deepEqual(languagePacks.choices(xd, languagePacks.catalogFor('xd'), 'pl').at(-1), { code: 'pl', name: 'pl', missing: true });
+  } finally { fs.rmSync(userData, { recursive: true, force: true }); }
+});
+
+test("a pack is for the game its pack.json names, Colosseum's when it names none", () => {
+  const userData = tempDir();
+  const put = (dir, code, info) => {
+    fs.mkdirSync(path.join(dir, code), { recursive: true });
+    fs.writeFileSync(path.join(dir, code, 'pack.json'), JSON.stringify({ code, name: code.toUpperCase(), version: '1', ...info }));
+    fs.writeFileSync(path.join(dir, code, 'text.txt'), '');
+  };
+  try {
+    const colo = languagePacks.folder(userData, 'colosseum'), xd = languagePacks.folder(userData, 'xd');
+    put(colo, 'pl', {}); put(colo, 'nl', { game: 'GC6E01' }); put(colo, 'sv', { game: 'GXXE01' });
+    put(xd, 'pl', {}); put(xd, 'nl', { game: 'GC6E01' }); put(xd, 'sv', { game: 'GXXE01' });
+    assert.deepEqual(languagePacks.localPacks(colo).map(pack => pack.code), ['nl', 'pl']);
+    assert.deepEqual(languagePacks.localPacks(xd).map(pack => pack.code), ['sv']);
+    assert.deepEqual(languagePacks.environment({ language: 'sv' }, xd), { COLO_LANGUAGE: path.join(xd, 'sv') });
+    // a Colosseum pack put in XD's folder (its text is another game's) plays in English, and is offered as missing
+    assert.deepEqual(languagePacks.environment({ language: 'pl' }, xd), {});
+    assert.equal(languagePacks.choices(xd, languagePacks.catalogFor('xd'), 'pl').at(-1).missing, true);
+    assert.deepEqual(languagePacks.environment({ language: 'sv' }, colo), {});
+  } finally { fs.rmSync(userData, { recursive: true, force: true }); }
 });

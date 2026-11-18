@@ -32,6 +32,14 @@
       "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.0.0/colosseum-language-it-1.0.0.zip",
       "sha256": "3fc31852cfd679f15ce66c081073978642606bd9b8518e61e483df9c2e01b298",
       "size": 3732202
+    },
+    {
+      "code": "ja",
+      "name": "日本語",
+      "version": "1.0.0",
+      "url": "https://github.com/chasem-dev/pokemon-colosseum-extras/releases/download/language-packs-1.1.0/colosseum-language-ja-1.0.0.zip",
+      "sha256": "ae2cf5db1692a2598b752aaa5478b84034867f7e2983fbb9b53445888f7740e1",
+      "size": 1640793
     }
   ]
 }
