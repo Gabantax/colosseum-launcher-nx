@@ -48,14 +48,17 @@ function summary(pokemon) {
 }
 
 // Reads a received Pokémon's bytes as the game would (save-pokemon.js), and checks it is one this game can take:
-// the right size, a species the game has, not an egg, a Shadow of the story. One coming back (a cancelled trade) left
-// this same save, so its species isn't checked: a randomizer's Gen 4 or pack Shadow must still come home.
-function checkReceived(game, received, { returned = false } = {}) {
+// the right size, a species the game has, not an egg, a Shadow of the story. A Generation 4 one only with `later` (the
+// game's Generation 4 Pokémon setting). One coming back (a cancelled trade) left this same save, so its species isn't
+// checked: a randomizer's Gen 4 or pack Shadow must still come home.
+function checkReceived(game, received, { returned = false, later = false } = {}) {
   const data = unb64(received?.pokemon?.data), record = received?.pokemon?.record ? unb64(received.pokemon.record) : null;
   const size = game === 'xd' ? savePokemon.XD.size : savePokemon.COLOSSEUM.size;
   if (data.length !== size || (game === 'xd' && (!record || record.length !== savePokemon.XD.recordSize))) throw new Error('The Pokémon received is damaged.');
   const species = data.readUInt16BE(0);
-  if (!returned && !savePokemon.shadowtradeSpecies(species)) throw new Error('The Pokémon received isn\'t one this game has.');
+  const kind = savePokemon.shadowtradeKind(game, species);
+  if (!returned && !kind) throw new Error('The Pokémon received isn\'t one this game has.');
+  if (!returned && kind === 'later' && !later) throw new Error('The Pokémon received is a Generation 4 Pokémon: turn Generation 4 Pokémon back on to take it.');
   if (game === 'xd') {
     const id = data.readUInt16BE(savePokemon.XD.at.shadow);
     if ((data[savePokemon.XD.at.flags] & 0x80) || id < 1 || id > 0x53 || id === 73 || (record[0] >> 5) !== 3) throw new Error('The Pokémon received isn\'t a Shadow Pokémon.');
@@ -248,6 +251,8 @@ function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms =
   }
   return {
     game, mode: 'live', pool: poolFor(game, randomized),
+    // whether the running game takes a Generation 4 Shadow in (and a cancelled trade's own pack one back): host/shadowtrade.c species_ok
+    laterSpecies: Boolean(live.link?.has?.('shadowtrade-species.1')),
     read() {
       const now = current();
       return now?.ctx ? { model: now.model, ctx: now.ctx, head: now.head } : null;
@@ -289,8 +294,9 @@ function liveAccess({ game, live, cardTrainerId, randomized = false, wait = ms =
 
 class Shadowtrade {
   // arrivals: arrivals.js, which has the running game show each Pokémon received (null: none shown)
-  constructor({ folder, url = serverUrl(), fetch = globalThis.fetch, log = () => {}, onChange = () => {}, arrivals = null }) {
-    this.folder = folder; this.url = url; this.fetch = fetch; this.log = log; this.onChange = onChange; this.arrivals = arrivals;
+  // takesLater(game): whether that game has Generation 4 Pokémon turned on, so the server may send it a Generation 4 Shadow
+  constructor({ folder, url = serverUrl(), fetch = globalThis.fetch, log = () => {}, onChange = () => {}, arrivals = null, takesLater = () => false }) {
+    this.folder = folder; this.url = url; this.fetch = fetch; this.log = log; this.onChange = onChange; this.arrivals = arrivals; this.takesLater = takesLater;
     this.file = path.join(folder, 'state.json');
     this.busy = null;
     this.state = this.load();
@@ -397,6 +403,7 @@ class Shadowtrade {
     let trade = null, problem;
     try {
       const reply = await this.post('offer', { pool: entry.pool, tradeId: entry.tradeId, trainerName: entry.trainerName, accepts: entry.accepts,
+        later: Boolean(this.takesLater(entry.game)),
         pokemon: { data: entry.sent.data, ...(entry.sent.record ? { record: entry.sent.record } : {}) } });
       if (reply?.trade?.tradeId === entry.tradeId && ['waiting', 'received'].includes(reply.trade.status)) trade = reply.trade;
       else problem = 'the server didn\'t confirm it';
@@ -455,14 +462,18 @@ class Shadowtrade {
   async deliver(entry, access) {
     if (!access) return;
     let checked;
-    try { checked = checkReceived(entry.game, { pokemon: { data: entry.received.data, record: entry.received.record } }, { returned: Boolean(entry.received.returned) }); } catch (error) {
+    try {
+      checked = checkReceived(entry.game, { pokemon: { data: entry.received.data, record: entry.received.record } },
+        { returned: Boolean(entry.received.returned), later: Boolean(this.takesLater(entry.game)) });
+    } catch (error) {
       entry.message = error.message;
       this.save();
       return;
     }
-    if (entry.received.returned && access.mode === 'live' && !savePokemon.shadowtradeSpecies(checked.data.readUInt16BE(0))) {
-      // the running game takes back only the species it trades (host/shadowtrade.c): the card takes any, once it's closed
-      entry.message = `Close the game and ${entry.received.summary?.nickname || 'your Pokémon'} comes back into your save.`;
+    if (access.mode === 'live' && !access.laterSpecies && savePokemon.shadowtradeKind(entry.game, checked.data.readUInt16BE(0)) !== 'base') {
+      // a game from before Shadowtrade carried Generation 4 takes only the third generation's (host/shadowtrade.c): the
+      // card takes any, once it's closed
+      entry.message = `Close the game and ${entry.received.summary?.nickname || 'the Pokémon'} ${entry.received.returned ? 'comes back' : 'arrives'} in your save.`;
       this.save();
       return;
     }
@@ -531,14 +542,15 @@ class Shadowtrade {
         // never confirmed by the server (the launcher stopped, or it couldn't be sent): called off, never sent again
         if (entry.stage === 'taken') await this.recall(entry);
       }
-      const accepts = {};
+      const accepts = {}, later = {};
       for (const pool of new Set(this.state.journal.filter(entry => entry.stage === 'waiting').map(entry => entry.pool))) {
         const read = access(gameOfPool(pool))?.read();
         if (read) accepts[pool] = savePokemon.shadowAccepts(read.model, read.ctx);
+        later[pool] = Boolean(this.takesLater(gameOfPool(pool)));
       }
       if (this.state.journal.some(entry => entry.stage === 'waiting')) {
         try {
-          const reply = await this.post('status', { accepts });
+          const reply = await this.post('status', { accepts, later });
           for (const trade of reply.trades || []) {
             const entry = this.state.journal.find(each => each.tradeId === trade.tradeId);
             if (entry) this.apply(entry, trade);

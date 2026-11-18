@@ -91,8 +91,11 @@ test('only a Shadow Pokémon can go, never an egg, and never the last one that c
   assert.equal(sp.offerProblem(save, { ...save.party[0], area: 'box' }), null, 'from a box it can go');
   assert.match(sp.offerProblem(save, p({ shadowId: 0x30 })), /story/);
   assert.match(sp.offerProblem(save, p({ egg: true })), /Eggs/);
-  assert.match(sp.offerProblem(save, p({ species: 485 })), /Gen 4/, 'a randomizer\'s Gen 4 Shadow stays');
+  assert.equal(sp.offerProblem(save, p({ species: 485 })), null, 'a randomizer\'s Gen 4 Shadow can go');
   assert.match(sp.offerProblem(save, p({ species: 260 })), /pack/);
+  assert.match(sp.offerProblem(save, p({ species: 1100 })), /pack/);
+  assert.deepEqual([sp.shadowtradeKind('colosseum', 485), sp.shadowtradeKind('xd', 487), sp.shadowtradeKind('xd', 413), sp.shadowtradeKind('colosseum', 413),
+    sp.shadowtradeKind('colosseum', 520), sp.shadowtradeKind('colosseum', 296)], ['later', 'later', 'base', 'later', null, 'base']);
 });
 
 test('Colosseum: taking from the party closes the gap in every copy of the save', t => {

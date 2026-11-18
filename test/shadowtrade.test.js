@@ -56,16 +56,20 @@ function fakeServer() {
         let t = trades.get(body.tradeId);
         if (!t) {
           const data = Buffer.from(body.pokemon.data, 'base64');
+          const species = data.readUInt16BE(0);
           t = { id: body.tradeId, owner: body.key, trainer: body.trainerName, pokemon: body.pokemon, shadowId: data.readUInt16BE(0xd8), accepts: body.accepts,
-            inPool: true, status: 'waiting', order: order++, summary: { species: data.readUInt16BE(0), shadowId: data.readUInt16BE(0xd8), level: 30, nickname: 'X' } };
+            later: species >= 413 && species <= 519, takesLater: body.later === true, inPool: true, status: 'waiting', order: order++, summary: { species: data.readUInt16BE(0), shadowId: data.readUInt16BE(0xd8), level: 30, nickname: 'X' } };
           trades.set(t.id, t);
-          const got = [...trades.values()].filter(o => o.inPool && o.owner !== t.owner && t.accepts.includes(o.shadowId)).sort((a, b) => a.order - b.order)[0];
+          const got = [...trades.values()].filter(o => o.inPool && o.owner !== t.owner && t.accepts.includes(o.shadowId) && (!o.later || t.takesLater)).sort((a, b) => a.order - b.order)[0];
           if (got) { got.inPool = false; t.got = got; t.status = 'received'; }
-          const taker = [...trades.values()].filter(o => o.status === 'waiting' && o.owner !== t.owner && o.accepts.includes(t.shadowId)).sort((a, b) => a.order - b.order)[0];
+          const taker = [...trades.values()].filter(o => o.status === 'waiting' && o.owner !== t.owner && o.accepts.includes(t.shadowId) && (!t.later || o.takesLater)).sort((a, b) => a.order - b.order)[0];
           if (taker) { t.inPool = false; taker.got = t; taker.status = 'received'; }
         }
         if (failNext === 'lost') { failNext = null; throw new Error('the answer was lost'); }
         return reply({ trade: view(t) });
+      }
+      if (action === 'status') {
+        for (const t of trades.values()) if (t.owner === body.key && t.status === 'waiting' && typeof body.later?.colosseum === 'boolean') t.takesLater = body.later.colosseum;
       }
       if (action === 'status') return reply({ trades: [...trades.values()].filter(t => t.owner === body.key && ['waiting', 'received', 'cancelled'].includes(t.status)).map(view) });
       if (action === 'ack') { const t = trades.get(body.tradeId); if (t && t.owner === body.key) t.status = 'done'; return reply({ ok: true }); }
@@ -81,12 +85,13 @@ function fakeServer() {
   return server;
 }
 
-function player(t, server, { trainerId, party }) {
+function player(t, server, { trainerId, party, later = false }) {
   const dir = folder(t);
   card(dir, trainerId, party);
-  const trade = new Shadowtrade({ folder: path.join(dir, 'launcher'), url: 'https://server', fetch: server.fetch });
+  const settings = { later };
+  const trade = new Shadowtrade({ folder: path.join(dir, 'launcher'), url: 'https://server', fetch: server.fetch, takesLater: () => settings.later });
   const access = cardAccess({ game: 'colosseum', saveDir: dir });
-  return { dir, trade, access, accessFor: () => access, party: () => sp.readCard(dir, 'colosseum').party.filter(Boolean).map(p => p.nickname) };
+  return { dir, trade, access, settings, accessFor: () => access, party: () => sp.readCard(dir, 'colosseum').party.filter(Boolean).map(p => p.nickname) };
 }
 
 const A_ID = 0x1111, B_ID = 0x2222;
@@ -198,17 +203,64 @@ test('cancel brings a waiting Pokémon back; one already gone can\'t be', async 
   assert.deepEqual(a.party(), ['UMBREON', 'MAKUHITA']);
 });
 
-test('a randomizer\'s Gen 4 Shadow Pokémon can\'t go, and one an earlier launcher took comes back when cancelled', async t => {
+const SNOVER = pokemon({ species: 485, rnd: 5, trainer: A_ID, nickname: 'SNOVER', shadowId: 1, heart: 1500 });
+
+test('a Gen 4 Shadow Pokémon goes into the pool, but only to a player whose game has Generation 4 Pokémon', async t => {
   const server = fakeServer();
-  const SNOVER = pokemon({ species: 485, rnd: 5, trainer: A_ID, nickname: 'SNOVER', shadowId: 1, heart: 1500 });
   const a = player(t, server, { trainerId: A_ID, party: [UMBREON, SNOVER] });
-  await assert.rejects(a.trade.offer(a.access, { area: 'party', box: 0, slot: 1 }), /Gen 4/);
-  assert.deepEqual(a.party(), ['UMBREON', 'SNOVER']);
+  const b = player(t, server, { trainerId: B_ID, party: [ESPEON, BAYLEEF] });
+  const C_ID = 0x3333, PLUSLE = pokemon({ species: 311, rnd: 6, trainer: C_ID, nickname: 'PLUSLE' });
+  const QUILAVA = pokemon({ species: 156, rnd: 7, trainer: C_ID, nickname: 'QUILAVA', shadowId: 3, heart: 1800 });
+  const c = player(t, server, { trainerId: C_ID, party: [PLUSLE, QUILAVA], later: true });
+  assert.equal((await a.trade.offer(a.access, { area: 'party', box: 0, slot: 1 })).trades[0].stage, 'waiting');
+  assert.deepEqual(a.party(), ['UMBREON']);
+  // B's game hasn't Generation 4 turned on: passed over, and waits
+  assert.equal((await b.trade.offer(b.access, { area: 'party', box: 0, slot: 1 })).trades[0].stage, 'waiting');
+  assert.deepEqual(b.party(), ['ESPEON']);
+  // C's has: Snover goes to C
+  const view = await c.trade.offer(c.access, { area: 'party', box: 0, slot: 1 });
+  assert.equal(view.history[0].received.species, 485);
+  assert.deepEqual(c.party(), ['PLUSLE', 'SNOVER']);
+  // what C sent goes on to B, who waited: a third-generation one any game takes
+  await b.trade.sync(b.accessFor);
+  assert.deepEqual(b.party(), ['ESPEON', 'QUILAVA']);
+  await a.trade.sync(a.accessFor);
+  assert.deepEqual(a.party(), ['UMBREON', 'BAYLEEF']);
+});
+
+test('a received Gen 4 Shadow Pokémon waits while Generation 4 is turned off, and a game from before waits to be closed', async t => {
+  const server = fakeServer();
+  const a = player(t, server, { trainerId: A_ID, party: [UMBREON, SNOVER] });
+  const b = player(t, server, { trainerId: B_ID, party: [ESPEON, BAYLEEF], later: true });
+  await a.trade.offer(a.access, { area: 'party', box: 0, slot: 1 });
+  // B is matched, then turns Generation 4 off before Snover is in the save
+  const realDeliver = b.trade.deliver.bind(b.trade);
+  b.trade.deliver = async () => {};
+  await b.trade.offer(b.access, { area: 'party', box: 0, slot: 1 });
+  b.trade.deliver = realDeliver;
+  b.settings.later = false;
+  await b.trade.sync(b.accessFor);
+  assert.match(b.trade.view().trades[0].message, /turn Generation 4 Pokémon back on/);
+  b.settings.later = true;
+  // with the game running, one from before Shadowtrade carried Generation 4 can't take it: it waits for the card
+  await b.trade.sync(() => ({ mode: 'live', game: 'colosseum', laterSpecies: false }));
+  assert.match(b.trade.view().trades[0].message, /Close the game and .+ arrives in your save/);
+  await b.trade.sync(b.accessFor);
+  assert.equal(b.trade.view().trades.length, 0);
+  assert.deepEqual(b.party(), ['ESPEON', 'SNOVER']);
+});
+
+test('a pack\'s Shadow Pokémon can\'t go, and a Gen 4 one an earlier launcher took comes back when cancelled', async t => {
+  const server = fakeServer();
+  const PACKED = pokemon({ species: 260, rnd: 8, trainer: A_ID, nickname: 'PACKED', shadowId: 2, heart: 1500 });
+  const a = player(t, server, { trainerId: A_ID, party: [UMBREON, SNOVER, PACKED] });
+  await assert.rejects(a.trade.offer(a.access, { area: 'party', box: 0, slot: 2 }), /pack/);
+  assert.deepEqual(a.party(), ['UMBREON', 'SNOVER', 'PACKED']);
   assert.equal(a.trade.view().trades.length, 0);
   // as an earlier launcher left it: out of the save, refused by the server (it never saw it)
   const identity = { species: 485, rnd: 5, trainer: A_ID }, place = { area: 'party', box: 0, slot: 1 };
   sp.editCard(a.dir, 'colosseum', ctx => sp.takeFrom(ctx, identity, place));
-  assert.deepEqual(a.party(), ['UMBREON']);
+  assert.deepEqual(a.party(), ['UMBREON', 'PACKED']);
   a.trade.state.journal.push({ tradeId: 'f'.repeat(32), game: 'colosseum', pool: 'colosseum', stage: 'taken', createdAt: Date.now(), trainerName: 'WES', accepts: [],
     sent: { data: SNOVER.toString('base64'), record: null, identity, place, summary: { species: 485, shadowId: 1, level: 30, nickname: 'SNOVER', shiny: false }, traded: false } });
   // the running game takes back only Shadowtrade's species: it waits for the game to close
@@ -218,7 +270,7 @@ test('a randomizer\'s Gen 4 Shadow Pokémon can\'t go, and one an earlier launch
   const view = await a.trade.sync(a.accessFor);
   assert.equal(view.trades.length, 0);
   assert.equal(view.history[0].returned, true);
-  assert.deepEqual(a.party(), ['UMBREON', 'SNOVER']);
+  assert.deepEqual(a.party(), ['UMBREON', 'PACKED', 'SNOVER']);
 });
 
 test('a received Pokémon waits while its save can\'t be reached, and lands when it can', async t => {
@@ -242,6 +294,9 @@ test('received Pokémon are checked before they go into a save', () => {
   const odd = Buffer.from(BAYLEEF); odd.writeUInt16BE(260, 0);
   assert.throws(() => checkReceived('colosseum', { pokemon: { data: odd.toString('base64') } }), /isn't one this game has/);
   assert.equal(checkReceived('colosseum', { pokemon: { data: odd.toString('base64') } }, { returned: true }).data.readUInt16BE(0), 260, 'its own comes back');
+  const snover = { pokemon: { data: SNOVER.toString('base64') } };
+  assert.throws(() => checkReceived('colosseum', snover), /Generation 4/);
+  assert.equal(checkReceived('colosseum', snover, { later: true }).data.readUInt16BE(0), 485);
 });
 
 // A game on the other end of a real launcher link (src/game-link.js): it sends its live picture and does each
