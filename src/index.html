@@ -305,6 +305,9 @@
           <section id="pane-gameplay" class="settings-pane" role="tabpanel" aria-labelledby="tab-gameplay">
             <h2 class="group-title">Game</h2>
             <div class="settings-group">
+              <label data-feature="languagePacks" class="field"><span>Language<small id="language-help">The game's text, menus and title cards in French, German, Spanish, Italian or Japanese, from its European and Japanese releases. A language downloads the first time you play with it.</small></span><select id="language"></select></label>
+              <p id="language-note" class="row-note" data-feature="languagePacks" hidden></p>
+              <div data-feature="languagePacks" class="field"><span>Other languages<small id="language-folder-help">A fan translation is a folder with a pack.json and a text.txt: put it in the languages folder and it shows in the list above.</small></span><button class="subtle" id="open-languages" type="button">Open languages folder</button></div>
               <label class="switch"><span><strong>Skip movies</strong><small>Straight past the logos and the game's movies, and XD's opening ship scene.</small></span><input id="skipMovies" type="checkbox"><i></i></label>
               <label data-feature="battleSpeed" class="switch"><span><strong>Skip battle animations</strong><small>Moves, send-outs and HP bars finish at once, without being shown. Text stays up long enough to read.</small></span><input id="skipBattleAnimations" type="checkbox"><i></i></label>
               <label data-feature="battleSpeed" class="field range-field"><span><strong>Battle animation speed</strong><output id="battleSpeed-value" for="battleSpeed">1.5×</output><small>How fast moves, send-outs and HP bars play; 1× is the original speed. Menus stay at normal speed, and text stays up long enough to read.</small></span><input id="battleSpeed" type="range" min="1" max="5" step="0.1" aria-label="Battle animation speed"></label>
@@ -317,9 +320,6 @@
               <label data-feature="starters" class="switch"><span><strong id="choose-starters-title">Choose starters</strong><small id="choose-starters-note">After you enter your name for a New Game, the game asks whether to begin with Espeon and Umbreon. Say No to pick any two Pokémon instead, at the same levels. A randomized game that randomizes the starters doesn't ask.</small></span><input id="chooseStarters" type="checkbox"><i></i></label>
               <label data-feature="tmNames" class="switch"><span><strong>TMs by move name</strong><small>The bag and shops list a TM by the move it teaches, such as Thunderbolt, instead of TM24. Its number shows above the description box.</small></span><input id="tmNames" type="checkbox"><i></i></label>
               <label data-feature="partnerPass" class="switch"><span><strong>Walk through Rui</strong><small>Wes walks straight through Rui instead of pushing her back a step at a time, so turning round on a narrow walkway is easy. She still follows him as before.</small></span><input id="partnerPass" type="checkbox"><i></i></label>
-              <label data-feature="languagePacks" class="field"><span>Language<small id="language-help">The game's text, menus and title cards in French, German, Spanish, Italian or Japanese, from its European and Japanese releases. A language downloads the first time you play with it.</small></span><select id="language"></select></label>
-              <p id="language-note" class="row-note" data-feature="languagePacks" hidden></p>
-              <div data-feature="languagePacks" class="field"><span>Other languages<small id="language-folder-help">A fan translation is a folder with a pack.json and a text.txt: put it in the languages folder and it shows in the list above.</small></span><button class="subtle" id="open-languages" type="button">Open languages folder</button></div>
             </div>
             <h2 class="group-title">Fast-forward</h2>
             <div class="settings-group">
