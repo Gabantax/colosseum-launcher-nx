@@ -88,6 +88,7 @@ contextBridge.exposeInMainWorld('colo', {
   pokedexModel: (key, form) => ipcRenderer.invoke('pokedex-model', key, form),
   pokedexClip: (key, form, index) => ipcRenderer.invoke('pokedex-clip', key, form, index),
   pokedexCry: key => ipcRenderer.invoke('pokedex-cry', key),
+  pokedexMakePack: national => ipcRenderer.invoke('pokedex-make-pack', national),
   heroModel: (id, kind) => ipcRenderer.invoke('hero-model', id, kind),
   heroClip: (id, motion, wesMoves) => ipcRenderer.invoke('hero-clip', id, motion, wesMoves),
   heroClose: () => ipcRenderer.invoke('hero-close'),

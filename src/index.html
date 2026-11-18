@@ -198,7 +198,8 @@
       </section>
       <section id="page-pokedex" class="page sheet pokedex-page" aria-labelledby="pokedex-title" hidden>
         <div class="modal-head"><div><h1 id="pokedex-title">Pokédex</h1><p id="pokedex-summary">Every Pokémon on your disc, in 3D.</p>
-          <div id="pokedex-pack-problems" class="pokedex-pack-problems" role="status" hidden><strong>Some of your Pokémon packs couldn't be loaded:</strong><ul id="pokedex-pack-problem-list"></ul></div></div>
+          <div id="pokedex-pack-problems" class="pokedex-pack-problems" role="status" hidden><strong>Some of your Pokémon packs couldn't be loaded:</strong><ul id="pokedex-pack-problem-list"></ul></div>
+          <p id="pokedex-pack-made" class="pokedex-pack-made" role="status" hidden></p></div>
           <div class="pokedex-pack-actions"><button class="subtle" id="pokedex-open-packs" title="Add your own Pokémon: each pack is a folder here">Open Pokémon packs folder</button><button class="subtle" id="pokedex-reload" title="Read the packs folder again">Reload</button></div></div>
         <div class="pokedex-body">
           <div class="pokedex-browse">
@@ -215,6 +216,7 @@
                 <label id="pokedex-form-field" hidden><span>Look</span><select id="pokedex-form"></select></label>
                 <label id="pokedex-motion-field" hidden><span>Motion</span><select id="pokedex-motion"></select></label>
                 <button id="pokedex-cry" class="subtle pokedex-cry" type="button" title="Hear its cry, as the game plays it" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z"/><path d="M13.5 7a4 4 0 0 1 0 6M15.5 5a7 7 0 0 1 0 10"/></svg><span>Cry</span></button>
+                <button id="pokedex-make-pack" class="subtle pokedex-cry" type="button" title="Copy this Pokémon into your packs folder as a pack of your own, to change from there" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V7.5A1.5 1.5 0 0 0 16 6h-6L8.5 4H4A1.5 1.5 0 0 0 2.5 5.5z"/><path d="M10 8.5v5M7.5 11h5"/></svg><span>Make a pack</span></button>
               </div>
             </div>
             <div id="pokedex-info" class="pokedex-info" hidden>

@@ -20,7 +20,7 @@ const SHORTEST_MOTION = 20;
 // What each kind of battle motion (hsd-model.js readHeader) is called here.
 const MOTION_LABEL = { idle: 'Idle', physical: 'Physical move', special: 'Special move', hit: 'Hit', faint: 'Faint', extra: 'Extra' };
 
-let species = null, packProblems = [], loading = null, visible = false, filter = 'all', selected = null, form = null, viewer = null;
+let species = null, packProblems = [], canMakePacks = false, loading = null, visible = false, filter = 'all', selected = null, form = null, viewer = null;
 // The newest choice: a slower answer to an older one is dropped.
 let request = 0;
 // Each entry's button, by its key: a disc Pokémon's National Pokédex number, or a pack Pokémon's "pack:<pack>/<folder>".
@@ -304,6 +304,8 @@ function select(entry) {
   for (const [key, button] of entries) button.classList.toggle('selected', key === entry.key);
   renderInfo(entry);
   renderForms(entry);
+  // Make a pack: for the game's own Pokémon (a pack's is one already)
+  $('pokedex-make-pack').hidden = !canMakePacks || !/^\d+$/.test(entry.key);
   if (form) showModel(entry);
   else setStatus(`${entry.name} has no model on this disc.`);
 }
@@ -323,7 +325,8 @@ function combine(disc, packs) {
 
 // Which game's list is wanted: one read for a game since left is dropped.
 let listFor = 0;
-async function load() {
+// `choose`: the key of the entry to show once read (a pack just made), else the first.
+async function load(choose = null) {
   const mine = listFor;
   setStatus('Reading your disc…', { busy: true });
   try {
@@ -331,8 +334,11 @@ async function load() {
     if (mine !== listFor) return;
     species = combine(list.species, list.packs);
     packProblems = list.problems;
+    canMakePacks = Boolean(list.canMakePacks);
     renderList();
-    if (visible) select(species[0]);
+    const chosen = choose && species.find(entry => entry.key === choose);
+    if (chosen) entries.get(chosen.key)?.scrollIntoView({ block: 'nearest' });
+    if (visible) select(chosen || species[0]);
   } catch (error) {
     if (mine === listFor) setStatus(message(error), { retry: true });
   } finally { if (mine === listFor) loading = null; }
@@ -355,8 +361,28 @@ $('pokedex-motion').addEventListener('change', async event => {
   }
 });
 $('pokedex-open-packs').addEventListener('click', () => window.colo.openPokemonPacks().catch(error => setStatus(message(error))));
+// The chosen Pokémon as a pack of the player's own: made in the packs folder (which opens), then shown in the list.
+$('pokedex-make-pack').addEventListener('click', async () => {
+  if (loading || !selected) return;
+  const button = $('pokedex-make-pack');
+  button.disabled = true;
+  try {
+    const made = await window.colo.pokedexMakePack(selected.national);
+    stopViewer();
+    species = null;
+    selected = null;
+    loading = load(made.key);
+    await loading;
+    $('pokedex-pack-made').textContent = `${made.name} is now a pack of your own, in ${made.folder} in your packs folder. Change its pokemon.json there, then press Reload.`;
+    $('pokedex-pack-made').hidden = false;
+  } catch (error) {
+    $('pokedex-pack-made').textContent = message(error);
+    $('pokedex-pack-made').hidden = false;
+  } finally { button.disabled = false; }
+});
 $('pokedex-reload').addEventListener('click', () => {
   if (loading) return;
+  $('pokedex-pack-made').hidden = true;
   stopViewer();
   species = null;
   selected = null;
@@ -384,6 +410,7 @@ window.coloPokedex = {
   // Another game was chosen: its Pokédex is its own disc's, read again when the page shows.
   reset() {
     request++;
+    $('pokedex-pack-made').hidden = true;
     cry.stop();
     stopViewer();
     species = null;

@@ -44,9 +44,10 @@ const MOVES = { offset: 0x11c7c4, count: 358, size: 0x38, name: 0x20 };
 const STATS = ['hp', 'attack', 'defense', 'spAttack', 'spDefense', 'speed'];
 const GROWTH = ['mediumFast', 'erratic', 'fluctuating', 'mediumSlow', 'fast', 'slow'];
 // How a Pokémon evolves: the game's own ways (2 and 3 are by friendship in the day or at night, which the game never
-// makes, as it keeps no time of day), then the port's (host/evolutions.c): knowing a move (its number), another Pokémon
+// makes, as it keeps no time of day; 8 to 15 Tyrogue's, Wurmple's, Nincada's and Feebas's), then the port's (host/evolutions.c): knowing a move (its number), another Pokémon
 // in the party (its species), and a level for one gender.
 const EVOLVE = { friendship: 1, friendshipDay: 2, friendshipNight: 3, level: 4, trade: 5, tradeItem: 6, item: 7,
+  attackAbove: 8, attackEqual: 9, defenseAbove: 10, personalityFirst: 11, personalitySecond: 12, alongside: 14, beauty: 15,
   knowsMove: 16, withPokemon: 17, levelMale: 18, levelFemale: 19 };
 // Items that make a Pokémon evolve, by the game's numbers for them.
 const EVOLUTION_ITEMS = { 'sun stone': 93, 'moon stone': 94, 'fire stone': 95, 'thunder stone': 96, 'thunderstone': 96, 'water stone': 97,
@@ -106,15 +107,18 @@ function readGameTables(rom) {
       const name = national && messages.get(data.readUInt32BE(at + 0x18));
       if (name) species.push({ id, national, name: pokedex.displayName(name), row: Buffer.from(data.subarray(at, at + pokedex.SPECIES.size)) });
     }
-    const moves = new Map(), moveRows = [];
+    // and each move's and ability's name by its number, as a pack names them (exportSpec)
+    const moves = new Map(), moveRows = [], moveNames = new Map();
     for (let id = 0; id < MOVES.count; id++) moveRows.push(Buffer.from(data.subarray(MOVES.offset + id * MOVES.size, MOVES.offset + (id + 1) * MOVES.size)));
     for (let id = 1; id < MOVES.count; id++) {
       const name = messages.get(data.readUInt32BE(MOVES.offset + id * MOVES.size + MOVES.name));
+      if (name) moveNames.set(id, pokedex.displayName(name));
       if (name && !moves.has(key(name))) moves.set(key(name), id);
     }
-    const abilities = new Map();
+    const abilities = new Map(), abilityNames = new Map();
     for (let id = 1; id <= ABILITY_COUNT; id++) {
       const name = messages.get(pokedex.ABILITY_MESSAGES + id);
+      if (name) abilityNames.set(id, pokedex.displayName(name));
       if (name && !abilities.has(key(name))) abilities.set(key(name), id);
     }
     // the same abilities by their later names, where Ruby's run words together (Lightning Rod, Compound Eyes)
@@ -138,7 +142,7 @@ function readGameTables(rom) {
       if (!entry) throw new Error(`The game disc has no sprite to copy in ${file}.`);
       return Buffer.from(entry.data().subarray(0, 0x80));
     };
-    return { species, moves, moveRows, abilities, tmMoves, types: pokedex.TYPES.map(key),
+    return { species, moves, moveRows, moveNames, abilities, abilityNames, tmMoves, types: pokedex.TYPES.map(key),
       headers: { body: header('poke_body.fsys', 64, 64), face: header('poke_face.fsys', 42, 84) } };
   } finally { disc.close(); }
 }
@@ -418,19 +422,34 @@ function named(map, value, what) {
 }
 
 // One evolution of a pokemon.json, as the 6 bytes of a row's: its way, what that needs, and what it evolves into
-// (`target` finds it). "level" (with "gender": "male" or "female" for one), "item", "friendship" (true, "day" or
-// "night"), "trade" (true, or the item it holds), "knowsMove" (a move it knows as it levels up, by name or number) or
-// "withPokemon" (one in the party as it levels up).
+// (`target` finds it). "level" (with one of "gender": "male" or "female" for one gender, "stats": "attack", "equal" or
+// "defense" for Attack above, equal to or below Defense as Tyrogue's, "personality": 1 or 2 for one half of
+// personalities as Wurmple's, or "alongside": true for one that appears beside its other evolution, as Shedinja does
+// beside Ninjask), "item", "friendship" (true, "day" or "night"), "trade" (true, or the item it holds), "knowsMove" (a
+// move it knows as it levels up, by name or number), "withPokemon" (one in the party as it levels up) or "beauty"
+// (Feebas's).
+const LEVEL_WITH = {
+  gender: [['male', EVOLVE.levelMale], ['female', EVOLVE.levelFemale]],
+  stats: [['attack', EVOLVE.attackAbove], ['equal', EVOLVE.attackEqual], ['defense', EVOLVE.defenseAbove]],
+  personality: [[1, EVOLVE.personalityFirst], [2, EVOLVE.personalitySecond]],
+  alongside: [[true, EVOLVE.alongside]]
+};
 function evolutionBytes(evolution, tables, target) {
   if (!isObject(evolution) || evolution.into === undefined) throw new Error('each evolution needs "into": what it evolves into');
-  const methods = ['level', 'item', 'friendship', 'trade', 'knowsMove', 'withPokemon'].filter(method => evolution[method] !== undefined);
-  if (methods.length !== 1) throw new Error('each evolution needs one of "level", "item", "friendship", "trade", "knowsMove" or "withPokemon"');
-  if (evolution.gender !== undefined && (methods[0] !== 'level' || !['male', 'female'].includes(evolution.gender)))
-    throw new Error('"gender" goes with "level", and is "male" or "female"');
+  const methods = ['level', 'item', 'friendship', 'trade', 'knowsMove', 'withPokemon', 'beauty'].filter(method => evolution[method] !== undefined);
+  if (methods.length !== 1) throw new Error('each evolution needs one of "level", "item", "friendship", "trade", "knowsMove", "withPokemon" or "beauty"');
+  const withLevel = Object.keys(LEVEL_WITH).filter(field => evolution[field] !== undefined);
+  if (withLevel.length > 1) throw new Error(`an evolution can have only one of ${Object.keys(LEVEL_WITH).map(field => `"${field}"`).join(', ')}`);
+  if (withLevel.length && methods[0] !== 'level') throw new Error(`"${withLevel[0]}" goes with "level"`);
   let method, condition = 0;
   if (methods[0] === 'level') {
-    method = { male: EVOLVE.levelMale, female: EVOLVE.levelFemale }[evolution.gender] || EVOLVE.level;
+    const field = withLevel[0], ways = LEVEL_WITH[field];
+    method = field ? ways.find(([value]) => value === evolution[field])?.[1] : EVOLVE.level;
+    if (!method) throw new Error(`"${field}" is ${ways.map(([value]) => JSON.stringify(value)).join(' or ')}`);
     condition = integer(evolution.level, 1, 100, 'an evolution\'s level');
+  } else if (methods[0] === 'beauty') {
+    method = EVOLVE.beauty;
+    condition = integer(evolution.beauty, 0, 255, '"beauty"');
   } else if (methods[0] === 'item') {
     method = EVOLVE.item;
     condition = EVOLUTION_ITEMS[key(evolution.item)];
@@ -557,8 +576,24 @@ function buildRow(spec, tables, target) {
     row.fill(0, ROW.evolutions, ROW.evolutions + EVOLUTIONS * 6);
     spec.evolutions.forEach((evolution, i) => evolutionBytes(evolution, tables, target).copy(row, ROW.evolutions + i * 6));
   }
-  return { row, base, name, form, description: typeof spec.description === 'string' ? spec.description.slice(0, 500) : '' };
+  // The game's own Pokémon that evolve into this one: each an evolution ownRows adds to that Pokémon's, whose "into"
+  // loadPacks fills in once this one has its row.
+  const evolvesFrom = [];
+  if (spec.evolvesFrom !== undefined) {
+    if (!Array.isArray(spec.evolvesFrom) || spec.evolvesFrom.length > EVOLUTIONS) throw new Error(`"evolvesFrom" must list up to ${EVOLUTIONS} evolutions`);
+    for (const way of spec.evolvesFrom) {
+      if (!isObject(way) || way.from === undefined) throw new Error('each of "evolvesFrom" needs "from": the game\'s Pokémon that evolves into this one');
+      if (way.into !== undefined) throw new Error('"evolvesFrom" evolves into this Pokémon, so it has no "into"');
+      let from;
+      try { from = findSpecies(tables, way.from, '"evolvesFrom"'); }
+      catch (error) { throw new Error(`${error.message}: it takes the game's own Pokémon (one of a pack's evolves by its own "evolutions")`); }
+      const { from: _, ...how } = way;
+      evolvesFrom.push({ from: from.id, bytes: evolutionBytes({ ...how, into: THIS_ONE }, tables, value => (value === THIS_ONE ? 0 : target(value))) });
+    }
+  }
+  return { row, base, name, form, evolvesFrom, description: typeof spec.description === 'string' ? spec.description.slice(0, 500) : '' };
 }
+const THIS_ONE = Symbol('this Pokémon');
 
 // A pack folder's own name: letters, numbers, - and _, so it can't reach outside mods/pokemon.
 const FOLDER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/;
@@ -629,6 +664,7 @@ function loadPacks(dir, tables, registry) {
       // Images the Pokédex shows, as they are
       const images = { body: files.body || null, bodyShiny: files.bodyShiny || null, face: files.face || null };
       const icon = boxIconOrNone(files.body, files.bodyShiny);
+      for (const evolution of built.evolvesFrom) evolution.bytes.writeUInt16BE(assigned.ids.get(each.key), 4);
       pokemon.push({ ...each, id: assigned.ids.get(each.key), ...built, assets, images, icon, cry,
         packName: typeof each.about.name === 'string' ? each.about.name.slice(0, 80) : each.pack,
         author: typeof each.about.author === 'string' ? each.about.author.slice(0, 80) : '',
@@ -810,11 +846,12 @@ function generationPokemon(tables, built, { modelsDirectory = null } = {}) {
   return { pokemon, problems };
 }
 
-// The game's own Pokémon as a later generation has them (src/generations.js ownSpecies), as the parts of their rows the
-// game's file changes: [{ id, evolutions (5 of 6 bytes), moves (20 of 4) }], only those that differ from the disc. The
-// generation's evolutions go in the row's free places after the game's own, and only into Pokémon that were loaded
-// (`pokemon`, generationPokemon's).
-function ownRows(tables, built, pokemon) {
+// The game's own Pokémon as a later generation has them (src/generations.js ownSpecies), and with the evolutions into
+// pack Pokémon their "evolvesFrom" gives (`packs`, loadPacks'), as the parts of their rows the game's file changes:
+// [{ id, evolutions (5 of 6 bytes), moves (20 of 4) }], only those that differ from the disc. The evolutions go in the
+// row's free places after the game's own, the generation's first, and only into Pokémon that were loaded (`pokemon`,
+// generationPokemon's).
+function ownRows(tables, built, pokemon, packs = []) {
   const generationsLib = require('./generations');
   const loaded = new Set(pokemon.map(each => each.id));
   const target = value => {
@@ -824,26 +861,171 @@ function ownRows(tables, built, pokemon) {
     if (!loaded.has(id)) throw new Error('not loaded');
     return id;
   };
-  const rows = [], problems = [];
+  const changed = new Map(), problems = [];
+  const rowOf = species => {
+    if (!changed.has(species.id)) changed.set(species.id, { species,
+      evolutions: Buffer.from(species.row.subarray(ROW.evolutions, ROW.evolutions + EVOLUTIONS * 6)),
+      moves: Buffer.from(species.row.subarray(ROW.moves, ROW.moves + LEVEL_MOVES * 4)) });
+    return changed.get(species.id);
+  };
+  // An evolution in the row's first free place; false when all five are taken
+  const add = (evolutions, bytes) => {
+    let free = 0;
+    while (free < EVOLUTIONS && evolutions[free * 6]) free++;
+    if (free === EVOLUTIONS) return false;
+    bytes.copy(evolutions, free * 6);
+    return true;
+  };
   for (const own of built.ownSpecies || []) {
     const species = tables.species.find(each => each.id === own.id);
     if (!species?.row) continue;
-    const evolutions = Buffer.from(species.row.subarray(ROW.evolutions, ROW.evolutions + EVOLUTIONS * 6));
+    const row = rowOf(species);
     for (const evolution of own.evolutions) {
       let bytes;
       try { bytes = evolutionBytes(evolution, tables, target); } catch { continue; }
-      let free = 0;
-      while (free < EVOLUTIONS && evolutions[free * 6]) free++;
-      if (free === EVOLUTIONS) { problems.push({ pack: 'generation', entry: species.name, message: 'has no room for another evolution, so one is left out' }); continue; }
-      bytes.copy(evolutions, free * 6);
+      if (!add(row.evolutions, bytes)) problems.push({ pack: 'generation', entry: species.name, message: 'has no room for another evolution, so one is left out' });
     }
-    const moves = Buffer.alloc(LEVEL_MOVES * 4);
-    own.levelUp.slice(0, LEVEL_MOVES).forEach(([level, move], i) => { moves[i * 4] = level; moves.writeUInt16BE(move, i * 4 + 2); });
-    if (evolutions.equals(species.row.subarray(ROW.evolutions, ROW.evolutions + EVOLUTIONS * 6))
-      && moves.equals(species.row.subarray(ROW.moves, ROW.moves + LEVEL_MOVES * 4))) continue;
-    rows.push({ id: own.id, evolutions, moves });
+    row.moves.fill(0);
+    own.levelUp.slice(0, LEVEL_MOVES).forEach(([level, move], i) => { row.moves[i * 4] = level; row.moves.writeUInt16BE(move, i * 4 + 2); });
   }
+  for (const each of packs) for (const { from, bytes } of each.evolvesFrom || []) {
+    const species = tables.species.find(item => item.id === from);
+    if (!species?.row) continue;
+    const row = rowOf(species);
+    const already = Array.from({ length: EVOLUTIONS }, (_, i) => row.evolutions.subarray(i * 6, i * 6 + 6)).some(have => have.equals(bytes));
+    if (!already && !add(row.evolutions, bytes))
+      problems.push({ pack: each.pack, entry: each.folder, message: `${species.name} has no room for another evolution, so its evolution into this one is left out` });
+  }
+  const rows = [...changed.values()]
+    .filter(({ species, evolutions, moves }) => !evolutions.equals(species.row.subarray(ROW.evolutions, ROW.evolutions + EVOLUTIONS * 6))
+      || !moves.equals(species.row.subarray(ROW.moves, ROW.moves + LEVEL_MOVES * 4)))
+    .map(({ species, evolutions, moves }) => ({ id: species.id, evolutions, moves }));
   return { rows, problems };
+}
+
+// --- A game's Pokémon as a pack (the Pokédex's Make a pack) ----------------------------------
+
+// A species row as a pokemon.json that makes the same row again: buildRow from it gives the very bytes the game has.
+// Moves, abilities and Pokémon are named where the name finds the same one again, else numbered; anything a
+// pokemon.json can't say is left out, and so stays the base's, which is this Pokémon.
+function exportSpec(tables, value) {
+  const species = findSpecies(tables, value, 'Pokémon'), row = species.row, spec = { base: species.name, name: species.name };
+  const byName = (names, map, id) => (names?.get(id) && map.get(key(names.get(id))) === id ? names.get(id) : id);
+  const types = [row[ROW.types], row[ROW.types + 1]];
+  if (types.every(id => pokedex.TYPES[id] && pokedex.TYPES[id] !== '???'))
+    spec.types = (types[0] === types[1] ? types.slice(0, 1) : types).map(id => pokedex.TYPES[id]);
+  const abilities = [row[ROW.abilities], row[ROW.abilities + 1]];
+  if (abilities[0] && abilities.every(id => !id || [...tables.abilities.values()].includes(id)))
+    spec.abilities = abilities.filter(Boolean).map(id => byName(tables.abilityNames, tables.abilities, id));
+  for (const [field, at, lowest, highest] of [['stats', ROW.stats, 1, 255], ['evYield', ROW.evYield, 0, 3]]) {
+    const values = {};
+    STATS.forEach((stat, i) => { const v = row.readUInt16BE(at + i * 2); if (v >= lowest && v <= highest) values[stat] = v; });
+    if (Object.keys(values).length) spec[field] = values;
+  }
+  if (row[ROW.catchRate]) spec.catchRate = row[ROW.catchRate];
+  if (row.readUInt16BE(ROW.exp)) spec.baseExp = row.readUInt16BE(ROW.exp);
+  if (row.readUInt16BE(ROW.friendship) <= 255) spec.baseFriendship = row.readUInt16BE(ROW.friendship);
+  if (GROWTH[row[ROW.growth]]) spec.growthRate = GROWTH[row[ROW.growth]];
+  const gender = genderOf(row[ROW.gender]);
+  if (gender !== undefined) spec.gender = gender;
+  const height = row.readUInt16BE(ROW.height), inches = Math.floor(height / 100) * 12 + height % 100;
+  if (height % 100 < 12 && inches) spec.height = shortest(inches * 0.0254, m => Math.max(1, Math.round(m / 0.0254)) === inches);
+  const weight = row.readUInt16BE(ROW.weight);
+  if (weight) spec.weight = shortest(weight / 22.0462, kg => kg <= 2000 && Math.max(1, Math.round(kg * 22.0462)) === weight);
+  const moves = [];
+  for (let i = 0; i < LEVEL_MOVES; i++) {
+    const level = row[ROW.moves + i * 4], move = row.readUInt16BE(ROW.moves + i * 4 + 2);
+    if (!level || !move) break;
+    moves.push([level, byName(tables.moveNames, tables.moves, move)]);
+  }
+  if (moves.length && moves.every(([level], i) => !i || moves[i - 1][0] <= level)) spec.moves = moves;
+  spec.tms = [];
+  for (let i = 0; i < TM_COUNT + HM_COUNT; i++)
+    if (row[ROW.tms + i]) spec.tms.push(i < TM_COUNT ? `TM${String(i + 1).padStart(2, '0')}` : `HM${String(i - TM_COUNT + 1).padStart(2, '0')}`);
+  const evolutions = [];
+  for (let i = 0; i < EVOLUTIONS; i++) if (row[ROW.evolutions + i * 6]) evolutions.push(evolutionSpec(row, ROW.evolutions + i * 6, tables));
+  if (evolutions.every(Boolean)) spec.evolutions = evolutions;
+  return spec;
+}
+
+// A gender ratio as a pokemon.json gives it (buildRow's out of 256, one under), or undefined where none gives it again
+function genderOf(value) {
+  if (value === 255) return 'genderless';
+  const percent = value === 0 ? 0 : value === 254 ? 100 : shortest((value + 1) / 2.56, p => p >= 0 && p <= 100 && Math.max(0, Math.min(254, Math.round(p * 2.56) - 1)) === value);
+  return percent;
+}
+
+// `value` with as few decimals as `again` still takes as the same
+function shortest(value, again) {
+  for (let places = 0; places <= 6; places++) {
+    const rounded = Number(value.toFixed(places));
+    if (again(rounded)) return rounded;
+  }
+  return undefined;
+}
+
+// A row's evolution (6 bytes at `at`) as a pokemon.json's, or null for one a pokemon.json can't say
+function evolutionSpec(row, at, tables) {
+  const kind = row[at], condition = row.readUInt16BE(at + 2), into = speciesRef(tables, row.readUInt16BE(at + 4));
+  if (into === null || row[at + 1]) return null;
+  const itemName = id => {
+    const name = require('./evolution-ways').ITEMS[id];
+    return name && EVOLUTION_ITEMS[key(name)] === id ? name : null;
+  };
+  const level = (extra = {}) => (condition >= 1 && condition <= 100 ? { into, level: condition, ...extra } : null);
+  const none = way => (condition ? null : { into, ...way });
+  switch (kind) {
+    case EVOLVE.friendship: return none({ friendship: true });
+    case EVOLVE.friendshipDay: return none({ friendship: 'day' });
+    case EVOLVE.friendshipNight: return none({ friendship: 'night' });
+    case EVOLVE.level: return level();
+    case EVOLVE.trade: return none({ trade: true });
+    case EVOLVE.tradeItem: return itemName(condition) ? { into, trade: itemName(condition) } : null;
+    case EVOLVE.item: return itemName(condition) ? { into, item: itemName(condition) } : null;
+    case EVOLVE.beauty: return condition <= 255 ? { into, beauty: condition } : null;
+    case EVOLVE.knowsMove: { const move = condition && byMoveName(tables, condition); return move ? { into, knowsMove: move } : null; }
+    case EVOLVE.withPokemon: { const other = speciesRef(tables, condition); return other === null ? null : { into, withPokemon: other }; }
+  }
+  for (const [field, ways] of Object.entries(LEVEL_WITH)) {
+    const found = ways.find(([, value]) => value === kind);
+    if (found) return level({ [field]: found[0] });
+  }
+  return null;
+}
+
+// A move by its name where the name finds it again, else its number (which "knowsMove" takes as well)
+const byMoveName = (tables, id) => (tables.moveNames?.get(id) && tables.moves.get(key(tables.moveNames.get(id))) === id ? tables.moveNames.get(id) : id);
+
+// JSON as a person would write it: two spaces in, a list or object on one line where it fits in 100 characters, and a
+// long list of numbers or names (TMs) wrapped to that width
+function formatJson(value, indent = '') {
+  const inline = item => (item === null || typeof item !== 'object' ? JSON.stringify(item)
+    : Array.isArray(item) ? `[${item.map(inline).join(', ')}]`
+      : Object.keys(item).length ? `{ ${Object.entries(item).map(([name, each]) => `${JSON.stringify(name)}: ${inline(each)}`).join(', ')} }` : '{}');
+  const flat = inline(value), inner = `${indent}  `;
+  if (value === null || typeof value !== 'object' || (indent && flat.length + indent.length <= 100)) return flat;
+  if (Array.isArray(value) && value.length && value.every(item => item === null || typeof item !== 'object')) {
+    const lines = [''];
+    for (const item of value.map(inline)) {
+      const line = lines[lines.length - 1];
+      if (line && inner.length + line.length + item.length + 2 > 100) lines.push(item);
+      else lines[lines.length - 1] = line ? `${line}, ${item}` : item;
+    }
+    return `[\n${lines.map(line => inner + line).join(',\n')}\n${indent}]`;
+  }
+  const items = Array.isArray(value) ? value.map(item => inner + formatJson(item, inner))
+    : Object.entries(value).map(([name, item]) => `${inner}${JSON.stringify(name)}: ${formatJson(item, inner)}`);
+  if (!items.length) return flat;
+  return Array.isArray(value) ? `[\n${items.join(',\n')}\n${indent}]` : `{\n${items.join(',\n')}\n${indent}}`;
+}
+
+// One of the game's Pokémon (a row's number) as a pokemon.json names it: by name, or its National Pokédex number
+// where another has the name first, or null where neither finds it again
+function speciesRef(tables, id) {
+  const species = tables.species.find(each => each.id === id);
+  if (!species) return null;
+  const finds = value => { try { return findSpecies(tables, value, '').id === id; } catch { return false; } };
+  return finds(species.name) ? species.name : finds(species.national) ? species.national : null;
 }
 
 // A later generation's ability (77 on, which the game has under that generation's rules) by its name there
@@ -915,5 +1097,6 @@ function pokedexEntries(pokemon, tables) {
 
 module.exports = { FIRST_ID, LAST_ID, FIRST_PAST_GAP, REGISTRY_FILE, FILES, packsDirectory, readGameTables, readRegistry, writeRegistry, assignIds,
   decodePng, resize, encodeRgba8, spriteFile, battleRevolutionFace, boxIcon, buildRow, evolutionBytes, loadPacks, compile, generationPokemon, ownRows, pokedexEntries, readCry,
+  exportSpec, formatJson, ENTRY_FILE, PACK_FILE, FOLDER,
   // A species the original game hasn't: a pack's, or a later generation's
   isPackSpecies: id => (id >= FIRST_ID && id <= LAST_ID) || id >= 413 };

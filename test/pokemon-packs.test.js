@@ -88,7 +88,7 @@ test('what a pokemon.json gets wrong is said plainly', () => {
   wrong({ base: 'Umbreon', name: 'X', moves: [[1, 'Hyper Beam']] }, /move "Hyper Beam" isn't one the game has/);
   wrong({ base: 'Umbreon', name: 'X', moves: Array(21).fill([1, 'Bite']) }, /1 to 20/);
   wrong({ base: 'Umbreon', name: 'X', tms: ['TM51'] }, /"TM51" isn't a TM/);
-  wrong({ base: 'Umbreon', name: 'X', evolutions: [{ into: 'Raichu' }] }, /one of "level", "item", "friendship", "trade", "knowsMove" or "withPokemon"/);
+  wrong({ base: 'Umbreon', name: 'X', evolutions: [{ into: 'Raichu' }] }, /one of "level", "item", "friendship", "trade", "knowsMove", "withPokemon" or "beauty"/);
   wrong({ base: 'Umbreon', name: 'X', evolutions: [{ into: 'Raichu', item: 'Thunder Stone', gender: 'male' }] }, /"gender" goes with "level"/);
   wrong({ base: 'Umbreon', name: 'X', evolutions: [{ into: 'Raichu', knowsMove: 'Splash' }] }, /"knowsMove": "Splash" isn't a move/);
   wrong({ base: 'Umbreon', name: 'X', evolutions: [{ into: 'Raichu', item: 'Rare Candy' }] }, /isn't an evolution item/);
@@ -235,6 +235,118 @@ function writePack(root, pack, entries, about) {
     for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(root, pack, folder, name), data);
   }
 }
+
+test('the game\'s other ways: Tyrogue\'s stats, Wurmple\'s personality, Shedinja alongside, Feebas\'s beauty', () => {
+  const game = tables();
+  const target = value => game.species.find(each => each.name === value).id;
+  const bytes = evolution => { const b = packs.evolutionBytes(evolution, game, target); return [b[0], b.readUInt16BE(2), b.readUInt16BE(4)]; };
+  assert.deepEqual(bytes({ into: 'Raichu', level: 20, stats: 'attack' }), [8, 20, 26]);
+  assert.deepEqual(bytes({ into: 'Raichu', level: 20, stats: 'equal' }), [9, 20, 26]);
+  assert.deepEqual(bytes({ into: 'Raichu', level: 20, stats: 'defense' }), [10, 20, 26]);
+  assert.deepEqual(bytes({ into: 'Raichu', level: 7, personality: 1 }), [11, 7, 26]);
+  assert.deepEqual(bytes({ into: 'Raichu', level: 7, personality: 2 }), [12, 7, 26]);
+  assert.deepEqual(bytes({ into: 'Raichu', level: 20, alongside: true }), [14, 20, 26]);
+  assert.deepEqual(bytes({ into: 'Raichu', beauty: 170 }), [15, 170, 26]);
+  assert.throws(() => bytes({ into: 'Raichu', level: 20, stats: 'speed' }), /"stats" is "attack" or "equal" or "defense"/);
+  assert.throws(() => bytes({ into: 'Raichu', level: 20, personality: 'constructor' }), /"personality" is 1 or 2/);
+  assert.throws(() => bytes({ into: 'Raichu', level: 20, gender: 'male', stats: 'attack' }), /only one of/);
+  assert.throws(() => bytes({ into: 'Raichu', item: 'Moon Stone', alongside: true }), /"alongside" goes with "level"/);
+  assert.throws(() => bytes({ into: 'Raichu', beauty: 300 }), /"beauty" must be a whole number from 0 to 255/);
+});
+
+test('"evolvesFrom" adds an evolution into a pack Pokémon to the game\'s own Pokémon', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-'));
+  try {
+    const game = tables();
+    // Pikachu evolves into Raichu by Thunder Stone on the disc (the game's 7, 96)
+    const pikachu = game.species[0].row;
+    pikachu[0x9c] = 7; pikachu.writeUInt16BE(96, 0x9e); pikachu.writeUInt16BE(26, 0xa0);
+    writePack(root, 'moon', [
+      ['moonfang', { base: 'Umbreon', name: 'Moonfang', evolvesFrom: [{ from: 'Pikachu', item: 'Moon Stone' }, { from: 26, level: 40, gender: 'female' }] }],
+      ['twice', { base: 'Umbreon', name: 'Twice', evolvesFrom: [{ from: 'Pikachu', level: 50 }, { from: 'Pikachu', level: 50 }] }]
+    ]);
+    const loaded = packs.loadPacks(root, game, { ids: {} });
+    assert.deepEqual(loaded.problems, []);
+    const moonfang = loaded.pokemon.find(each => each.folder === 'moonfang'), twice = loaded.pokemon.find(each => each.folder === 'twice');
+    const { rows, problems } = packs.ownRows(game, { ownSpecies: [] }, [], loaded.pokemon);
+    assert.deepEqual(problems, []);
+    assert.deepEqual(rows.map(row => row.id), [25, 26]);
+    const evolution = (row, i) => [row.evolutions[i * 6], row.evolutions.readUInt16BE(i * 6 + 2), row.evolutions.readUInt16BE(i * 6 + 4)];
+    assert.deepEqual(evolution(rows[0], 0), [7, 96, 26], 'its own first');
+    assert.deepEqual(evolution(rows[0], 1), [7, 94, moonfang.id], 'then the pack\'s, into the row the pack Pokémon has');
+    assert.deepEqual(evolution(rows[0], 2), [4, 50, twice.id], 'the same evolution twice goes in once');
+    assert.deepEqual(evolution(rows[0], 3), [0, 0, 0]);
+    assert.deepEqual(evolution(rows[1], 0), [19, 40, moonfang.id]);
+    assert.ok(rows[0].moves.equals(pikachu.subarray(0xba, 0xba + 80)), 'its level-up moves stay the disc\'s');
+    // After a generation's, and not where all five places are taken
+    const generation = { ownSpecies: [{ id: 25, national: 25, levelUp: [[1, 33]], evolutions: [{ into: 'Raichu', level: 30 }] }] };
+    assert.deepEqual(evolution(packs.ownRows(game, generation, [], loaded.pokemon).rows[0], 1), [4, 30, 26]);
+    for (let i = 0; i < 5; i++) { game.species[1].row[0x9c + i * 6] = 4; game.species[1].row.writeUInt16BE(25, 0xa0 + i * 6); }
+    const full = packs.ownRows(game, { ownSpecies: [] }, [], loaded.pokemon);
+    assert.deepEqual(full.rows.map(row => row.id), [25]);
+    assert.deepEqual(full.problems.map(problem => `${problem.pack}/${problem.entry}: ${problem.message}`),
+      ['moon/moonfang: Raichu has no room for another evolution, so its evolution into this one is left out']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('what "evolvesFrom" gets wrong is said plainly', () => {
+  const game = tables();
+  const wrong = (evolvesFrom, pattern) => assert.throws(() => packs.buildRow({ base: 'Umbreon', name: 'X', evolvesFrom }, game, noTarget), pattern);
+  wrong({ from: 'Pikachu', level: 30 }, /"evolvesFrom" must list up to 5/);
+  wrong([{ level: 30 }], /needs "from"/);
+  wrong([{ from: 'Pikachu', into: 'Raichu', level: 30 }], /has no "into"/);
+  wrong([{ from: 'moonfang', level: 30 }], /"evolvesFrom" "moonfang" isn't a Pokémon in the game: it takes the game's own Pokémon/);
+  wrong([{ from: 'Pikachu' }], /needs one of "level"/);
+});
+
+test('one of the game\'s Pokémon as a pokemon.json makes its very row again', () => {
+  const game = tables();
+  game.moveNames = new Map([[33, 'Tackle'], [44, 'Bite'], [247, 'Shadow Ball'], [85, 'Thunderbolt']]);
+  game.abilityNames = new Map([[26, 'Levitate'], [9, 'Static'], [28, 'Synchronize']]);
+  const row = game.species[2].row;
+  row[0x00] = 3; row[0x01] = 45; row[0x02] = 31; row.writeUInt16BE(184, 0x06); row.writeUInt16BE(35, 0x08);
+  row.writeUInt16BE(303, 0x0a); row.writeUInt16BE(595, 0x0c); row[0x30] = 17; row[0x31] = 7; row[0x32] = 28; row[0x33] = 0;
+  STAT_VALUES.forEach((value, i) => row.writeUInt16BE(value, 0x84 + i * 2));
+  row.writeUInt16BE(2, 0x90 + 4 * 2);
+  row[0x34 + 5] = 1; row[0x34 + 50 + 2] = 1;
+  [[1, 33], [1, 44], [9, 247], [20, 999]].forEach(([level, move], i) => { row[0xba + i * 4] = level; row.writeUInt16BE(move, 0xbc + i * 4); });
+  [[8, 20, 26], [11, 7, 25], [14, 20, 26], [15, 170, 25], [6, 199, 26]].forEach(([kind, condition, into], i) => {
+    row[0x9c + i * 6] = kind; row.writeUInt16BE(condition, 0x9e + i * 6); row.writeUInt16BE(into, 0xa0 + i * 6);
+  });
+  const spec = packs.exportSpec(game, 197);
+  assert.deepEqual(spec.moves, [[1, 'Tackle'], [1, 'Bite'], [9, 'Shadow Ball'], [20, 999]], 'a move without a name the game finds again is by number');
+  assert.deepEqual(spec.abilities, ['Synchronize']);
+  assert.deepEqual(spec.tms, ['TM06', 'HM03']);
+  assert.equal(spec.height, 1);
+  assert.equal(spec.weight, 27);
+  assert.equal(spec.gender, 12.5);
+  assert.deepEqual(spec.evolutions, [{ into: 'Raichu', level: 20, stats: 'attack' }, { into: 'Pikachu', level: 7, personality: 1 },
+    { into: 'Raichu', level: 20, alongside: true }, { into: 'Pikachu', beauty: 170 }, { into: 'Raichu', trade: 'Metal Coat' }]);
+  game.moves.set('x', 999);   // the game has the move, by number only
+  const target = value => game.species.find(each => each.name === value || each.national === value).id;
+  const again = packs.buildRow(JSON.parse(packs.formatJson(spec)), game, target);
+  assert.ok(again.row.equals(row), 'the same bytes');
+  // An evolution a pokemon.json can't say leaves them out, so the base's (this Pokémon's) stay
+  row[0x9c] = 99;
+  assert.equal(packs.exportSpec(game, 197).evolutions, undefined);
+});
+
+test('a pokemon.json is written as a person would: short lists on one line, long ones wrapped', () => {
+  const text = packs.formatJson({ base: 'Kirlia', stats: { hp: 38, speed: 50 }, moves: [[1, 'Growl'], [6, 'Confusion']], tms: Array.from({ length: 20 }, (_, i) => `TM${10 + i}`), evolutions: [] });
+  assert.equal(text, [
+    '{',
+    '  "base": "Kirlia",',
+    '  "stats": { "hp": 38, "speed": 50 },',
+    '  "moves": [[1, "Growl"], [6, "Confusion"]],',
+    '  "tms": [',
+    '    "TM10", "TM11", "TM12", "TM13", "TM14", "TM15", "TM16", "TM17", "TM18", "TM19", "TM20", "TM21",',
+    '    "TM22", "TM23", "TM24", "TM25", "TM26", "TM27", "TM28", "TM29"',
+    '  ],',
+    '  "evolutions": []',
+    '}'].join('\n'));
+});
+
+const STAT_VALUES = [95, 65, 110, 60, 130, 65];
 
 test('packs are read from their folders; what is wrong is left out and said', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-'));

@@ -273,6 +273,43 @@ function readPokedex(rom, discSprites = null) {
   } finally { disc.close(); }
 }
 
+// A Colosseum Pokémon's own looks, as a pack's files have them (pokemon-packs.js FILES), for the Pokédex's Make a pack:
+// { model, modelShiny, body, bodyShiny, face, faceShiny }, the model's pkx files as the disc has them (modelShiny where
+// it has one of its own: rare_<stem>) and the sprites as PNGs, its face cut into the normal one above and the shiny one below. What
+// it hasn't is left out; XD's disc gives none, as a pack's files are Colosseum's.
+function discLooks(rom, national) {
+  const disc = new Disc(rom);
+  try {
+    if (xdDisc.isXd(disc)) return {};
+    const rel = fsys.entries(disc.file('common.fsys')).find(entry => entry.name === 'common_rel');
+    if (!rel) throw new Error('The game disc has no Pokémon data.');
+    const data = relData(rel.data()), entry = readSpecies(data, readMessages(data)).find(each => each.national === national);
+    if (!entry) return {};
+    const out = {}, dol = readDol(disc), table = dolOffset(dol, MODEL_TABLE.address);
+    const file = modelFiles(disc).get(dol.readUInt32BE(table + entry.model * MODEL_TABLE.size + MODEL_TABLE.id));
+    const pkx = name => Buffer.from(fsys.entries(disc.file(name))[0].data());
+    if (file) {
+      out.model = pkx(file);
+      const shiny = `pkx_rare_${file.slice('pkx_'.length)}`;
+      if (disc.files.has(shiny)) out.modelShiny = pkx(shiny);
+    }
+    const image = (archive, id, name) => {
+      const found = fsys.entries(disc.file(archive)).find(each => each.id === id || (name && each.name === name));
+      return found ? gx.decodeStandalone(found.data()) : null;
+    };
+    const part = (picture, top, height) => png(picture.width, height, picture.rgba.subarray(top * picture.width * 4, (top + height) * picture.width * 4));
+    // the row's body sprites, normal and shiny; its face is the face table's, which names it by its row (face001, face277 for Treecko)
+    const body = image('poke_body.fsys', entry.sprites[0], national === NATIONAL_UNOWN ? UNOWN_SPRITE : null);
+    if (body) out.body = png(body.width, body.height, body.rgba);
+    const bodyShiny = entry.sprites[1] !== entry.sprites[0] && image('poke_body.fsys', entry.sprites[1]);
+    if (body && bodyShiny) out.bodyShiny = png(bodyShiny.width, bodyShiny.height, bodyShiny.rgba);
+    const face = image('poke_face.fsys', null, `face${String(entry.id).padStart(3, '0')}${national === NATIONAL_UNOWN ? 'a' : ''}`);
+    if (face && face.height === face.width * 2) { out.face = part(face, 0, face.width); out.faceShiny = part(face, face.width, face.width); }
+    else if (face) out.face = png(face.width, face.height, face.rgba);
+    return out;
+  } finally { disc.close(); }
+}
+
 // The Pokédex for one disc, kept once read. Models are kept one at a time: the player
 // looks at them in turn, and a model and its frames are a few megabytes.
 function create() {
@@ -306,5 +343,5 @@ function create() {
   };
 }
 
-module.exports = { create, readPokedex, classify, displayName, messageText, png, relData, readMessages, readDol, dolOffset, spritesOf,
+module.exports = { create, readPokedex, discLooks, classify, displayName, messageText, png, relData, readMessages, readDol, dolOffset, spritesOf,
   SPECIES, TYPES, ABILITY_MESSAGES, GIFTS, BONUS_DISC_GIFTS };

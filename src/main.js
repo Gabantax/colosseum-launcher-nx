@@ -1110,13 +1110,53 @@ function readPokemonPacks(rom, settings = config.settings) {
     ? pokemonPacks.loadPacks(pokemonPacksDirectory(), tables, pokemonPacks.readRegistry(currentSaveDirectory()))
     : { pokemon: [], problems: [], registry: { ids: {} }, registryChanged: false, missing: [] };
   const built = generations.build(tables, settings), fromGenerations = pokemonPacks.generationPokemon(tables, built, { modelsDirectory: pbrModels() });
-  // the game's own Pokémon as the generation has them: its level-up moves, and evolutions into its Pokémon
-  const own = pokemonPacks.ownRows(tables, built, fromGenerations.pokemon);
+  // the game's own Pokémon as the generation has them (its level-up moves, and evolutions into its Pokémon), and with the
+  // packs' evolutions into theirs ("evolvesFrom")
+  const own = pokemonPacks.ownRows(tables, built, fromGenerations.pokemon, packs.pokemon);
   return { tables, ...packs, built, generationPokemon: fromGenerations.pokemon, ownRows: own.rows,
     problems: [...packs.problems, ...fromGenerations.problems, ...own.problems] };
 }
 
 const packLabel = problem => `${problem.pack}${problem.entry ? `/${problem.entry}` : ''}`;
+
+// The Pokédex's Make a pack: one of the game's Pokémon as a pack of its own in the packs folder, to change from there.
+// Its pokemon.json gives every field the game has for it (pokemonPacks.exportSpec), so as it is it plays just as its
+// base does; its model and sprites from the disc wait in originals/, which the game doesn't read, until moved up beside
+// it. Each goes in a new folder, <name>-copy, -copy-2 and on. Gives { key, name, folder }.
+const ORIGINALS = 'originals';
+function makePokemonPack(national) {
+  requireFeature('pokemonPacks', 'Pokémon packs');
+  if (!Number.isInteger(national)) throw new Error('Choose one of the game\'s Pokémon to make a pack of.');
+  const rom = packsDisc(port.validateRom(config.rom, config.game), 'A pack is made');
+  if (packTables?.rom !== rom) packTables = { rom, tables: pokemonPacks.readGameTables(rom) };
+  const spec = pokemonPacks.exportSpec(packTables.tables, national);
+  const stem = spec.name.toLowerCase().replace(/♀/g, '-f').replace(/♂/g, '-m').replace(/é/g, 'e').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `pokemon-${national}`;
+  const root = pokemonPacksDirectory();
+  let pack = `${stem}-copy`;
+  for (let n = 2; fs.existsSync(path.join(root, pack)); n++) pack = `${stem}-copy-${n}`;
+  if (!pokemonPacks.FOLDER.test(pack)) throw new Error(`${spec.name} can't be made into a pack folder.`);
+  let looks = {};
+  try { looks = pokedexNames.discLooks(rom, national); } catch (error) { log(`Make a pack: ${spec.name}'s model and sprites couldn't be read from the disc (${error.message}).`); }
+  const folder = path.join(root, pack, stem), originals = path.join(folder, ORIGINALS);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(root, pack, pokemonPacks.PACK_FILE), `${pokemonPacks.formatJson({ name: `${spec.name} (copy)`, author: '', credits: '' })}\n`);
+  fs.writeFileSync(path.join(folder, pokemonPacks.ENTRY_FILE), `${pokemonPacks.formatJson(spec)}\n`);
+  const files = Object.entries(looks).filter(([asset, data]) => pokemonPacks.FILES[asset] && data);
+  if (files.length) {
+    fs.mkdirSync(originals, { recursive: true });
+    for (const [asset, data] of files) fs.writeFileSync(path.join(originals, pokemonPacks.FILES[asset]), data);
+    fs.writeFileSync(path.join(originals, 'README.txt'), [
+      `${spec.name}'s own model and sprites, from your Pokémon Colosseum disc.`,
+      '',
+      'The game doesn\'t read this folder. To start your own from one of these files, change it and move it up a folder,',
+      'beside pokemon.json. Without its own model, sprites or cry, the Pokémon looks and sounds as its base does.',
+      '',
+      'docs/pokemon-packs.md in the launcher\'s source has the whole guide.', ''].join('\n'));
+  }
+  log(`Made a pack of ${spec.name} in the packs folder: ${pack}/${stem}. Change its pokemon.json, then press Reload in the Pokédex.`);
+  shell.openPath(folder);
+  return { key: `pack:${pack}/${stem}`, name: spec.name, folder: `${pack}/${stem}` };
+}
 
 // --- Battle Revolution assets (the game's tools/pbr2pkx): the player's own Battle Revolution disc, made into models,
 // icons and cries for the later generations' Pokémon, which then look and sound as they do there instead of as a
@@ -1378,7 +1418,8 @@ function pokedexList(rom) {
           sprite: each.images.body ? `data:image/png;base64,${each.images.body.toString('base64')}` : base?.sprite || null,
           forms: each.assets.model ? [{ id: 'model', label: 'Normal' }, ...(each.assets.modelShiny ? [{ id: 'modelShiny', label: 'Shiny' }] : [])] : base?.forms || [] };
       });
-      // The game's own Pokémon's evolutions into a later generation's (Yanma into Yanmega), and how those can be had
+      // The game's own Pokémon's evolutions into a later generation's (Yanma into Yanmega) or a pack's ("evolvesFrom"), and
+      // how those can be had
       species = species.map(entry => ({ ...entry }));
       for (const row of loaded.ownRows) {
         const from = species.find(entry => entry.national === loaded.tables.species.find(each => each.id === row.id)?.national);
@@ -1387,7 +1428,7 @@ function pokedexList(rom) {
           const into = all.find(each => each.id === row.evolutions.readUInt16BE(i * 6 + 4));
           const target = into && packs.find(entry => entry.key === `pack:${into.key}`);
           if (!row.evolutions[i * 6] || !target || from.evolutions.includes(target.key)) continue;
-          const way = evolutionWays.describeBytes(row.evolutions, i * 6), platinum = evolutionWays.platinumWay(from.national, into.national);
+          const way = evolutionWays.describeBytes(row.evolutions, i * 6), platinum = into.generation ? evolutionWays.platinumWay(from.national, into.national) : null;
           from.evolutions = [...from.evolutions, target.key];
           from.evolutionWays = [...from.evolutionWays, platinum ? { ...way, note: [way.note, platinum].filter(Boolean).join(' ') } : way];
           if (['shadow', 'gift', 'evolve'].includes(from.status?.kind)) target.status = { ...target.status, note: `${target.status.note} Evolve ${from.name} to get it.` };
@@ -1414,7 +1455,9 @@ function pokedexList(rom) {
     if (pokedexPacks.get(String(key).slice('pack:'.length))?.ownCry) return true;
     try { return pokedexCries.has(rom, pokedexCry(rom, key)); } catch (_) { return false; }
   };
-  return { species: species.map(entry => ({ ...entry, hasCry: hasCry(entry.national) })), packs: packs.map(entry => ({ ...entry, hasCry: hasCry(entry.key) })), problems };
+  // canMakePacks: Make a pack is offered for the game's own Pokémon
+  return { species: species.map(entry => ({ ...entry, hasCry: hasCry(entry.national) })), packs: packs.map(entry => ({ ...entry, hasCry: hasCry(entry.key) })), problems,
+    canMakePacks: supports('pokemonPacks') && (own || teamDiscReady()) };
 }
 
 // A pack Pokémon's own cry.wav (or its Battle Revolution one), where the game plays it (host/packcries.c), else null: an
@@ -3237,6 +3280,7 @@ function registerHandlers() {
     const look = pokedexLook(key, String(form));
     return look.pkx ? hsdModel.parseClip(look.pkx, Number(index)) : pokedexData.clip(port.validateRom(config.rom, config.game), look.national, String(form), Number(index));
   });
+  ipcMain.handle('pokedex-make-pack', (_event, national) => makePokemonPack(Number(national)));
   ipcMain.handle('open-pokemon-packs', () => {
     fs.mkdirSync(pokemonPacksDirectory(), { recursive: true });
     return shell.openPath(pokemonPacksDirectory());
