@@ -10,7 +10,7 @@ const path = require('node:path');
 const FEATURES = ['online', 'generations', 'randomizer', 'widescreen', 'hdText', 'hdModels', 'hdTextures', 'languagePacks',
   'discordPresence', 'storyParty', 'pcBoxes', 'gbaLink', 'quickMoves', 'battleSpeed', 'fastForward', 'skipMovies', 'starters',
   'shiny', 'shinyStarters', 'pokemonPacks', 'pbrAssets', 'pokedex', 'jukebox', 'teamBuilder', 'gciSaves', 'tmNames', 'playAs', 'customize',
-  'partnerPass'];
+  'partnerPass', 'pokeSpots'];
 
 const GAMES = {
   colosseum: {
@@ -27,7 +27,8 @@ const GAMES = {
     // The Discord application its activity shows as (discord.js): Discord shows the application's name as the game
     // being played, and its Rich Presence art assets are the image keys in presence.js
     discordAppId: '1568804288413835405',
-    features: FEATURES
+    // every feature but XD's own: Colosseum has no Poké Spots
+    features: FEATURES.filter(feature => feature !== 'pokeSpots')
   },
   xd: {
     id: 'xd', name: 'Pokémon XD: Gale of Darkness', shortName: 'XD', title: 'POKÉMON XD: GALE OF DARKNESS',
@@ -58,10 +59,11 @@ const GAMES = {
     // (xd-save.js), as is the Story party (story-party.js), which XD's online battles take whole. The Pokédex and the
     // Jukebox read XD's own disc (xd-disc.js: its species, models, streamed cries and streamed music). TMs listed by their
     // moves' names are host/tmnames.c's, with XD's own bag and shop calls. Language packs are host/language.c's, XD's own
-    // packs in their own folder (language-packs.js): none official yet, fan translations from the extras tool's template
+    // packs in their own folder (language-packs.js): none official yet, fan translations from the extras tool's template.
+    // More Poké Spot Pokémon is XD's own (host/xd/pokespot.c)
     features: ['online', 'teamBuilder', 'generations', 'widescreen', 'hdText', 'hdTextures', 'fastForward', 'skipMovies', 'gciSaves', 'discordPresence',
       'battleSpeed', 'quickMoves', 'shiny', 'starters', 'pokemonPacks', 'pbrAssets', 'gbaLink', 'randomizer', 'storyParty', 'pokedex', 'jukebox', 'tmNames', 'playAs', 'customize',
-      'languagePacks']
+      'languagePacks', 'pokeSpots']
   }
 };
 

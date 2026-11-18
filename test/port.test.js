@@ -256,6 +256,20 @@ test('Walk through Rui is on unless turned off, and is Colosseum only', () => {
   }
 });
 
+test('More Poké Spot Pokémon is on unless turned off, and is XD only', () => {
+  const env = (settings, options) => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port', options);
+  const saved = process.env.COLO_POKESPOT_POOL;
+  delete process.env.COLO_POKESPOT_POOL;
+  try {
+    assert.equal(port.normalizeSettings({}).pokeSpotPool, true);
+    assert.equal(env({}, { game: 'xd' }).COLO_POKESPOT_POOL, undefined, 'on leaves it to the game');
+    assert.equal(env({ pokeSpotPool: false }, { game: 'xd' }).COLO_POKESPOT_POOL, '0');
+    assert.equal(env({ pokeSpotPool: false }).COLO_POKESPOT_POOL, undefined, 'Colosseum has no Poké Spots');
+  } finally {
+    if (saved !== undefined) process.env.COLO_POKESPOT_POOL = saved;
+  }
+});
+
 test('TMs by move name are on unless turned off, and on leaves it to the game', () => {
   const env = settings => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port');
   const saved = process.env.COLO_TM_NAMES;
