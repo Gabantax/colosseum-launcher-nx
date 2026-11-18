@@ -72,6 +72,7 @@ const savePokemon = require('./save-pokemon');
 const shadowtrade = require('./shadowtrade');
 const { GameLink } = require('./game-link');
 const { OnlineTrades, summary: tradeSummary } = require('./online-trades');
+const { LocalTrades } = require('./local-trades');
 const { Arrivals } = require('./arrivals');
 const tradeConvert = require('./trade-convert');
 const { arrivalLines } = require('./arrival-show');
@@ -1665,7 +1666,7 @@ async function play(installation = null, battle = null) {
       closeStoryLink(storyLink);
       broadcast('pokemon-changed', chosen.id);
       // trades waiting for the save can go to the card now
-      setTimeout(() => { syncTrades(); if (onlineTradesInstance?.state.journal.length) syncOnlineTrades(); }, 0);
+      setTimeout(() => { syncTrades(); if (onlineTradesInstance?.state.journal.length) syncOnlineTrades(); if (localTradesInstance?.state.journal.length) syncLocalTrades(); }, 0);
     }
     if (!battle) {
       try { makeSaveBackup('after-play'); }
@@ -1706,7 +1707,7 @@ async function openStoryLink(game) {
   closeStoryLink(storyLive?.link);
   const link = new GameLink({ log });
   await link.listen();
-  let refresh = null, synced = false, onlineSynced = false;
+  let refresh = null, synced = false, onlineSynced = false, localSynced = false;
   storyLive = new shadowtrade.LiveGame(link, { onChange: ({ whole, closed }) => {
     if (!refresh) refresh = setTimeout(() => { refresh = null; broadcast('pokemon-changed', game); }, LIVE_REFRESH_MS);
     if (closed) return;
@@ -1715,6 +1716,8 @@ async function openStoryLink(game) {
     if (pending && storyLive?.current()?.head.loaded && (whole || !synced)) { synced = true; syncTrades(); }
     const tradesWaiting = onlineTradesInstance?.state.journal.some(entry => entry.game === game);
     if (tradesWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !onlineSynced) { onlineSynced = true; syncOnlineTrades(); }
+    const localWaiting = localTradesInstance?.state.journal.some(entry => entry.sides.some(side => side.game === game));
+    if (localWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !localSynced) { localSynced = true; syncLocalTrades(); }
     if (storyLive?.current()?.head.loaded && storyLive.current().head.safe) deliverArrivals();
   } });
   link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
@@ -1743,6 +1746,7 @@ function arrivals() {
     onDone: (entry, result) => {
       log(`Trades: the game showed ${entry.kind === 'shadowtrade' ? 'the Shadow Pokémon' : 'the Pokémon'} from ${entry.from || 'the trade'}${result.evolved ? `, which evolved` : ''}.`);
       if (entry.kind === 'trade' && entry.tradeId) onlineTrades().arrived(entry.tradeId, result);
+      if (entry.kind === 'local' && entry.tradeId) localTrades().arrived(entry.tradeId, result);
       broadcast('pokemon-changed', entry.game);
     } });
   return arrivalsInstance;
@@ -1892,10 +1896,12 @@ function startShadowtrade() {
     const waitingLive = Boolean(storyGame && storyLive) && trades().state.journal.some(entry => entry.game === storyGame);
     if (trades().state.journal.length && (slow || waitingLive)) syncTrades();
     if (slow) { shadowtradeSlowAt = now; if (onlineTrades().state.journal.length) syncOnlineTrades(); }
+    if (localTrades().state.journal.length) syncLocalTrades();
     deliverArrivals();
   }, SHADOWTRADE_LIVE_SYNC_MS);
   if (trades().state.journal.length) syncTrades();
   if (onlineTrades().state.journal.length) syncOnlineTrades();
+  if (localTrades().state.journal.length) syncLocalTrades();
 }
 
 // --- Online Trades (src/online-trades.js): a trade code, a trade window on the Pokémon page, and the swap. The save is
@@ -1934,6 +1940,38 @@ function tradeReceiver(game) {
 
 function syncOnlineTrades() {
   return onlineTrades().sync().catch(error => log(`Online Trades: ${error.message}`));
+}
+
+// --- Trades between your games (src/local-trades.js): a Pokémon of your Colosseum save for one of your XD save, in the
+// trade window on the Pokémon page. Each save is reached as Online Trades reach it: the running game's (one at a time)
+// or its card; a game with no save yet can't trade.
+let localTradesInstance = null, localSyncing = null;
+function localTrades() {
+  if (!localTradesInstance) localTradesInstance = new LocalTrades({ folder: path.join(app.getPath('userData'), 'local-trades'), log,
+    onChange: () => broadcast('local-trades', localTradesInstance.view(config.game)),
+    accessFor: localTradeAccess, unavailable: localTradeUnavailable, receiverFor: tradeReceiver, arrivals: arrivals() });
+  return localTradesInstance;
+}
+
+const shortGameName = game => (game === 'xd' ? 'XD' : 'Colosseum');
+function localTradeAccess(game) {
+  const access = onlineTradeAccess(game);
+  if (access?.mode === 'card') { try { if (!access.read()) return null; } catch (_) { return null; } }
+  return access;
+}
+function localTradeUnavailable(game) {
+  const name = shortGameName(game);
+  if (storyGame === game) {
+    if (!storyLive?.current()?.head.loaded) return `${name} is running: continue your save in it, and its Pokémon show here.`;
+    if (!storyLive.link.has('trade.1')) return `This version of ${name} can't trade while it runs: update it, or close it and trade.`;
+  }
+  return `There's no ${name} save yet: play ${name} and save once, and you can trade between your games.`;
+}
+
+function syncLocalTrades() {
+  if (localSyncing) return localSyncing;
+  localSyncing = localTrades().sync().catch(error => log(`Trades between your games: ${error.message}`)).finally(() => { localSyncing = null; });
+  return localSyncing;
 }
 
 // --- Discord activity (src/discord.js, src/presence.js): only while the game runs, and only with the setting on.
@@ -3096,12 +3134,26 @@ function registerHandlers() {
   ipcMain.handle('online-trade', async (_event, action, value) => {
     const manager = onlineTrades();
     if (action === 'view') return manager.view();
-    if (action === 'open') return manager.open(config.game, value ? String(value) : null);
+    if (action === 'open') { if (localTradesInstance?.isOpen && !localTradesInstance.state.journal.length) localTradesInstance.close(); return manager.open(config.game, value ? String(value) : null); }
     if (action === 'offer') return manager.offer(value ? { area: value.area === 'box' ? 'box' : 'party', box: Number(value.box) || 0, slot: Number(value.slot) || 0 } : null);
     if (action === 'ready') { manager.ready(); return manager.view(); }
     if (action === 'unready') { manager.unready(); return manager.view(); }
     if (action === 'leave') { manager.leave(); return manager.view(); }
     if (action === 'sync') return manager.sync();
+    throw new Error('No such trade action.');
+  });
+  ipcMain.handle('local-trade', async (_event, action, value) => {
+    const manager = localTrades(), view = () => manager.view(config.game);
+    if (action === 'view') return view();
+    if (action === 'open') { if (onlineTrades().room) throw new Error('Leave the trade room first.'); manager.open(); return view(); }
+    if (action === 'close') { manager.close(); return view(); }
+    if (action === 'pick') {
+      const place = value?.place ? { area: value.place.area === 'box' ? 'box' : 'party', box: Number(value.place.box) || 0, slot: Number(value.place.slot) || 0 } : null;
+      manager.pick(String(value?.game), place);
+      return view();
+    }
+    if (action === 'trade') { await manager.trade(); return view(); }
+    if (action === 'sync') { await syncLocalTrades(); return view(); }
     throw new Error('No such trade action.');
   });
   ipcMain.handle('online-save', (_event, value) => {

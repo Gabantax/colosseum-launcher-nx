@@ -255,6 +255,9 @@
                 <p class="trade-start-text">Make a trade code and share it, or join theirs. You both pick a Pokémon, see every stat of the other's, and ready up. Colosseum and XD trade with each other, and trade evolutions happen when the Pokémon arrives.</p>
                 <button id="trade-host" class="trade-host" type="button">Make a trade code</button>
                 <form id="trade-join-form" class="trade-join"><input id="trade-join-code" type="text" maxlength="9" autocomplete="off" spellcheck="false" placeholder="ABC-DEF" aria-label="Trade code"><button id="trade-join" class="subtle" type="submit">Join</button></form>
+                <div id="trade-local" class="trade-local"><span class="trade-or">or, on this computer</span>
+                  <button id="trade-local-open" class="trade-local-open" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg><span id="trade-local-label">Trade with your XD save</span></button>
+                  <p id="trade-local-note" class="trade-local-note"></p></div>
               </div>
               <p id="trade-notice" class="trade-notice" role="status" hidden></p>
               <div id="trade-journal" class="shadowtrade-trades"></div>
@@ -273,13 +276,15 @@
         </div>
         <div id="trade-window" class="trade-window" hidden>
           <header class="tw-bar">
-            <div class="tw-code"><span class="tw-label">Trade code</span><strong id="trade-code" class="tw-code-value"></strong><button id="trade-copy" class="tw-copy" type="button" title="Copy the trade code">Copy</button></div>
+            <div id="tw-local-title" class="tw-code tw-local-title" hidden><span class="tw-label">Between your games</span><strong id="tw-local-games" class="tw-local-games"></strong></div>
+            <div id="tw-code" class="tw-code"><span class="tw-label">Trade code</span><strong id="trade-code" class="tw-code-value"></strong><button id="trade-copy" class="tw-copy" type="button" title="Copy the trade code">Copy</button></div>
             <ol id="trade-steps" class="tw-steps" aria-label="Trade steps"><li data-step="pick"><i>1</i>Pick</li><li data-step="ready"><i>2</i>Ready</li><li data-step="trade"><i>3</i>Trade</li><li data-step="done"><i>4</i>Done</li></ol>
             <button id="trade-leave" class="tw-leave" type="button">Leave room</button>
           </header>
           <div class="tw-main">
             <aside class="tw-picker" aria-label="Your Pokémon">
-              <div class="tw-picker-head"><h2>Your Pokémon</h2>
+              <div id="tw-game-switch" class="tw-tabs tw-game-switch" role="tablist" aria-label="Which save" hidden><button id="tw-game-colosseum" role="tab" type="button" aria-selected="true">Colosseum save</button><button id="tw-game-xd" role="tab" type="button" aria-selected="false">XD save</button></div>
+              <div class="tw-picker-head"><h2 id="tw-picker-title">Your Pokémon</h2>
                 <div class="tw-tabs" role="tablist" aria-label="Party or boxes"><button id="tw-tab-party" role="tab" type="button" aria-selected="true">Party</button><button id="tw-tab-boxes" role="tab" type="button" aria-selected="false">Boxes</button></div></div>
               <div id="tw-box-bar" class="tw-box-bar" hidden><button id="tw-box-prev" type="button" aria-label="Previous box">‹</button><strong id="tw-box-name"></strong><button id="tw-box-next" type="button" aria-label="Next box">›</button></div>
               <div id="tw-grid" class="tw-grid" role="listbox" aria-label="Pick a Pokémon to offer"></div>

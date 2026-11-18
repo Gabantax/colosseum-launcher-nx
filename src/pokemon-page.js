@@ -8,6 +8,7 @@ const message = error => String(error?.message || error).replace(/^Error invokin
 
 let data = null, tab = 'party', box = 0, selected = null, visible = false, loading = null, dex = null, dexFor = null, waitingGame = false;
 let tradeView = null, names = null, tradeHistorySeen = null;
+let localView = null, localSide = null, localSeen = null, localBusy = false, localError = null;   // trades between your games
 const NATURES = ['Hardy', 'Lonely', 'Brave', 'Adamant', 'Naughty', 'Bold', 'Docile', 'Relaxed', 'Impish', 'Lax', 'Timid', 'Hasty', 'Serious',
   'Jolly', 'Naive', 'Modest', 'Mild', 'Quiet', 'Bashful', 'Rash', 'Calm', 'Gentle', 'Sassy', 'Careful', 'Quirky'];
 const TRADE_STAGE = {
@@ -339,6 +340,12 @@ function statSheet(summary, heading, { problems = [], evolvesInto = 0 } = {}) {
 }
 
 function renderStats() {
+  if (isLocal()) {
+    const view = localView, sheet = game => statSheet(view.picks[game]?.summary, `From your ${gameLabel(game)} save`,
+      { problems: view.picks[game]?.problems || [], evolvesInto: view.picks[game]?.evolvesInto || 0 });
+    $('trade-stats-sheets').replaceChildren(sheet(view.viewer), sheet(view.other));
+    return;
+  }
   const room = tradeView?.room;
   if (!room) { if ($('trade-stats').open) $('trade-stats').close(); return; }
   const theirs = room.peer?.offer;
@@ -393,7 +400,8 @@ function copyCode(button) {
 }
 
 // One side's offer: the Pokémon, or what that side is waiting on.
-function offerSide(side, room, scale) {
+let offerScale = 1;   // the bars' full length: the larger of the two offers' highest stat
+function offerSide(side, room) {
   const mine = side === 'mine', peer = room.peer, you = room.you;
   const offer = mine ? you?.offer : peer?.offer, summary = offer?.summary || null;
   const ready = mine ? Boolean(you?.ready) : Boolean(peer?.ready);
@@ -426,13 +434,23 @@ function offerSide(side, room, scale) {
     node.replaceChildren(...children);
     return;
   }
+  const evolves = !mine && offer.evolvesInto ? evolvePill(offer.evolvesInto, `Evolves into ${pokeName(offer.evolvesInto)} on arrival`) : null;
+  children.push(...offerBody(summary, problems, evolves));
+  node.replaceChildren(...children);
+}
+
+const evolvePill = (into, text) => el('span', { className: 'tw-evolve-pill', title: 'A trade evolution: it evolves as it arrives in the game' }, sprite({ species: into }, 24), text);
+
+// An offer's Pokémon at a glance: who it is, its facts, stats and moves (problems: what keeps it from the other game).
+function offerBody(summary, problems, evolves) {
+  const children = [];
   const ts = TS(), species = names?.species?.[summary.species], entry = dex?.get(summary.species);
+  const scale = offerScale;
   // the Pokémon
   const title = el('strong', {}, shown(summary), genderMark(summary));
   const types = el('div', { className: 'tw-types' }, ...(entry?.types || []).map(type => el('span', { className: 'pokedex-type', textContent: type })));
   for (const pill of types.children) pill.dataset.type = pill.textContent.toLowerCase();
   const from = summary.game ? ` · from ${gameLabel(summary.game)}` : '';
-  const evolves = !mine && offer.evolvesInto ? el('span', { className: 'tw-evolve-pill', title: 'A trade evolution: it evolves as it arrives in your game' }, sprite({ species: offer.evolvesInto }, 24), `Evolves into ${pokeName(offer.evolvesInto)} on arrival`) : null;
   children.push(el('div', { className: 'tw-hero' }, stage(summary, 96),
     el('div', { className: 'tw-name' }, title, el('small', { textContent: `${speciesName(summary)} · Lv. ${summary.level}${from}` }), types, evolves)));
   for (const problem of problems) children.push(el('div', { className: 'tw-banner problem', textContent: problem }));
@@ -481,7 +499,7 @@ function offerSide(side, room, scale) {
     moves.append(tile);
   }
   children.push(moves);
-  node.replaceChildren(...children);
+  return children;
 }
 
 function offerProblem(pokemon) {
@@ -493,7 +511,18 @@ function offerProblem(pokemon) {
 }
 
 function renderPicker(room) {
-  const boxes = data?.model?.boxes || [];
+  $('tw-game-switch').hidden = true;
+  $('tw-picker-title').textContent = 'Your Pokémon';
+  const busy = Boolean(room.trade);
+  if (busy) twNote = null;
+  renderPickerGrid({ model: data?.model, offered: busy ? null : room.you?.offer?.place, busy, problemOf: offerProblem,
+    pick: pokemon => { if (room.last) dismissed = room.last.tradeId; tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }); } });
+  renderPickNote(room);
+}
+
+// The party or a box of a save to pick from: model (its party and boxes), offered (the place picked), problemOf(pokemon)
+function renderPickerGrid({ model, offered, busy, problemOf, pick }) {
+  const boxes = model?.boxes || [];
   if (twBox >= boxes.length) twBox = 0;
   $('tw-tab-party').setAttribute('aria-selected', String(twTab === 'party'));
   $('tw-tab-boxes').setAttribute('aria-selected', String(twTab === 'boxes'));
@@ -501,14 +530,12 @@ function renderPicker(room) {
   if (boxes[twBox]) $('tw-box-name').textContent = `${boxes[twBox].name} · ${boxes[twBox].pokemon.filter(Boolean).length}/${boxes[twBox].pokemon.length}`;
   const grid = $('tw-grid');
   grid.classList.toggle('boxes', twTab === 'boxes');
-  const list = !data?.model ? [] : twTab === 'party' ? data.model.party : boxes[twBox]?.pokemon || [];
-  const busy = Boolean(room.trade), offered = busy ? null : room.you?.offer?.place;
-  if (busy) twNote = null;
+  const list = !model ? [] : twTab === 'party' ? model.party : boxes[twBox]?.pokemon || [];
   grid.replaceChildren(...list.map(pokemon => {
     const button = el('button', { type: 'button', className: 'tw-pick' });
     button.setAttribute('role', 'option');
     if (!pokemon) { button.classList.add('empty'); button.disabled = true; button.setAttribute('aria-label', 'Empty'); return button; }
-    const problem = offerProblem(pokemon), isOffered = samePlace(offered, pokemon);
+    const problem = problemOf(pokemon), isOffered = samePlace(offered, pokemon);
     button.classList.toggle('blocked', Boolean(problem));
     button.classList.toggle('offered', isOffered);
     button.classList.toggle('shadow', Boolean(pokemon.shadow));
@@ -518,15 +545,13 @@ function renderPicker(room) {
     button.append(sprite(pokemon, twTab === 'party' ? 44 : 40));
     if (twTab === 'party') button.append(el('span', {}, el('strong', { textContent: shown(pokemon) }), el('small', { textContent: pokemon.egg ? 'Egg' : `Lv. ${pokemon.level}` })));
     button.addEventListener('click', () => {
-      if (problem) { twNote = { text: `${shown(pokemon)}: ${problem}`, problem: true }; renderPickNote(room); return; }
+      if (problem) { twNote = { text: `${shown(pokemon)}: ${problem}`, problem: true }; renderTradePanel(); return; }
       if (isOffered) return;
       twNote = null;
-      if (room.last) dismissed = room.last.tradeId;
-      tradeAction('offer', { area: pokemon.area, box: pokemon.box, slot: pokemon.slot });
+      pick(pokemon);
     });
     return button;
   }));
-  renderPickNote(room);
 }
 
 function renderPickNote(room) {
@@ -632,8 +657,9 @@ function renderTradeWindow(view) {
   $('trade-code').textContent = room.code || '…';
   const offers = [room.you?.offer?.summary, room.peer?.offer?.summary].filter(Boolean);
   const scale = Math.max(1, ...offers.flatMap(summary => summary.stats));
-  offerSide('mine', room, scale);
-  offerSide('theirs', room, scale);
+  offerScale = scale;
+  offerSide('mine', room);
+  offerSide('theirs', room);
   renderPicker(room);
   const showing = renderOverlay(room, view);
   renderSteps(room, showing);
@@ -671,13 +697,212 @@ function renderTradeStart(view) {
   $('trade-history-title').hidden = !history.length;
 }
 
+
+// ---- Trades between your games: the trade window with your Colosseum save on one side and your XD save on the other ----
+// (src/local-trades.js). The picker shows one save at a time (the switch above it); each side's card is the Pokémon
+// picked from that save, every stat, and what it becomes in the other game. Trade swaps them; each game shows its new one.
+const isLocal = () => Boolean(localView?.open && !tradeView?.room);
+const localModel = () => (isLocal() ? localView.saves[localSide]?.model : data?.model);
+const otherOf = game => (game === 'xd' ? 'colosseum' : 'xd');
+
+function localCard(game, view) {
+  const viewer = view.viewer, node = $(game === viewer ? 'tw-mine' : 'tw-theirs');
+  const save = view.saves[game], pick = view.picks[game], summary = pick?.summary || null, trade = view.trade;
+  node.className = `tw-offer ${game === viewer ? 'mine' : 'theirs'}${pick?.problems.length ? ' refused' : ''}${localSide === game && !trade ? ' choosing' : ''}`;
+  const who = el('div', { className: 'tw-who' }, el('i', { className: `tw-dot ${save.source === 'live' ? 'here' : save.ready ? 'away' : ''}` }),
+    el('span', { textContent: `${gameLabel(game)}${save.trainer ? ` · ${save.trainer}` : ''}`, title: `Your ${gameLabel(game)} save` }),
+    el('small', { className: 'tw-game', textContent: save.source === 'live' ? 'Running' : 'Save' }));
+  const tools = el('span', { className: 'tw-offer-tools' });
+  if (summary) {
+    const more = el('button', { className: 'tw-more', type: 'button', textContent: 'Every stat ›' });
+    more.addEventListener('click', openStats);
+    tools.append(more);
+  }
+  if (summary && !trade) {
+    const change = el('button', { className: 'tw-change', type: 'button', textContent: 'Change' });
+    change.addEventListener('click', () => { localSide = game; renderTradePanel(); });
+    tools.append(change);
+  }
+  const children = [el('header', { className: 'tw-offer-head' }, who, tools)];
+  if (!summary) {
+    const empty = el('div', { className: 'tw-empty' }, ball(save.ready ? '' : 'wait'),
+      el('strong', { textContent: save.ready ? `Pick from your ${gameLabel(game)} save` : `Your ${gameLabel(game)} save can't trade now` }),
+      el('p', { textContent: save.ready ? `Its party and boxes are on the left${localSide === game ? '' : ' once you switch to it'}. It goes to your ${gameLabel(otherOf(game))} save.` : save.notice }));
+    if (save.ready && localSide !== game) {
+      const show = el('button', { className: 'subtle', type: 'button', textContent: `Show ${gameLabel(game)}'s Pokémon` });
+      show.addEventListener('click', () => { localSide = game; renderTradePanel(); });
+      empty.append(show);
+    }
+    children.push(empty);
+    node.replaceChildren(...children);
+    return;
+  }
+  const into = pick.evolvesInto;
+  const evolves = into ? evolvePill(into, `Evolves into ${pokeName(into)} in ${gameLabel(otherOf(game))}`) : null;
+  children.push(...offerBody(summary, pick.problems.map(text => `${gameLabel(otherOf(game))} can't take it: ${text}`), evolves));
+  node.replaceChildren(...children);
+}
+
+function renderLocalPicker(view) {
+  const games = [view.viewer, view.other];
+  if (!localSide || !view.saves[localSide]?.ready) localSide = games.find(game => view.saves[game].ready && !view.picks[game]) || games.find(game => view.saves[game].ready) || view.viewer;
+  $('tw-game-switch').hidden = false;
+  // the chosen game's save first
+  const switcher = $('tw-game-switch');
+  for (const game of games) {
+    const button = $(`tw-game-${game}`);
+    switcher.append(button);
+    button.setAttribute('aria-selected', String(localSide === game));
+    button.classList.toggle('picked', Boolean(view.picks[game]));
+    button.disabled = !view.saves[game].ready;
+  }
+  const save = view.saves[localSide];
+  $('tw-picker-title').textContent = `${save.trainer ? `${save.trainer}'s` : 'Your'} ${gameLabel(localSide)} Pokémon`;
+  const busy = Boolean(view.trade);
+  if (busy) twNote = null;
+  const game = localSide;
+  renderPickerGrid({ model: save.model, offered: view.picks[game]?.place, busy, problemOf: pokemon => pokemon.tradeProblem,
+    pick: async pokemon => {
+      await localAction('pick', { game, place: { area: pokemon.area, box: pokemon.box, slot: pokemon.slot } });
+      // then the other save, if nothing's picked there yet
+      const next = otherOf(game);
+      if (localView?.picks[game] && !localView.picks[next] && localView.saves[next]?.ready) { localSide = next; twTab = 'party'; twBox = 0; renderTradePanel(); }
+    } });
+  const note = $('tw-pick-note');
+  note.textContent = busy ? 'A trade is under way: your Pokémon stay put until it\'s done.'
+    : twNote?.text || (view.picks[game] ? 'Click another to pick it instead.' : `Click a Pokémon to send it to your ${gameLabel(otherOf(game))} save.`);
+  note.classList.toggle('problem', Boolean(!busy && twNote?.problem));
+}
+
+// what's over the two cards: the swap while it runs, how it went once it's done
+function renderLocalOverlay(view) {
+  const overlay = $('tw-overlay'), trade = view.trade;
+  if (trade) {
+    const [a, b] = trade.sides;
+    const at = a.given && b.given ? 3 : a.taken && b.taken ? 2 : a.taken || b.taken ? 1 : 0;
+    const steps = trade.sides.map(side => `Out of ${gameLabel(side.game)}`).concat(['Into both saves']);
+    const pair = el('div', { className: 'tw-swapping moving' }, el('div', { className: 'a' }, stage(a.sent, 84)), el('div', { className: 'tw-link' }), el('div', { className: 'b' }, stage(b.sent, 84)));
+    const live = trade.sides.find(side => side.live);
+    const text = trade.message || (live && (!live.taken || !live.given) ? `${gameLabel(live.game)} does its part at a quiet moment in the field, and saves.` : 'Trading…');
+    overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: trade.stage === 'returning' ? 'Putting them back…' : 'Trading between your games…' }), pair,
+      trade.stage === 'returning' ? null : el('ol', { className: 'tw-track' }, ...steps.map((step, i) => el('li', { className: i < at ? 'done' : i === at ? 'now' : '', textContent: step }))),
+      el('p', { textContent: text })));
+    overlay.hidden = false;
+    return 'trade';
+  }
+  const last = view.last;
+  if (!last || last.tradeId === dismissed) { overlay.hidden = true; return null; }
+  const again = el('button', { className: 'tw-ready', type: 'button', textContent: last.returned ? 'OK' : 'Trade again' });
+  again.addEventListener('click', () => { dismissed = last.tradeId; renderTradePanel(); });
+  if (last.returned) {
+    overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: 'Trade called off' }),
+      el('p', { textContent: `${last.reason || 'The trade didn\'t happen.'} Both Pokémon are where they were.` }), again));
+    overlay.hidden = false;
+    return 'off';
+  }
+  // each save, and what it got: the chosen game's first
+  const sides = [...last.sides].sort((x, y) => (x.game === view.viewer ? -1 : 0) - (y.game === view.viewer ? -1 : 0));
+  const pair = el('div', { className: 'tw-got-pair' }, ...sides.map(side => {
+    const got = side.received, into = side.evolvesInto, evolved = into && side.evolved;
+    const picture = el('div', { className: 'tw-got' });
+    if (evolved) picture.append(el('div', { className: 'tw-stage small' }, sprite(got, 52)), el('span', { className: 'tw-arrow', textContent: '›' }), stage({ ...got, species: into }, 96));
+    else {
+      picture.append(stage(got, 96));
+      if (into) picture.append(el('span', { className: 'tw-arrow', textContent: '›' }), el('div', { className: 'tw-stage small later', title: `${pokeName(into)}, once it evolves` }, sprite({ species: into }, 52)));
+    }
+    const game = gameLabel(side.game);
+    // a Pokémon called by its species' name takes the new one when it evolves, as in the game
+    const name = evolved && shown(got) === speciesName(got) ? pokeName(into) : shown(got);
+    const line = evolved ? `It evolved from ${speciesName(got)}!`
+      : into ? (side.live ? `Watch ${game}: it evolves into ${pokeName(into)} there.` : `It evolves into ${pokeName(into)} the next time you play ${game}.`)
+        : side.live ? `${game} shows it now.` : `${game} shows it the next time you play.`;
+    return el('div', { className: 'tw-got-side' }, picture, el('strong', { textContent: `${name} is in your ${game} save` }), el('small', { textContent: line }));
+  }));
+  overlay.replaceChildren(el('div', { className: 'tw-moment' }, el('h3', { textContent: 'Trade complete!' }), pair, again));
+  overlay.hidden = false;
+  return 'done';
+}
+
+function localFoot(view) {
+  if (localError) return [localError, true];
+  if (view.trade) return [view.trade.message || 'Trading…'];
+  const [a, b] = [view.viewer, view.other], pa = view.picks[a], pb = view.picks[b];
+  for (const game of [a, b]) if (!view.saves[game].ready) return [view.saves[game].notice, true];
+  for (const game of [a, b]) if (view.picks[game]?.problems.length) return [`${gameLabel(otherOf(game))} can't take ${shown(view.picks[game].summary)}: ${view.picks[game].problems[0]}`, true];
+  if (!pa && !pb) return ['Pick a Pokémon from each save. Each goes to the other game.'];
+  if (!pa || !pb) return [`Now pick one from your ${gameLabel(pa ? b : a)} save.`];
+  return [`Look both over, then trade: ${shown(pa.summary)} goes to ${gameLabel(b)}, ${shown(pb.summary)} comes to ${gameLabel(a)}.`];
+}
+
+function renderLocalWindow(view) {
+  $('tw-code').hidden = true;
+  $('tw-local-title').hidden = false;
+  $('tw-local-games').textContent = `${gameLabel(view.viewer)} ⇄ ${gameLabel(view.other)}`;
+  $('trade-steps').children[1].lastChild.textContent = 'Look over';
+  const offers = [view.picks[view.viewer]?.summary, view.picks[view.other]?.summary].filter(Boolean);
+  offerScale = Math.max(1, ...offers.flatMap(summary => summary.stats));
+  localCard(view.viewer, view);
+  localCard(view.other, view);
+  renderLocalPicker(view);
+  const showing = renderLocalOverlay(view);
+  const both = Boolean(view.picks[view.viewer] && view.picks[view.other]);
+  const at = showing === 'done' ? 3 : view.trade || localBusy ? 2 : both ? 1 : 0;
+  for (const [i, li] of [...$('trade-steps').children].entries()) {
+    li.classList.toggle('done', i < at || (showing === 'done' && i === 3));
+    li.classList.toggle('now', i === at && showing !== 'done');
+  }
+  const [status, problem] = localFoot(view);
+  $('trade-progress').textContent = status;
+  $('trade-progress').classList.toggle('problem', Boolean(problem));
+  const ready = $('trade-ready'), pa = view.picks[view.viewer], pb = view.picks[view.other];
+  ready.textContent = view.trade || localBusy ? 'Trading…' : pa && pb ? `Trade ${shown(pa.summary)} for ${shown(pb.summary)}` : 'Trade';
+  ready.title = '';
+  ready.disabled = Boolean(view.trade) || localBusy || !view.canTrade;
+  ready.classList.remove('pressed');
+  $('trade-withdraw').hidden = !view.picks[localSide] || Boolean(view.trade);
+  $('trade-withdraw').textContent = 'Put back';
+  $('trade-compare').hidden = !offers.length;
+  $('trade-leave').textContent = 'Close';
+  $('trade-leave').disabled = Boolean(view.trade) || localBusy;
+  $('trade-leave').title = view.trade ? 'You can close it once the trade is done' : '';
+}
+
+// the online room's own labels, back from the local window's
+function onlineLabels() {
+  $('tw-code').hidden = false;
+  $('tw-local-title').hidden = true;
+  $('trade-steps').children[1].lastChild.textContent = 'Ready';
+  $('trade-withdraw').textContent = 'Take back';
+  $('trade-leave').textContent = 'Leave room';
+}
+
+async function localAction(action, value) {
+  localError = null;
+  if (action === 'trade') { localBusy = true; renderTradePanel(); }
+  try { localView = await window.colo.localTrade(action, value); setStatus(''); } catch (error) {
+    if (action === 'open') setStatus(message(error));
+    else localError = message(error);
+  } finally { if (action === 'trade') localBusy = false; }
+  renderTradePanel();
+}
+
+function renderLocalStart(view) {
+  const button = $('trade-local-open'), other = view?.other || (data?.game === 'xd' ? 'colosseum' : 'xd');
+  $('trade-local-label').textContent = `Trade with your ${gameLabel(other)} save`;
+  const blocked = view ? [view.viewer, view.other].map(game => view.saves[game]).find(save => !save.ready) : null;
+  button.disabled = !view || Boolean(blocked);
+  $('trade-local-note').textContent = blocked ? blocked.notice : `Swap a Pokémon between your ${gameLabel(view?.viewer || data?.game)} and ${gameLabel(other)} saves, no one else needed. Trade evolutions happen in the game it goes to.`;
+}
+
 function renderTradePanel() {
-  const view = tradeView, room = view?.room;
+  const view = tradeView, room = view?.room, local = isLocal();
   const page = $('page-pokemon');
-  page.classList.toggle('trading', Boolean(room));
-  $('trade-window').hidden = !room;
+  page.classList.toggle('trading', Boolean(room) || local);
+  $('trade-window').hidden = !room && !local;
   renderTradeStart(view);
-  if (room) renderTradeWindow(view);
+  renderLocalStart(localView);
+  if (room) { onlineLabels(); renderTradeWindow(view); }
+  else if (local) renderLocalWindow(localView);
   else { tradeCache = null; if ($('trade-stats').open) $('trade-stats').close(); }
   if ($('trade-stats').open) renderStats();
 }
@@ -694,7 +919,8 @@ function show() {
   visible = true;
   refresh();
   window.colo.shadowtradeSync().then(refresh).catch(() => {});
-  tradeNames().then(() => window.colo.onlineTrade('view')).then(view => { tradeView = view; renderTradePanel(); }).catch(() => {});
+  tradeNames().then(() => Promise.all([window.colo.onlineTrade('view'), window.colo.localTrade('view')]))
+    .then(([view, local]) => { tradeView = view; localView = local; renderTradePanel(); }).catch(() => {});
 }
 function hide() { visible = false; }
 
@@ -706,20 +932,35 @@ $('pokemon-box-next').addEventListener('click', () => { const n = data?.model?.b
 $('pokemon-refresh').addEventListener('click', () => { setStatus(''); refresh(); window.colo.shadowtradeSync().then(refresh).catch(error => setStatus(message(error))); });
 $('pokemon-trade').addEventListener('click', trade);
 $('shadowtrade-confirm-send').addEventListener('click', confirmTrade);
-window.colo.onPokemonChanged(() => { if (visible) refresh(); });
+window.colo.onPokemonChanged(() => {
+  if (!visible) return;
+  refresh();
+  // the trade window's saves too (the running game's changes as it's played)
+  if (localView?.open) window.colo.localTrade('view').then(view => { localView = view; renderTradePanel(); }).catch(() => {});
+});
 window.colo.onShadowtrade(view => { if (data) { data.trades = view; if (visible) { renderTrades(); renderDetail(); } } });
 window.colo.onShadowtradeWaiting(() => { waitingGame = true; if (visible) renderTrades(); });
 $('trade-host').addEventListener('click', () => tradeAction('open'));
 $('trade-join-form').addEventListener('submit', event => { event.preventDefault(); tradeAction('open', $('trade-join-code').value); });
 $('trade-copy').addEventListener('click', () => copyCode(null));
-$('trade-ready').addEventListener('click', () => tradeAction(tradeView?.room?.you?.ready ? 'unready' : 'ready'));
-$('trade-withdraw').addEventListener('click', () => { twNote = null; tradeAction('offer', null); });
-$('trade-leave').addEventListener('click', () => tradeAction('leave'));
+$('trade-ready').addEventListener('click', () => (isLocal() ? localAction('trade') : tradeAction(tradeView?.room?.you?.ready ? 'unready' : 'ready')));
+$('trade-withdraw').addEventListener('click', () => { twNote = null; if (isLocal()) localAction('pick', { game: localSide, place: null }); else tradeAction('offer', null); });
+$('trade-leave').addEventListener('click', () => { if (isLocal()) { localSide = null; dismissed = null; localAction('close'); } else tradeAction('leave'); });
+$('trade-local-open').addEventListener('click', () => { localSide = null; twTab = 'party'; twBox = 0; twNote = null; localAction('open'); });
+for (const game of ['colosseum', 'xd']) $(`tw-game-${game}`).addEventListener('click', () => { localSide = game; twTab = 'party'; twBox = 0; twNote = null; renderTradePanel(); });
 $('trade-compare').addEventListener('click', openStats);
 $('tw-tab-party').addEventListener('click', () => { twTab = 'party'; twNote = null; renderTradePanel(); });
 $('tw-tab-boxes').addEventListener('click', () => { twTab = 'boxes'; twNote = null; renderTradePanel(); });
-$('tw-box-prev').addEventListener('click', () => { const n = data?.model?.boxes.length || 1; twBox = (twBox + n - 1) % n; renderTradePanel(); });
-$('tw-box-next').addEventListener('click', () => { const n = data?.model?.boxes.length || 1; twBox = (twBox + 1) % n; renderTradePanel(); });
+$('tw-box-prev').addEventListener('click', () => { const n = localModel()?.boxes.length || 1; twBox = (twBox + n - 1) % n; renderTradePanel(); });
+$('tw-box-next').addEventListener('click', () => { const n = localModel()?.boxes.length || 1; twBox = (twBox + 1) % n; renderTradePanel(); });
+window.colo.onLocalTrades(view => {
+  localView = view;
+  // a trade moved on: the chosen game's save changed
+  const progress = JSON.stringify([view.trade ? view.trade.sides.map(side => `${side.taken}${side.given}`) : null, view.history[0]?.tradeId || null]);
+  if (localSeen !== null && progress !== localSeen && visible) refresh();
+  localSeen = progress;
+  if (visible) renderTradePanel();
+});
 window.colo.onOnlineTrades(view => {
   tradeView = view;
   // a trade moved on (a Pokémon left the save, or came into it): the save changed
