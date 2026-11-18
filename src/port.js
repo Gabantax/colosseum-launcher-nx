@@ -242,7 +242,10 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     ...randomizer.normalize(input),
     // Later generations (generations.js): whose battle rules, and whose Pokémon are added. generation<N>Pokemon is the
     // Settings page's switch for one of them.
-    ...generationSettings(input)
+    ...generationSettings(input),
+    // Battle Revolution models for the game's own Pokémon too (Bulbasaur to Deoxys), not just the later generations':
+    // Make assets makes them, and the game shows them instead of its own (pokemon-packs.js ownModels). Off unless chosen.
+    pbrReplaceAll: Boolean(input.pbrReplaceAll)
   };
   // The graphics preset chosen (src/presets.js), while the picture settings still match it; else Custom.
   settings.graphicsPreset = presets.reconcile({ ...settings, graphicsPreset: input.graphicsPreset });
@@ -598,6 +601,9 @@ function pbrOutdated(root, models, numbers) {
 // plays a Pokémon's own cry (host/packcries.c: the packs file's CRYS chunk). An older game makes models only, and
 // plays the base's cry.
 function pbrMakesCries(root) { return fs.existsSync(path.join(root, 'tools', 'pbr2pkx', 'cries.py')); }
+// Whether the game shows Battle Revolution models for its own Pokémon (host/packlooks.c, the LOOK chunk): a game from
+// before skips the chunk, so Replace all models waits for an update.
+function playsOwnModels(root) { return fs.existsSync(path.join(root, 'host', 'packlooks.c')); }
 function playsPackCries(root) { return fs.existsSync(path.join(root, 'host', 'packcries.c')); }
 function pbrModelsCommand(root, disc, work, numbers, platform = process.platform, environment = process.env) {
   const args = [pbrModelsScript(root), disc, work, ...numbers.map(String)];
@@ -669,4 +675,4 @@ function gameRuntimeFolders(environment = process.env) {
 module.exports = { PORT_URL, TEXTURE_PACK, texturePack, gameArch, platformInfo, dependencyPaths, isPort, placeMainDol, validateRom, normalizeSettings, moveToMetal, turnOnQuickBattles,
   texturePackDirectory, texturePackInstalled, hdVisualsInstalled, dropLeftOutTextures, customTextureDirectory, customTexturesPresent, texturePackFolders,
   buildEnvironment, binaryPath, longPathProblem, pathCharacterProblem, nonAsciiPathProblem, playableInstall, useLauncherScripts, launcherScript,
-  gameBuildEnvironment, buildCommand, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };
+  gameBuildEnvironment, buildCommand, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsOwnModels, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };

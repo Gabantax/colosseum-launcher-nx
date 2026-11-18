@@ -1182,15 +1182,23 @@ function pbrDiscProblem() {
   return pbrDiscProblemCache.problem;
 }
 function pbrModels() { return path.join(pbrWork(), 'models'); }
-// The National Pokédex numbers a model is wanted for: the Pokémon of each generation imported
+// Whether the game's own Pokémon get Battle Revolution models too: Replace all models is on, and the game shows them
+// (an older game skips them, so they aren't made for it)
+function pbrReplacing(settings = config.settings) { return Boolean(settings.pbrReplaceAll && config.repo && port.playsOwnModels(config.repo)); }
+// The National Pokédex numbers a model is wanted for: the Pokémon of each generation imported, then with Replace all
+// models the game's own, Bulbasaur to Deoxys
 function pbrWanted(settings = config.settings) {
   const numbers = [];
   for (const generation of settings.generationPokemon || []) {
     const [first, last] = generations.load(generation).newSpecies;
     for (let n = first; n <= last; n++) numbers.push(n);
   }
+  if (pbrReplacing(settings)) numbers.push(...pokemonPacks.OWN_NATIONALS);
   return numbers;
 }
+// The game's own Pokémon's Battle Revolution models made so far, for the game's file (its LOOK chunk), where Replace all
+// models is on; [] otherwise
+function pbrOwnModels(tables) { return pbrReplacing() ? pokemonPacks.ownModels(tables, pbrModels()) : []; }
 // Made: a model of it is there, no fix to the converter since has changed it (those count once Make assets remakes
 // them), and its cry is there, where the game makes cries (noCry: those with a model and no cry yet)
 function pbrState() {
@@ -1201,7 +1209,12 @@ function pbrState() {
   return { disc: config.pbrDisc || null, discFound: Boolean(config.pbrDisc && fs.existsSync(config.pbrDisc)),
     discProblem: pbrDiscProblem(), choice: pbrDiscChoice,
     wanted: wanted.length, made: present.length - outdated.size - noCry, outdated: outdated.size, noCry, cries,
-    supported: Boolean(config.repo && fs.existsSync(port.pbrModelsScript(config.repo))) };
+    supported: Boolean(config.repo && fs.existsSync(port.pbrModelsScript(config.repo))),
+    // Replace all models: chosen, and whether the game can show them (else the switch asks for an update)
+    replaceAll: Boolean(config.settings.pbrReplaceAll), ownModels: Boolean(config.repo && port.playsOwnModels(config.repo)),
+    // what the switch adds, and what's made without it, for its warning of how much longer making them takes
+    ownCount: pokemonPacks.OWN_NATIONALS.length, generationCount: pbrWanted({ ...config.settings, pbrReplaceAll: false }).length,
+    generation4Count: generations.load(4).newSpecies[1] - generations.load(4).newSpecies[0] + 1 };
 }
 async function makePbrModels() {
   requireFeature('pbrAssets', 'Battle Revolution assets');
@@ -1209,7 +1222,7 @@ async function makePbrModels() {
   if (!config.pbrDisc || !fs.existsSync(config.pbrDisc)) throw new Error('Choose your Pokémon Battle Revolution disc file first.');
   const problem = pbrDiscProblem();
   if (problem) throw new Error(`Your Battle Revolution disc can't be used: ${problem}`);
-  if (!wanted.length) throw new Error('Turn on a later generation\'s Pokémon first: their models and cries are what this makes.');
+  if (!wanted.length) throw new Error('Turn on Generation 4 Pokémon or Replace all models first: their models and cries are what this makes.');
   if (!fs.existsSync(port.pbrModelsScript(root))) throw new Error('This version of the game can\'t make Battle Revolution assets yet. Update it from the Play page.');
   await ensureBuildTools();
   const cmd = port.pbrModelsCommand(root, config.pbrDisc, pbrWork(), wanted, process.platform, toolEnv());
@@ -1229,10 +1242,12 @@ function preparePokemonPacks(rom, folder) {
   const pokemon = [...loaded.pokemon, ...loaded.generationPokemon], { moves, rules } = loaded.built, { ownRows } = loaded;
   // With a later generation's Pokémon, the Move Deleter also makes a Pokémon remember a move, as that generation's games do
   const relearner = loaded.generationPokemon.length > 0;
-  if (!pokemon.length && !moves.length && !rules && !ownRows.length) return { file: null, own: 0 };
+  const looks = pbrOwnModels(loaded.tables);
+  if (!pokemon.length && !moves.length && !rules && !ownRows.length && !looks.length) return { file: null, own: 0 };
   if (loaded.registryChanged) pokemonPacks.writeRegistry(currentSaveDirectory(), loaded.registry);
   const file = path.join(folder, 'pokemon-packs.bin');
-  fs.writeFileSync(file, pokemonPacks.compile({ pokemon, moves, rules, ownRows, relearner }));
+  fs.writeFileSync(file, pokemonPacks.compile({ pokemon, moves, rules, ownRows, relearner, looks }));
+  logOwnModels(looks);
   if (loaded.pokemon.length) log(`Pokémon packs: ${loaded.pokemon.map(each => `${pokedexNames.displayName(each.name)}${each.form ? ` (${each.form})` : ''} from ${each.key}`).join(', ')}.`);
   for (const generation of config.settings.generationPokemon) log(`Generation ${generation} Pokémon: ${loaded.generationPokemon.filter(each => each.generation === generation).length} Pokémon and ${moves.length} new moves.`);
   if (rules) log(`Battle rules: generation ${rules.generation}.`);
@@ -1247,10 +1262,30 @@ function prepareBattleRules(rom, folder, battleRules) {
   const built = generations.build(packTables.tables, { battleRules, generationPokemon: [battleRules] });
   const { pokemon, problems } = pokemonPacks.generationPokemon(packTables.tables, built, { modelsDirectory: pbrModels() });
   for (const problem of problems) log(`Generation ${battleRules} Pokémon ${packLabel(problem)}: ${problem.message}`);
+  const looks = pbrOwnModels(packTables.tables);
   const file = path.join(folder, 'online-rules.bin');
-  fs.writeFileSync(file, pokemonPacks.compile({ pokemon, moves: built.moves, rules: built.rules }));
+  fs.writeFileSync(file, pokemonPacks.compile({ pokemon, moves: built.moves, rules: built.rules, looks }));
   log(`Battle rules: generation ${battleRules}, the room's, with its ${pokemon.length} Pokémon.`);
+  logOwnModels(looks);
   return file;
+}
+
+// An online battle by Colosseum's own rules: no packs and no later generation, only the player's Battle Revolution models
+// of the game's own Pokémon where Replace all models is on (how a Pokémon looks is each player's own: it changes nothing
+// in the battle). null when there are none.
+function prepareOwnModels(rom, folder) {
+  if (!pbrReplacing() || !supports('pbrAssets')) return null;
+  if (packTables?.rom !== rom) packTables = { rom, tables: pokemonPacks.readGameTables(rom) };
+  const looks = pbrOwnModels(packTables.tables);
+  if (!looks.length) return null;
+  const file = path.join(folder, 'online-rules.bin');
+  fs.writeFileSync(file, pokemonPacks.compile({ looks }));
+  logOwnModels(looks);
+  return file;
+}
+
+function logOwnModels(looks) {
+  if (looks.length) log(`Battle Revolution models: ${looks.length} of the game's own Pokémon look as they do in Battle Revolution.`);
 }
 
 // A game without packs of its own but with later generations (XD, games.js): the player's battle rules, and the later
@@ -1280,8 +1315,11 @@ function prepareGenerations(rom, folder, settings = config.settings) {
 function packsDisc(rom, what) { return config.game === games.DEFAULT ? rom : teamDisc(what); }
 function preparePlayPacks(rom, folder, battle = null) {
   if (battle) {
-    if (!(battle.rules?.battleRules > generations.COLOSSEUM_RULES) || !supports('generations')) return { file: null, own: 0 };
-    return { file: prepareBattleRules(packsDisc(rom, 'The room\'s battle rules are made'), folder, battle.rules.battleRules), own: 0 };
+    if (battle.rules?.battleRules > generations.COLOSSEUM_RULES && supports('generations'))
+      return { file: prepareBattleRules(packsDisc(rom, 'The room\'s battle rules are made'), folder, battle.rules.battleRules), own: 0 };
+    if (!pbrReplacing() || !supports('pbrAssets')) return { file: null, own: 0 };
+    try { return { file: prepareOwnModels(packsDisc(rom, 'Your Battle Revolution models are given to the game'), folder), own: 0 }; }
+    catch (error) { log(`Your Battle Revolution models of the game's own Pokémon weren't loaded: ${error.message}`); return { file: null, own: 0 }; }
   }
   if (supports('pokemonPacks')) {
     try { return preparePokemonPacks(packsDisc(rom, `${activeGame().shortName}'s Pokémon packs and later generations are made`), folder); }
@@ -1399,7 +1437,7 @@ function generationDex(rom, generation = 4) {
 }
 
 function pokedexList(rom) {
-  let species = withHdSprites(rom, pokedexData.list(rom));
+  let species = withPbrForms(withHdSprites(rom, pokedexData.list(rom)));
   let packs = [], problems = [];
   // Another game's packs and later generations are made from Colosseum's disc (packsDisc), so they're listed once it's
   // set up; the Pokémon stand in for theirs are the chosen game's own, and so are their cries.
@@ -1478,11 +1516,33 @@ function pokedexCry(rom, key) {
   return pokedexPacks.get(name.slice('pack:'.length))?.cry ?? null;
 }
 
+// A disc Pokémon's looks with Replace all models: its Battle Revolution models, as the game shows it (pokedexLook)
+const PBR_FORMS = { 'battle-revolution': pokemonPacks.FILES.model, 'battle-revolution-shiny': pokemonPacks.FILES.modelShiny };
+// The disc's Pokémon with their Battle Revolution models first, where Replace all models has made them: those take the
+// place of its own normal and shiny ones, and any other looks it has (Unown's letters, Castform's weather) stay.
+function withPbrForms(species) {
+  if (!pbrReplacing()) return species;
+  return species.map(entry => {
+    const folder = path.join(pbrModels(), String(entry.national));
+    if (!entry.national || !fs.existsSync(path.join(folder, pokemonPacks.FILES.model))) return entry;
+    const own = [{ id: 'battle-revolution', label: 'Normal' },
+      ...(fs.existsSync(path.join(folder, pokemonPacks.FILES.modelShiny)) ? [{ id: 'battle-revolution-shiny', label: 'Shiny' }] : [])];
+    const forms = entry.forms || [], rest = forms[0]?.label === 'Normal' && forms[1]?.label === 'Shiny' ? forms.slice(2) : forms;
+    return { ...entry, forms: [...own, ...rest] };
+  });
+}
+
 // Where a Pokédex entry's look is: a model file of its pack's, or a model on the disc (its base's, for a pack Pokémon
 // without one). key is a pack Pokémon's "pack:<pack>/<folder>", or a disc Pokémon's National Pokédex number.
 function pokedexLook(key, form) {
   const name = String(key);
-  if (!name.startsWith('pack:')) return { national: Number(name) };
+  if (!name.startsWith('pack:')) {
+    const pbr = PBR_FORMS[form];
+    if (!pbr) return { national: Number(name) };
+    const file = path.join(pbrModels(), String(Number(name)), pbr);
+    if (!fs.existsSync(file)) throw new Error('That Pokémon\'s Battle Revolution model isn\'t made yet.');
+    return { pkx: fs.readFileSync(file) };
+  }
   const entry = pokedexPacks.get(name.slice('pack:'.length));
   if (!entry) throw new Error('That Pokémon isn\'t in your packs any more.');
   if (form !== 'model' && form !== 'modelShiny') return { national: entry.base };
