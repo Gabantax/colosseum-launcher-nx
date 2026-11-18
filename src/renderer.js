@@ -26,7 +26,7 @@ function closeModal() {
 
 // --- Pages: the tabs along the top pick one; Play is the home page. Each page can run code as it shows and hides.
 const pages = {
-  play: { section: 'page-home', nav: 'nav-play' }, saves: { section: 'page-saves', nav: 'nav-saves' }, online: { section: 'page-online', nav: 'nav-online' }, pokedex: { section: 'page-pokedex', nav: 'nav-pokedex' }, jukebox: { section: 'page-jukebox', nav: 'nav-jukebox' },
+  play: { section: 'page-home', nav: 'nav-play' }, saves: { section: 'page-saves', nav: 'nav-saves' }, online: { section: 'page-online', nav: 'nav-online' }, pokedex: { section: 'page-pokedex', nav: 'nav-pokedex' }, pokemon: { section: 'page-pokemon', nav: 'nav-pokemon' }, jukebox: { section: 'page-jukebox', nav: 'nav-jukebox' },
   customize: { section: 'page-customize', nav: 'nav-customize' },
   changelog: { section: 'changelog', nav: 'open-changelog' }, settings: { section: 'page-settings', nav: 'settings-cog' }
 };
@@ -57,6 +57,8 @@ function showPage(name) {
 for (const [name, item] of Object.entries(pages)) if (!item.sub) $(item.nav).addEventListener('click', () => showPage(name));
 // The Pokédex (pokedex-page.js) keeps nothing on the GPU while it isn't showing.
 onPage('pokedex', { show: () => window.coloPokedex?.show(), hide: () => window.coloPokedex?.hide() });
+// The Pokémon page (pokemon-page.js) reads the save each time it shows.
+onPage('pokemon', { show: () => window.coloPokemon?.show(), hide: () => window.coloPokemon?.hide() });
 // Customize (customize-page.js), the same: its 3D view is let go while it's hidden.
 onPage('customize', { show: () => window.coloCustomize?.show(), hide: () => window.coloCustomize?.hide() });
 // The Jukebox (jukebox-page.js) renders a song from the disc when it is played; its player stays under every page after that.

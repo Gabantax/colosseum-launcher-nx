@@ -34,6 +34,7 @@
       <button id="nav-play" class="nav-tab active" aria-current="page"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 4.5v11l9-5.5z"/></svg><span>Play</span></button>
       <button id="nav-saves" class="nav-tab" title="Saved games"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h10l3 3v11H4z"/><path d="M7 3v4h6V3M7 17v-5h7v5"/></svg><span>Saves</span></button>
       <button id="nav-pokedex" class="nav-tab" data-feature="pokedex" title="Browse every Pokémon on your disc"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h5M12.5 10h5"/><circle cx="10" cy="10" r="2.5"/></svg><span>Pokédex</span></button>
+      <button id="nav-pokemon" class="nav-tab" title="Your party and PC boxes, and Shadowtrade"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><path d="M14 11.2l1.1 2.2 2.4.3-1.8 1.7.5 2.4-2.2-1.2-2.2 1.2.5-2.4-1.8-1.7 2.4-.3z"/></svg><span>Pokémon</span></button>
       <button id="nav-customize" class="nav-tab" data-feature="customize" title="Choose each hero's colours, on their model from your disc"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="5.5" r="2.8"/><path d="M4.5 17.5c.4-4 2.6-6.5 5.5-6.5s5.1 2.5 5.5 6.5"/></svg><span>Customize</span></button>
       <button id="nav-jukebox" class="nav-tab" data-feature="jukebox" title="Listen to the game's music from your disc"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 14.5V5l8-1.8v9.3"/><circle cx="6" cy="14.5" r="2.2"/><circle cx="14" cy="12.5" r="2.2"/></svg><span>Jukebox</span></button>
       <button id="nav-online" class="nav-tab" data-feature="online" title="Battle other players online"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.2 2 3.2 4.6 3.2 7.5s-1 5.5-3.2 7.5c-2.2-2-3.2-4.6-3.2-7.5s1-5.5 3.2-7.5z"/></svg><span>Online</span></button>
@@ -225,6 +226,82 @@
               </div>
               <section class="pokedex-evolution-section" aria-labelledby="pokedex-evolution-title"><h3 id="pokedex-evolution-title">Evolution</h3><div id="pokedex-chain" class="pokedex-chain"></div><ul id="pokedex-evolution-notes" class="pokedex-evolution-notes"></ul></section>
             </div>
+          </div>
+        </div>
+      </section>
+      <section id="page-pokemon" class="page sheet pokedex-page pokemon-page" aria-labelledby="pokemon-title" hidden>
+        <div class="modal-head"><div><h1 id="pokemon-title">Pokémon</h1><p id="pokemon-summary">Your party and PC boxes, from your save.</p></div>
+          <div class="pokemon-head-actions"><span id="pokemon-source" class="badge" hidden></span><button class="subtle" id="pokemon-refresh" title="Read the save again and check on your trades">Refresh</button></div></div>
+        <div class="pokemon-body">
+          <div class="pokemon-browse">
+            <div class="pokemon-tabs" role="tablist" aria-label="Party or boxes"><button id="pokemon-tab-party" class="pokemon-tab" role="tab" type="button" aria-selected="true">Party</button><button id="pokemon-tab-boxes" class="pokemon-tab" role="tab" type="button" aria-selected="false">Boxes</button></div>
+            <div id="pokemon-box-bar" class="pokemon-box-bar" hidden><button id="pokemon-box-prev" class="subtle" type="button" aria-label="Previous box">‹</button><select id="pokemon-box" aria-label="Box"></select><button id="pokemon-box-next" class="subtle" type="button" aria-label="Next box">›</button></div>
+            <p id="pokemon-notice" class="pokemon-notice" role="status" hidden></p>
+            <p id="pokemon-status" class="pokemon-status" role="status" aria-live="polite" hidden></p>
+            <div id="pokemon-grid" class="pokemon-grid" role="listbox" aria-label="Pokémon"></div>
+            <p id="pokemon-empty" class="helper pokemon-empty" hidden></p>
+          </div>
+          <aside class="pokemon-side">
+            <section id="pokemon-detail" class="pokemon-detail" hidden>
+              <div class="pokemon-detail-head"><div id="pokemon-detail-sprite" class="pokemon-detail-sprite"></div><div><h2 id="pokemon-detail-name"></h2><p id="pokemon-detail-meta" class="helper"></p><div id="pokemon-detail-badges" class="pokemon-detail-badges"></div></div></div>
+              <div id="pokemon-heart" class="pokemon-heart" hidden><div class="pokemon-heart-bar"><i id="pokemon-heart-fill"></i></div><small id="pokemon-heart-text"></small></div>
+              <button id="pokemon-trade" class="solid pokemon-trade" type="button" hidden>Send to Shadowtrade</button>
+              <p id="pokemon-trade-note" class="helper"></p>
+            </section>
+            <section class="trade-start" aria-labelledby="trade-title">
+              <div class="trade-start-card">
+                <div class="trade-start-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg></div>
+                <div><p class="eyebrow">ONLINE TRADE</p><h2 id="trade-title">Trade with a friend</h2></div>
+                <p class="trade-start-text">Make a trade code and share it, or join theirs. You both pick a Pokémon, see every stat of the other's, and ready up. Colosseum and XD trade with each other, and trade evolutions happen when the Pokémon arrives.</p>
+                <button id="trade-host" class="trade-host" type="button">Make a trade code</button>
+                <form id="trade-join-form" class="trade-join"><input id="trade-join-code" type="text" maxlength="9" autocomplete="off" spellcheck="false" placeholder="ABC-DEF" aria-label="Trade code"><button id="trade-join" class="subtle" type="submit">Join</button></form>
+                <div id="trade-local" class="trade-local"><span class="trade-or">or, on this computer</span>
+                  <button id="trade-local-open" class="trade-local-open" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg><span id="trade-local-label">Trade with your XD save</span></button>
+                  <p id="trade-local-note" class="trade-local-note"></p></div>
+              </div>
+              <p id="trade-notice" class="trade-notice" role="status" hidden></p>
+              <div id="trade-journal" class="shadowtrade-trades"></div>
+              <h3 id="trade-history-title" class="shadowtrade-history-title" hidden>Recent online trades</h3>
+              <ul id="trade-history" class="trade-history"></ul>
+            </section>
+            <section class="shadowtrade-panel" aria-labelledby="shadowtrade-title">
+              <h2 id="shadowtrade-title">Shadowtrade</h2>
+              <p class="helper">Trade a Shadow Pokémon with another player, sight unseen. Yours leaves your save; another player's Shadow Pokémon comes back, still to be purified. Only ones your save can take come to you.</p>
+              <div id="shadowtrade-trades" class="shadowtrade-trades"></div>
+              <p id="shadowtrade-none" class="helper">No trades on their way.</p>
+              <h3 id="shadowtrade-history-title" class="shadowtrade-history-title" hidden>Recent trades</h3>
+              <ul id="shadowtrade-history" class="shadowtrade-history"></ul>
+            </section>
+          </aside>
+        </div>
+        <div id="trade-window" class="trade-window" hidden>
+          <header class="tw-bar">
+            <div id="tw-local-title" class="tw-code tw-local-title" hidden><span class="tw-label">Between your games</span><strong id="tw-local-games" class="tw-local-games"></strong></div>
+            <div id="tw-code" class="tw-code"><span class="tw-label">Trade code</span><strong id="trade-code" class="tw-code-value"></strong><button id="trade-copy" class="tw-copy" type="button" title="Copy the trade code">Copy</button></div>
+            <ol id="trade-steps" class="tw-steps" aria-label="Trade steps"><li data-step="pick"><i>1</i>Pick</li><li data-step="ready"><i>2</i>Ready</li><li data-step="trade"><i>3</i>Trade</li><li data-step="done"><i>4</i>Done</li></ol>
+            <button id="trade-leave" class="tw-leave" type="button">Leave room</button>
+          </header>
+          <div class="tw-main">
+            <aside class="tw-picker" aria-label="Your Pokémon">
+              <div id="tw-game-switch" class="tw-tabs tw-game-switch" role="tablist" aria-label="Which save" hidden><button id="tw-game-colosseum" role="tab" type="button" aria-selected="true">Colosseum save</button><button id="tw-game-xd" role="tab" type="button" aria-selected="false">XD save</button></div>
+              <div class="tw-picker-head"><h2 id="tw-picker-title">Your Pokémon</h2>
+                <div class="tw-tabs" role="tablist" aria-label="Party or boxes"><button id="tw-tab-party" role="tab" type="button" aria-selected="true">Party</button><button id="tw-tab-boxes" role="tab" type="button" aria-selected="false">Boxes</button></div></div>
+              <div id="tw-box-bar" class="tw-box-bar" hidden><button id="tw-box-prev" type="button" aria-label="Previous box">‹</button><strong id="tw-box-name"></strong><button id="tw-box-next" type="button" aria-label="Next box">›</button></div>
+              <div id="tw-grid" class="tw-grid" role="listbox" aria-label="Pick a Pokémon to offer"></div>
+              <p id="tw-pick-note" class="tw-pick-note" role="status" aria-live="polite"></p>
+            </aside>
+            <section class="tw-table" aria-label="The trade">
+              <div class="tw-offers">
+                <article id="tw-mine" class="tw-offer mine" aria-label="Your offer"></article>
+                <div class="tw-swap" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg></div>
+                <article id="tw-theirs" class="tw-offer theirs" aria-label="Their offer"></article>
+                <div id="tw-overlay" class="tw-overlay" hidden></div>
+              </div>
+              <footer class="tw-foot">
+                <p id="trade-progress" class="tw-status" role="status" aria-live="polite"></p>
+                <div class="tw-actions"><button id="trade-compare" class="subtle" type="button">Compare every stat</button><button id="trade-withdraw" class="subtle" type="button" hidden>Take back</button><button id="trade-ready" class="tw-ready" type="button" disabled>Ready to trade</button></div>
+              </footer>
+            </section>
           </div>
         </div>
       </section>
@@ -565,6 +642,19 @@
         <div class="actions update-actions"><label id="update-auto-row" class="update-check" hidden><input id="update-auto" type="checkbox"><span id="update-auto-label">Update automatically from now on</span></label><span class="nav-spacer" aria-hidden="true"></span><button id="update-secondary" class="subtle" hidden></button><button id="update-primary" class="update-primary"></button></div>
       </div>
     </dialog>
+    <dialog id="trade-stats" class="launcher-modal trade-stats" aria-labelledby="trade-stats-title">
+      <div class="modal-head"><div><p class="eyebrow">ONLINE TRADE</p><h1 id="trade-stats-title">Every stat</h1><p>Both Pokémon as the games keep them.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
+      <div class="modal-body"><div id="trade-stats-sheets" class="trade-stats-sheets"></div></div>
+    </dialog>
+    <dialog id="shadowtrade-confirm" class="launcher-modal shadowtrade-confirm" aria-labelledby="shadowtrade-confirm-title">
+      <div class="modal-head"><div><p class="eyebrow">SHADOWTRADE</p><h1 id="shadowtrade-confirm-title">Send <span id="shadowtrade-confirm-name"></span>?</h1><p>Another player gets it, and you get a Shadow Pokémon someone sent.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
+      <div class="modal-body">
+        <div class="shadowtrade-confirm-body"><div id="shadowtrade-confirm-sprite"></div><p>It leaves your save as soon as you send it, and your save is backed up first. You can't choose what comes back: when no one has traded one your save can take yet, it comes once someone does. Until then you can cancel and get it back, unless it has already gone to someone.</p></div>
+        <p id="shadowtrade-confirm-live" class="helper" hidden>The game is running: it makes the trade itself and saves your game once you're walking around in the field.</p>
+        <div class="actions"><button class="subtle" data-close-modal>Keep it</button><button id="shadowtrade-confirm-send" class="solid">Send to Shadowtrade</button></div>
+      </div>
+    </dialog>
+
     <dialog id="pbr-offer" class="launcher-modal pbr-offer" aria-labelledby="pbr-offer-title">
       <div class="modal-head"><div><p class="eyebrow">GENERATION 4 POKÉMON</p><h1 id="pbr-offer-title">Give them their own models and cries?</h1><p>From your own copy of Pokémon Battle Revolution.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
       <div class="modal-body">
@@ -649,6 +739,7 @@
   <script type="module" src="pokedex-page.js"></script>
   <script src="hero-colors.js"></script>
   <script type="module" src="customize-page.js"></script>
+  <script type="module" src="pokemon-page.js"></script>
   <script src="room-poll.js"></script>
   <script src="team-sets.js"></script>
   <script src="gen3-learnsets.js"></script>

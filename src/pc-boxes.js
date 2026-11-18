@@ -67,4 +67,55 @@ function extraBoxPokemon(saveDir, plain) {
   return count;
 }
 
-module.exports = { FILE, extraBoxPokemon, stampedHash, fnv32, fnv64 };
+// A save's stamp naming boxes 4 to 10 by hash, as the game writes it (host/pcboxes.c make_stamp): the counter one past
+// the old stamp's.
+function writeStamp(plain, hash) {
+  const counter = plain.readUInt32BE(STAMP) === STAMP_MAGIC ? plain.readUInt32BE(STAMP + 8) + 1 : 1;
+  plain.fill(0, STAMP, STAMP + 0x20);
+  plain.writeUInt32BE(STAMP_MAGIC, STAMP);
+  plain.writeUInt32BE(VERSION << 16 | EXTRA, STAMP + 4);
+  plain.writeUInt32BE(counter >>> 0, STAMP + 8);
+  plain.writeBigUInt64BE(hash, STAMP + 12);
+  plain.writeUInt32BE(fnv32(plain.subarray(STAMP, STAMP + 28)), STAMP + 28);
+}
+
+const ENTRIES = 6;
+function entryHead(hash, generation) {
+  const head = Buffer.alloc(ENTRY_HEAD);
+  head.writeUInt32BE(ENTRY_MAGIC, 0);
+  head.writeUInt32BE(VERSION, 4);
+  head.writeUInt32BE(generation >>> 0, 8);
+  head.writeUInt32BE(EXTRA_SIZE, 12);
+  head.writeBigUInt64BE(hash, 16);
+  head.writeUInt32BE(fnv32(head.subarray(0, 28)), 28);
+  return head;
+}
+
+// Rewrites the file with the entries of `keep` (hashes the save's copies name now) and the new ones (each { hash,
+// data }), newest last, no more than the game reads (6). Written beside it and renamed.
+function writeEntries(saveDir, added, keep) {
+  const file = path.join(saveDir, FILE);
+  const kept = [];
+  let newest = 0;
+  for (const hash of new Set(keep)) {
+    if (added.some(entry => entry.hash === hash)) continue;
+    const data = boxesFor(saveDir, hash);
+    if (data) kept.push({ hash, data: Buffer.from(data) });
+  }
+  try {
+    const old = fs.readFileSync(file);
+    for (let at = 0; at + ENTRY_HEAD <= old.length; at += ENTRY_SIZE) if (old.readUInt32BE(at) === ENTRY_MAGIC) newest = Math.max(newest, old.readUInt32BE(at + 8));
+  } catch (_) { /* none yet */ }
+  const fresh = [];
+  for (const entry of added) if (!fresh.some(each => each.hash === entry.hash)) fresh.push(entry);
+  const all = [...kept, ...fresh].slice(-ENTRIES);
+  if (all.length < kept.length + fresh.length && fresh.length > ENTRIES) throw new Error('Too many copies of the save to keep their boxes.');
+  const out = Buffer.concat(all.map((entry, i) => Buffer.concat([entryHead(entry.hash, newest + 1 + i), entry.data])));
+  const temporary = path.join(saveDir, `.${FILE}.shadowtrade-${process.pid}`);
+  try {
+    fs.writeFileSync(temporary, out, { mode: 0o600 });
+    fs.renameSync(temporary, file);
+  } finally { fs.rmSync(temporary, { force: true }); }
+}
+
+module.exports = { FILE, extraBoxPokemon, stampedHash, boxesFor, writeStamp, writeEntries, fnv32, fnv64, STAMP };

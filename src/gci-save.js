@@ -58,6 +58,25 @@ function unscramble(slot) {
   return sha1(plain.subarray(0, HASHED)).equals(hash) ? plain : null;
 }
 
+// The reverse, as the game writes a slot (savedataEncrypt): the hash of the plain slot (its checksum word zero), each
+// 20 bytes masked with the SHA-1 of the 20 before them as stored, then the header's checksum word that makes its 8
+// words sum to zero. scramble(unscramble(slot)) is the slot again, byte for byte.
+function scramble(plain) {
+  const slot = Buffer.from(plain);
+  slot.writeUInt32BE(0, 0x0c);
+  const hash = sha1(slot.subarray(0, HASHED));
+  hash.copy(slot, HASH);
+  let key = Buffer.from(hash.map(byte => byte ^ 0xff));
+  for (let offset = SCRAMBLED_START; offset < HASHED; offset += 20) {
+    for (let i = 0; i < 20; i++) slot[offset + i] ^= key[i];
+    key = sha1(slot.subarray(offset, offset + 20));
+  }
+  let sum = 0;
+  for (let word = 0; word < 8; word++) if (word !== 3) sum = (sum + slot.readUInt32BE(word * 4)) >>> 0;
+  slot.writeUInt32BE((0x100000000 - sum) >>> 0, 0x0c);
+  return slot;
+}
+
 // The game refuses the whole file if any slot's header is bad, even a slot it wouldn't load.
 function headerValid(slot) {
   let sum = 0;
@@ -374,5 +393,5 @@ function readGciFilesFor(files, gameId = 'colosseum') {
   return { ...found[0], skipped };
 }
 
-module.exports = { EXPORT_NAME, convertGci, readGci, readGciFiles, importGci, newestPlain, readCardSave, writeGci,
+module.exports = { SLOT_START, SLOT_SIZE, SLOTS, SIZE, headerValid, unscramble, scramble, EXPORT_NAME, convertGci, readGci, readGciFiles, importGci, newestPlain, readCardSave, writeGci,
   OTHER_SAVES, exportName, convertGciFor, readGciFor, readGciFilesFor, readCardSaveFor };

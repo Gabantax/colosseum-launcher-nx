@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, net, screen, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, net, screen, protocol, nativeImage } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -68,6 +68,14 @@ const randomizer = require('./randomizer');
 const languagePacks = require('./language-packs');
 const titleLogo = require('./title-logo');
 const { retrying, httpError } = require('./retry');
+const savePokemon = require('./save-pokemon');
+const shadowtrade = require('./shadowtrade');
+const { GameLink } = require('./game-link');
+const { OnlineTrades, summary: tradeSummary } = require('./online-trades');
+const { LocalTrades } = require('./local-trades');
+const { Arrivals } = require('./arrivals');
+const tradeConvert = require('./trade-convert');
+const { arrivalLines } = require('./arrival-show');
 
 const DISCORD_INVITE = 'https://discord.gg/pkVwBrSwsZ';
 // The game chosen on the Play page (games.js): its checkout, disc and game source are config's own fields.
@@ -1602,6 +1610,10 @@ async function play(installation = null, battle = null) {
   // they come, while the game runs, and one left by a game that crashed is kept now
   const gameSettingsFile = path.join(cacheFolder, 'game-settings.json');
   keepGameSettings(gameSettingsFile);
+  // The launcher link (src/game-link.js): the game shows its save to the Pokémon page over it and takes Shadowtrade's
+  // commands (host/launcherlink.c, host/shadowtrade.c)
+  if (!battle && trades().busy) throw new Error('Shadowtrade is changing your save. Play again in a moment.');
+  const storyLink = !battle ? await openStoryLink(chosen.id) : null;
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
     packPokemon: packPokemon > 0 && onlineFeatures(root).randomizerPacks,
@@ -1619,6 +1631,7 @@ async function play(installation = null, battle = null) {
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
     SMS_TEXTURE_PACK_CACHE: path.join(cacheFolder, 'texture-mips'),
     COLO_SETTINGS_SAVE: gameSettingsFile,
+    ...(storyLink ? storyLink.environment() : {}),
     ...(battle ? { COLO_ONLINE: String(battle.port), COLO_SKIP_MOVIES: '1', COLO_NOCARD: '1' } : {}),
     ...(config.settings.discordPresence && supports('discordPresence') ? { COLO_PRESENCE: '1' } : {}),
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
@@ -1633,6 +1646,7 @@ async function play(installation = null, battle = null) {
   const startedAt = Date.now();
   startPresence(startedAt, Boolean(battle));
   const settingsWatch = setInterval(() => keepGameSettings(gameSettingsFile), GAME_SETTINGS_POLL_MS);
+  if (!battle) storyGame = chosen.id;
   try {
     return await launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, playLabel(), true);
   } catch (error) {
@@ -1647,6 +1661,13 @@ async function play(installation = null, battle = null) {
     stopPresence();
     clearInterval(settingsWatch);
     keepGameSettings(gameSettingsFile);
+    if (!battle) {
+      storyGame = null;
+      closeStoryLink(storyLink);
+      broadcast('pokemon-changed', chosen.id);
+      // trades waiting for the save can go to the card now
+      setTimeout(() => { syncTrades(); if (onlineTradesInstance?.state.journal.length) syncOnlineTrades(); if (localTradesInstance?.state.journal.length) syncLocalTrades(); }, 0);
+    }
     if (!battle) {
       try { makeSaveBackup('after-play'); }
       catch (error) { log(`Save backup failed: ${error.message}`); }
@@ -1668,6 +1689,289 @@ function keepGameSettings(file) {
     log(`Kept the settings changed in the game: ${said}.`);
   } catch (error) { log(`Could not keep the settings changed in the game: ${error.message}`); }
   broadcast('settings-changed', null);   // the renderer reads the state again
+}
+
+// --- The Pokémon page and Shadowtrade (src/save-pokemon.js, src/shadowtrade.js). The page shows the chosen game's save:
+// while that game's story runs, the game's own live picture (sent over the launcher link, src/game-link.js), else the
+// card. Shadowtrade changes a save the same two ways: the card only while its game is closed, the running game by a
+// command it carries out and saves itself.
+let storyGame = null;            // the game whose story is running ('colosseum' or 'xd'), or null
+let storyLive = null;            // its live picture and commands (shadowtrade.LiveGame), while it runs
+let shadowtradeTrades = null;
+let shadowtradeTimer = null;
+const SHADOWTRADE_SYNC_MS = 2 * 60 * 1000;
+const LIVE_REFRESH_MS = 250;     // the Pokémon page is told of a change at most this often
+
+// The link to the story's game, for this run: open before the game starts (it connects as it starts)
+async function openStoryLink(game) {
+  closeStoryLink(storyLive?.link);
+  const link = new GameLink({ log });
+  await link.listen();
+  let refresh = null, synced = false, onlineSynced = false, localSynced = false;
+  storyLive = new shadowtrade.LiveGame(link, { onChange: ({ whole, closed }) => {
+    if (!refresh) refresh = setTimeout(() => { refresh = null; broadcast('pokemon-changed', game); }, LIVE_REFRESH_MS);
+    if (closed) return;
+    // a live game can take trades that were waiting for it: once its save is in, and when it changes
+    const pending = trades().state.journal.some(entry => entry.game === game && ['received', 'giving', 'taking'].includes(entry.stage));
+    if (pending && storyLive?.current()?.head.loaded && (whole || !synced)) { synced = true; syncTrades(); }
+    const tradesWaiting = onlineTradesInstance?.state.journal.some(entry => entry.game === game);
+    if (tradesWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !onlineSynced) { onlineSynced = true; syncOnlineTrades(); }
+    const localWaiting = localTradesInstance?.state.journal.some(entry => entry.sides.some(side => side.game === game));
+    if (localWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !localSynced) { localSynced = true; syncLocalTrades(); }
+    if (storyLive?.current()?.head.loaded && storyLive.current().head.safe) deliverArrivals();
+  } });
+  link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
+  return link;
+}
+
+function closeStoryLink(link) {
+  if (!link) return;
+  link.close();
+  if (storyLive?.link === link) storyLive = null;
+}
+function trades() {
+  if (!shadowtradeTrades) shadowtradeTrades = new shadowtrade.Shadowtrade({ folder: path.join(app.getPath('userData'), 'shadowtrade'),
+    fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view), arrivals: arrivals() });
+  return shadowtradeTrades;
+}
+
+// --- Arrivals (src/arrivals.js): each Pokémon a trade brought, shown by the running game (its P★DA-style notice, a trade
+// evolution, then a card with "Open PC" or "Close"); a trade made with the game closed is shown the next time it runs.
+let arrivalsInstance = null, arrivalNames = null, arrivalRetryAt = 0;
+const ARRIVAL_RETRY_MS = 60 * 1000;
+function arrivals() {
+  if (!arrivalsInstance) arrivalsInstance = new Arrivals({ folder: path.join(app.getPath('userData'), 'arrivals'), log,
+    onChange: () => { arrivalRetryAt = 0; setTimeout(deliverArrivals, 0); },
+    describe: describeArrival,
+    onDone: (entry, result) => {
+      log(`Trades: the game showed ${entry.kind === 'shadowtrade' ? 'the Shadow Pokémon' : 'the Pokémon'} from ${entry.from || 'the trade'}${result.evolved ? `, which evolved` : ''}.`);
+      if (entry.kind === 'trade' && entry.tradeId) onlineTrades().arrived(entry.tradeId, result);
+      if (entry.kind === 'local' && entry.tradeId) localTrades().arrived(entry.tradeId, result);
+      broadcast('pokemon-changed', entry.game);
+    } });
+  return arrivalsInstance;
+}
+
+function deliverArrivals() {
+  const game = storyGame;
+  if (!game || !arrivalsInstance?.pending(game).length || arrivalsInstance.busy || Date.now() < arrivalRetryAt) return;
+  const access = onlineTradeAccess(game);
+  if (access?.mode !== 'live' || !storyLive.current()?.head.safe) return;
+  arrivalsInstance.deliver(game, access).then(() => { if (arrivalsInstance.pending(game).length) arrivalRetryAt = Date.now() + ARRIVAL_RETRY_MS; })
+    .catch(error => { arrivalRetryAt = Date.now() + ARRIVAL_RETRY_MS; log(`Trades: ${error.message}`); });
+}
+
+// The names, base stats and sprites the game's card shows, read once (the Pokédex for the game's species, the team builder's
+// battle data, by Colosseum's numbers, for moves, items and abilities); null pieces when a disc isn't there.
+function arrivalData(game) {
+  if (arrivalNames?.game === game) return arrivalNames;
+  arrivalNames = { game, dex: new Map(), battle: null };
+  try { if (game === config.game) for (const entry of pokedexList(port.validateRom(config.rom, game)).species) arrivalNames.dex.set(entry.id, entry); }
+  catch (error) { log(`Trades: no Pokédex for the game's card (${error.message}).`); }
+  try { arrivalNames.battle = battleData(teamDisc()); } catch (_) { /* moves by number */ }
+  return arrivalNames;
+}
+
+// A Pokédex sprite as the game takes it: RGBA, no larger than 192 pixels across
+function arrivalArt(url) {
+  if (!url) return null;
+  let image = /^data:/.test(url) ? nativeImage.createFromDataURL(url) : nativeImage.createFromPath(url.replace(/^file:\/\//, ''));
+  if (image.isEmpty()) return null;
+  const { width, height } = image.getSize(), scale = Math.min(1, 192 / Math.max(width, height));
+  if (scale < 1) image = image.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' });
+  const size = image.getSize(), bgra = image.toBitmap(), rgba = Buffer.alloc(bgra.length);
+  for (let i = 0; i < bgra.length; i += 4) {
+    const a = bgra[i + 3], un = v => (a ? Math.min(255, Math.round(v * 255 / a)) : 0);   // (straight alpha, as the game blends it)
+    rgba[i] = un(bgra[i + 2]); rgba[i + 1] = un(bgra[i + 1]); rgba[i + 2] = un(bgra[i]); rgba[i + 3] = a;
+  }
+  return { width: size.width, height: size.height, rgba };
+}
+
+function describeArrival(entry) {
+  const bytes = Buffer.from(entry.data || '', 'base64');
+  if (!bytes.length) return { lines: [], art: [] };
+  const data = arrivalData(entry.game), own = tradeSummary(entry.game, bytes), colosseum = tradeSummary(entry.game, bytes, 'colosseum');
+  const moves = new Map((data.battle?.moves || []).map(move => [move.id, move])), items = new Map((data.battle?.items || []).map(item => [item.id, item.name]));
+  // the battle data's species are by Colosseum's numbers
+  const names = {
+    species: id => {
+      const shown = data.dex.get(id);
+      if (!shown) return null;
+      const row = data.battle?.species?.[tradeConvert.speciesToColosseum(entry.game, id)] || {};
+      return { name: shown.name, types: shown.types, stats: shown.stats, gender: row.gender, abilities: row.abilities };
+    },
+    move: id => moves.get(id) || null,
+    item: id => items.get(id) || null
+  };
+  // moves and items by Colosseum's numbers (the battle data's), the rest by the game's own
+  const shown = { ...own, moves: colosseum.moves, item: colosseum.item };
+  const shadow = Boolean(tradeConvert.read(entry.game, bytes).shadowNow);
+  const lines = arrivalLines({ summary: shown, names, kind: entry.kind, from: entry.from, evolvesInto: entry.evolvesInto, shadow });
+  const art = [arrivalArt(data.dex.get(own.species)?.sprite)];
+  if (entry.evolvesInto) art.push(arrivalArt(data.dex.get(entry.evolvesInto)?.sprite));
+  return { lines, art };
+}
+// Whether a game's installed build takes Shadowtrade: each received Shadow Pokémon on an entry of its own, past the
+// save's own tables too (host/shadowtrade.c). Earlier builds would read a received XD Shadow's entry as empty, so the
+// launcher trades only for a build that has it, by its log line in the game file.
+const shadowtradeBinaries = new Map();
+function shadowtradeReady(game) {
+  try {
+    const root = games.allFields(config)[game]?.repo;
+    if (!root || !binaryReady(root, game)) return false;
+    const file = binaryOf(root, game), { mtimeMs } = fs.statSync(file);
+    const known = shadowtradeBinaries.get(file);
+    if (known?.mtimeMs === mtimeMs) return known.ready;
+    const ready = fs.readFileSync(file).includes('shadowtrade: entries past the save');
+    shadowtradeBinaries.set(file, { mtimeMs, ready });
+    return ready;
+  } catch (_) { return false; }
+}
+
+function saveDirectoryOf(game) { return game === config.game ? currentSaveDirectory() : saves.saveDirectory(process.env, process.platform, game); }
+function saveRandomized(game) { try { return Boolean(saveRun(saveDirectoryOf(game), game).run); } catch (_) { return false; } }
+
+// How a game's save can be reached now: the running game's (once it has a save loaded and sends its live picture), the card
+// while that game isn't running, or null.
+function tradeAccess(game) {
+  const randomized = saveRandomized(game);
+  if (!shadowtradeReady(game) && storyGame !== game) return null;
+  if (storyGame === game) {
+    const live = storyLive?.current();
+    if (!live?.head.loaded || !(live.head.entries >= 2) || !storyLive.link.has('shadowtrade.2')) return null;
+    let cardTrainerId = null;
+    try { cardTrainerId = savePokemon.readCard(saveDirectoryOf(game), game)?.trainerId ?? null; } catch (_) { /* no card save: the game's is new */ }
+    return shadowtrade.liveAccess({ game, live: storyLive, cardTrainerId, randomized, onWaiting: () => broadcast('shadowtrade-waiting', game) });
+  }
+  return shadowtrade.cardAccess({ game, saveDir: saveDirectoryOf(game), randomized,
+    backup: reason => {
+      const result = saves.backupSaves(saveDirectoryOf(game), saves.backupRoot(), reason);
+      if (!result.empty) log(`Saved ${result.count} memory card file(s) to ${result.directory}`);
+    } });
+}
+
+// What the Pokémon page shows: the chosen game's save, where it came from, each Pokémon with why it can't go to
+// Shadowtrade (null when it can), and the trades.
+function pokemonPage() {
+  const game = config.game;
+  let model = null, source = null, notice = null, canTrade = true;
+  const live = storyGame === game ? storyLive?.current() : null;
+  if (live?.model) {
+    model = live.model; source = 'live';
+    if (!(live.head.safe && live.head.canSave)) notice = 'A trade happens once you are walking around in the field, outside menus, battles and scenes.';
+  } else {
+    try { model = savePokemon.readCard(saveDirectoryOf(game), game); source = model ? 'card' : null; } catch (error) { notice = error.message; }
+    if (storyGame === game) {
+      canTrade = false;
+      notice = live ? 'Continue your save in the game to see its Pokémon as they are now and trade.'
+        : 'This is your last save. This version of the game can\'t trade while it runs: update the game, or trade once it closes.';
+    }
+  }
+  if (canTrade && model && !(source === 'live' ? live.head.entries >= 2 : shadowtradeReady(game))) {
+    canTrade = false;
+    notice = notice || (binaryReady(games.allFields(config)[game]?.repo, game) ? 'Update the game to use Shadowtrade: this version of it can\'t take a traded Shadow Pokémon.' : 'Set up the game to use Shadowtrade.');
+  }
+  if (model) {
+    const each = pokemon => pokemon && { ...pokemon, tradeProblem: savePokemon.offerProblem(model, pokemon) };
+    model = { ...model, party: model.party.map(each), boxes: model.boxes.map(box => ({ ...box, pokemon: box.pokemon.map(each) })) };
+  }
+  return { game, source, model, notice, canTrade: canTrade && Boolean(model), pool: shadowtrade.poolFor(game, saveRandomized(game)),
+    trades: trades().view(), live: live?.head || null };
+}
+
+function syncTrades() {
+  if (trades().busy) return trades().busy.catch(() => {});
+  return trades().sync(tradeAccess).catch(error => log(`Shadowtrade: ${error.message}`));
+}
+
+// While the game runs with a Shadowtrade waiting for its save, the server is asked more often, so a Pokémon matched to it
+// shows in the game soon after (arrivals); otherwise every SHADOWTRADE_SYNC_MS.
+const SHADOWTRADE_LIVE_SYNC_MS = 30 * 1000;
+let shadowtradeSlowAt = 0;
+function startShadowtrade() {
+  clearInterval(shadowtradeTimer);
+  shadowtradeSlowAt = Date.now();
+  shadowtradeTimer = setInterval(() => {
+    const now = Date.now(), slow = now - shadowtradeSlowAt >= SHADOWTRADE_SYNC_MS;
+    const waitingLive = Boolean(storyGame && storyLive) && trades().state.journal.some(entry => entry.game === storyGame);
+    if (trades().state.journal.length && (slow || waitingLive)) syncTrades();
+    if (slow) { shadowtradeSlowAt = now; if (onlineTrades().state.journal.length) syncOnlineTrades(); }
+    if (localTrades().state.journal.length) syncLocalTrades();
+    deliverArrivals();
+  }, SHADOWTRADE_LIVE_SYNC_MS);
+  if (trades().state.journal.length) syncTrades();
+  if (onlineTrades().state.journal.length) syncOnlineTrades();
+  if (localTrades().state.journal.length) syncLocalTrades();
+}
+
+// --- Online Trades (src/online-trades.js): a trade code, a trade window on the Pokémon page, and the swap. The save is
+// reached as Shadowtrade reaches it: the running game's (a build whose hello says trade.1) or the card.
+let onlineTradesInstance = null;
+function onlineTrades() {
+  if (!onlineTradesInstance) onlineTradesInstance = new OnlineTrades({ folder: path.join(app.getPath('userData'), 'online-trades'),
+    url: shadowtrade.serverUrl(), fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('online-trades', view),
+    accessFor: onlineTradeAccess, receiverFor: tradeReceiver, launcher: app.getVersion(), arrivals: arrivals(),
+    name: game => { try { return (storyGame === game ? storyLive?.current()?.model?.trainer : null) || savePokemon.readCard(saveDirectoryOf(game), game)?.trainer || 'Trainer'; } catch (_) { return 'Trainer'; } } });
+  return onlineTradesInstance;
+}
+
+function onlineTradeAccess(game) {
+  if (storyGame === game) {
+    const live = storyLive?.current();
+    if (!live?.head.loaded || !storyLive.link.has('trade.1')) return null;
+    let cardTrainerId = null;
+    try { cardTrainerId = savePokemon.readCard(saveDirectoryOf(game), game)?.trainerId ?? null; } catch (_) { /* no card save: the game's is new */ }
+    return shadowtrade.liveAccess({ game, live: storyLive, cardTrainerId, onWaiting: () => broadcast('shadowtrade-waiting', game) });
+  }
+  return shadowtrade.cardAccess({ game, saveDir: saveDirectoryOf(game),
+    backup: reason => {
+      const result = saves.backupSaves(saveDirectoryOf(game), saves.backupRoot(), reason);
+      if (!result.empty) log(`Saved ${result.count} memory card file(s) to ${result.directory}`);
+    } });
+}
+
+// What a game's save can take (src/trade-convert.js problems): the fourth generation's Pokémon, moves and held items only
+// with the settings that put them in the game
+function tradeReceiver(game) {
+  const settings = config.settings || {}, later = (settings.generationPokemon || []).map(Number).includes(4);
+  const rules = Number(settings.battleRules) || 0;
+  return { game, laterPokemon: later, laterMoves: later || rules >= 4, laterItems: rules >= 4 };
+}
+
+function syncOnlineTrades() {
+  return onlineTrades().sync().catch(error => log(`Online Trades: ${error.message}`));
+}
+
+// --- Trades between your games (src/local-trades.js): a Pokémon of your Colosseum save for one of your XD save, in the
+// trade window on the Pokémon page. Each save is reached as Online Trades reach it: the running game's (one at a time)
+// or its card; a game with no save yet can't trade.
+let localTradesInstance = null, localSyncing = null;
+function localTrades() {
+  if (!localTradesInstance) localTradesInstance = new LocalTrades({ folder: path.join(app.getPath('userData'), 'local-trades'), log,
+    onChange: () => broadcast('local-trades', localTradesInstance.view(config.game)),
+    accessFor: localTradeAccess, unavailable: localTradeUnavailable, receiverFor: tradeReceiver, arrivals: arrivals() });
+  return localTradesInstance;
+}
+
+const shortGameName = game => (game === 'xd' ? 'XD' : 'Colosseum');
+function localTradeAccess(game) {
+  const access = onlineTradeAccess(game);
+  if (access?.mode === 'card') { try { if (!access.read()) return null; } catch (_) { return null; } }
+  return access;
+}
+function localTradeUnavailable(game) {
+  const name = shortGameName(game);
+  if (storyGame === game) {
+    if (!storyLive?.current()?.head.loaded) return `${name} is running: continue your save in it, and its Pokémon show here.`;
+    if (!storyLive.link.has('trade.1')) return `This version of ${name} can't trade while it runs: update it, or close it and trade.`;
+  }
+  return `There's no ${name} save yet: play ${name} and save once, and you can trade between your games.`;
+}
+
+function syncLocalTrades() {
+  if (localSyncing) return localSyncing;
+  localSyncing = localTrades().sync().catch(error => log(`Trades between your games: ${error.message}`)).finally(() => { localSyncing = null; });
+  return localSyncing;
 }
 
 // --- Discord activity (src/discord.js, src/presence.js): only while the game runs, and only with the setting on.
@@ -2818,6 +3122,40 @@ function registerHandlers() {
     fs.writeFileSync(readable, randomizer.spoilerText(raw, [...list.species, ...list.packs.filter(later)], list.packs.filter(entry => !later(entry)), config.game));
     await shell.openPath(readable);
   });
+  ipcMain.handle('pokemon-page', () => pokemonPage());
+  ipcMain.handle('shadowtrade-offer', async (_event, place) => {
+    const where = { area: place?.area === 'box' ? 'box' : 'party', box: Number(place?.box) || 0, slot: Number(place?.slot) || 0 };
+    const access = tradeAccess(config.game);
+    if (!access) throw new Error('Continue your save in the game first.');
+    return trades().offer(access, where);
+  });
+  ipcMain.handle('shadowtrade-sync', () => syncTrades().then(() => trades().view()));
+  ipcMain.handle('shadowtrade-cancel', (_event, id) => trades().cancel(String(id), tradeAccess));
+  ipcMain.handle('online-trade', async (_event, action, value) => {
+    const manager = onlineTrades();
+    if (action === 'view') return manager.view();
+    if (action === 'open') { if (localTradesInstance?.isOpen && !localTradesInstance.state.journal.length) localTradesInstance.close(); return manager.open(config.game, value ? String(value) : null); }
+    if (action === 'offer') return manager.offer(value ? { area: value.area === 'box' ? 'box' : 'party', box: Number(value.box) || 0, slot: Number(value.slot) || 0 } : null);
+    if (action === 'ready') { manager.ready(); return manager.view(); }
+    if (action === 'unready') { manager.unready(); return manager.view(); }
+    if (action === 'leave') { manager.leave(); return manager.view(); }
+    if (action === 'sync') return manager.sync();
+    throw new Error('No such trade action.');
+  });
+  ipcMain.handle('local-trade', async (_event, action, value) => {
+    const manager = localTrades(), view = () => manager.view(config.game);
+    if (action === 'view') return view();
+    if (action === 'open') { if (onlineTrades().room) throw new Error('Leave the trade room first.'); manager.open(); return view(); }
+    if (action === 'close') { manager.close(); return view(); }
+    if (action === 'pick') {
+      const place = value?.place ? { area: value.place.area === 'box' ? 'box' : 'party', box: Number(value.place.box) || 0, slot: Number(value.place.slot) || 0 } : null;
+      manager.pick(String(value?.game), place);
+      return view();
+    }
+    if (action === 'trade') { await manager.trade(); return view(); }
+    if (action === 'sync') { await syncLocalTrades(); return view(); }
+    throw new Error('No such trade action.');
+  });
   ipcMain.handle('online-save', (_event, value) => {
     config.online = parties.normalize(value);
     saveConfig();
@@ -3248,6 +3586,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   // Only with the window: a launcher update installs on quit, which `--play` does as the game closes.
   setupAppUpdater();
   setupTelemetry();
+  startShadowtrade();
   removeOldVersionsInBackground();
   // The bundled manifest is the update check. Source downloads and builds
   // start with Update & play, so opening the launcher never changes a game.
