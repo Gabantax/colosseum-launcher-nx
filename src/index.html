@@ -17,6 +17,7 @@
     </div>
     <header class="topbar">
       <div class="brand"><img class="brand-mark" src="assets/brand-mark.png" alt=""><div class="brand-copy"><span class="brand-name">Orre <strong>Launcher</strong><small class="brand-games">Colosseum + XD</small></span><span id="version-summary" class="version-summary" aria-label="Versions">Checking versions…</span></div></div>
+      <button id="update-chip" class="topbar-chip update-chip" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9.5M6 8.8l4 4 4-4M4 16.5h12"/></svg><span id="update-chip-label">Update ready</span></button>
       <button id="open-changelog" class="topbar-chip" title="Launcher and game updates"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.8h7.2L15.5 6v11.2H5z"/><path d="M12 2.8V6h3.5M7.6 9.2h5.3M7.6 11.9h5.3M7.6 14.6h3.4"/></svg><span>What's new</span><i id="changelog-new" class="topbar-dot" role="img" aria-label="New" hidden></i></button>
       <span id="online-count" class="online-count" title="Players with the launcher open" hidden><i aria-hidden="true"></i><span id="online-count-text"></span></span>
       <span class="platform-pill" id="platform">Loading…</span>
@@ -146,6 +147,7 @@
               <span class="online-replays-tools" hidden><button id="replays-open" class="subtle" type="button" title="Add a replay someone sent you">Open replay…</button><button id="replays-folder" class="subtle" type="button" title="Show the folder your replays are saved in, to send one to someone">Show folder</button></span>
             </div>
             <div id="online-rooms-panel" class="online-tab-panel" role="tabpanel" aria-labelledby="online-tab-rooms">
+              <p id="online-versions" class="helper online-versions"></p>
               <div id="online-rooms" class="online-room-list" aria-live="polite"></div>
               <p id="online-rooms-empty" class="helper">No rooms are open. Create one and wait for a challenger.</p>
             </div>
@@ -478,7 +480,7 @@
             </div>
             <h2 class="group-title">Updates</h2>
             <div class="settings-group">
-              <label class="switch"><span><strong>Update automatically</strong><small>Keeps the launcher current and prepares game updates when you press Play.</small></span><input id="autoUpdate" type="checkbox"><i></i></label>
+              <label class="switch"><span><strong>Update automatically</strong><small>On: launcher updates download by themselves and install when you quit, and Play installs a waiting game update first. Off: the launcher still checks, shows Update ready in the top bar and asks before Play; nothing downloads until you say so.</small></span><input id="autoUpdate" type="checkbox"><i></i></label>
               <label class="field" id="update-channel-field"><span>Launcher updates<small id="update-channel-note">Beta and pull request previews are for testing and may break. Switch back to Stable any time.</small></span><select id="updateChannel"><option value="stable">Stable</option></select></label>
             </div>
             <h2 class="group-title">Crash reports</h2>
@@ -546,6 +548,23 @@
       </div>
     </dialog>
 
+    <div id="update-card" class="update-card" popover="manual" role="dialog" aria-labelledby="update-card-title">
+      <button id="update-card-close" class="modal-close update-card-close" aria-label="Remind me next time the launcher opens">×</button>
+      <p class="eyebrow">UPDATE READY</p>
+      <strong id="update-card-title"></strong><small id="update-card-detail"></small>
+      <div class="actions"><button id="update-card-details" class="subtle">Details</button><span class="nav-spacer" aria-hidden="true"></span><button id="update-card-later" class="subtle">Later</button><button id="update-card-now" class="update-primary">Update now</button></div>
+    </div>
+    <dialog id="update-modal" class="launcher-modal update-modal" aria-labelledby="update-modal-title">
+      <div class="modal-head"><div><p id="update-modal-eyebrow" class="eyebrow">UPDATE READY</p><h1 id="update-modal-title">Update</h1><p id="update-modal-lead"></p></div><button id="update-modal-close" class="modal-close" aria-label="Close">×</button></div>
+      <div class="modal-body">
+        <div id="update-rows" class="update-rows"></div>
+        <ol id="update-steps" class="update-steps" hidden></ol>
+        <div id="update-news" class="update-news" hidden><h3>What's new</h3><ul id="update-news-list"></ul><button id="update-news-more" class="update-more" type="button">Read everything in What's new</button></div>
+        <p id="update-note" class="update-note" hidden></p>
+        <p id="update-warn" class="update-warn" hidden></p>
+        <div class="actions update-actions"><label id="update-auto-row" class="update-check" hidden><input id="update-auto" type="checkbox"><span id="update-auto-label">Update automatically from now on</span></label><span class="nav-spacer" aria-hidden="true"></span><button id="update-secondary" class="subtle" hidden></button><button id="update-primary" class="update-primary"></button></div>
+      </div>
+    </dialog>
     <dialog id="pbr-offer" class="launcher-modal pbr-offer" aria-labelledby="pbr-offer-title">
       <div class="modal-head"><div><p class="eyebrow">GENERATION 4 POKÉMON</p><h1 id="pbr-offer-title">Give them their own models and cries?</h1><p>From your own copy of Pokémon Battle Revolution.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
       <div class="modal-body">
@@ -623,6 +642,7 @@
   <script src="presets.js"></script>
   <script src="activity-log.js"></script>
   <script src="changelog-text.js"></script>
+  <script src="update-status.js"></script>
   <script src="gamepad-nav.js"></script>
   <script src="play-stage.js"></script>
   <script src="renderer.js"></script>
@@ -635,6 +655,7 @@
   <script src="gen4-learnsets.js"></script>
   <script src="formats.js"></script>
   <script src="team-builder.js"></script>
+  <script src="online-versions.js"></script>
   <script src="online-page.js"></script>
   <script src="jukebox-cover.js"></script>
   <script src="jukebox-playlists.js"></script>

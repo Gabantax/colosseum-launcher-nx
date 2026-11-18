@@ -26,6 +26,7 @@ const bindings = require('./bindings');
 const prompts = require('./prompts');
 const portable = require('./portable');
 const changelog = require('./changelog');
+const onlineVersions = require('./online-versions');
 const { cleanOutputLine, createActivityReader } = require('./progress');
 const { createActivityLog } = require('./activity-log');
 const { observeProcess, exitDescription, failureMessage, gameStopReason, taskEnvironment } = require('./process-output');
@@ -92,7 +93,9 @@ let operation = null;
 // When the player last stopped a task (Stop), so a stopped build isn't tried again.
 let stoppedAt = 0;
 const wasStopped = since => stoppedAt >= since;
-let appUpdate = { state: 'idle', message: '' };
+// The launcher's own update (setupAppUpdater): where it is, the version found and its download. `kind`: 'auto' when
+// the launcher updates itself, 'portable' when it is downloaded by hand, 'none' when this install has no updates.
+let appUpdate = { state: 'idle', message: '', kind: 'auto' };
 let updater = null;
 // Before anything reads userData: the single-instance lock is keyed on it too,
 // so each portable folder runs independently of an installed launcher.
@@ -1816,8 +1819,26 @@ function setupTelemetry() {
 let battle = null;     // { session, status, code, role, opponent, rules, bestOf, game, wins, preview, players, watchers }
 let battleResult = null;
 
+// What a room is compared with (src/online-versions.js): this game's builds and version, this launcher's version and
+// protocol, and whether Updates has an update waiting that would close the gap.
+function myOnlineVersions() {
+  if (!binaryReady()) return { build: null, launcher: app.getVersion(), protocol: online.PROTOCOL };
+  const own = gameBuild();
+  let gameWaiting = false;
+  try { gameWaiting = !game.isCurrent(config.repo, currentSource()); } catch (_) { /* unreadable: nothing waiting */ }
+  return { build: own.build, crossBuild: onlineFeatures(config.repo).crossplay ? gameBuild(true).build : null,
+    version: own.version, launcher: own.launcher, protocol: online.PROTOCOL, battle: own.battle,
+    waiting: { launcher: ['available', 'downloading', 'ready'].includes(appUpdate.state), game: gameWaiting } };
+}
+
+// A room this player can't battle in: why, and who has to update (the room's own versions, src/online-versions.js).
+function requireSameVersions(info) {
+  const fit = onlineVersions.compare(info, myOnlineVersions());
+  if (!fit.ok) throw new Error(fit.detail);
+}
+
 function onlineState() {
-  return { setup: config.online, ready: onlineReadiness(), build: binaryReady() ? gameBuild().build : null, result: battleResult,
+  return { setup: config.online, mine: myOnlineVersions(), ready: onlineReadiness(), build: binaryReady() ? gameBuild().build : null, result: battleResult,
     story: storyState(), rulesSupported: binaryReady() && onlineFeatures(config.repo).rules,
     timersSupported: binaryReady() && onlineFeatures(config.repo).timers,
     // rooms for both games, with this game's build for them; Platinum's rules; the game's short name
@@ -1887,14 +1908,25 @@ function onlineFeatures(root, id = config.game) {
         randomizerNoRepeats: bytes.includes('randomizer: no repeated families'),
         randomizerBaseForms: bytes.includes('randomizer: base forms only'),
         // similar strength's choices spread evenly over the Pokémon close in strength
-        randomizerSpread: bytes.includes('randomizer: similar strength spread evenly') };
+        randomizerSpread: bytes.includes('randomizer: similar strength spread evenly'),
+        // which games this one battles alike (host/battleversion.h, both games): rooms pair games by it (online.buildId)
+        battle: battleVersion(bytes) };
     }
     return onlineBinary;
   } catch (_) {
     return { online: false, story: false, members: false, rules: false, timers: false, picks: false, platinum: false, crossPlatinum: false, crossplay: false, spectate: false, replays: false,
       looks: false, randomizer: false, randomizerGenerations: false, randomizerPacks: false, randomizerNoRepeats: false, randomizerBaseForms: false,
-      randomizerSpread: false };
+      randomizerSpread: false, battle: null };
   }
+}
+
+// The game's battle version, from its "online: battle version N;" (host/battleversion.h), or null for a game from before.
+function battleVersion(bytes) {
+  const marker = 'online: battle version ';
+  const at = bytes.indexOf(marker);
+  if (at < 0) return null;
+  const match = /^(\d{1,6});/.exec(bytes.toString('latin1', at + marker.length, at + marker.length + 8));
+  return match ? Number(match[1]) : null;
 }
 
 // Whether the game at root plays randomized runs: Colosseum's has since its randomizer.c; XD's shares that file with
@@ -2049,7 +2081,10 @@ function onlineReadiness() {
 function gameBuild(cross = false) {
   const installedBuild = game.installed(config.repo, config.game);
   const version = `${config.game === games.DEFAULT ? '' : `${games.get(config.game).shortName} `}${installedBuild?.gameVersion || ''}`.trim();
-  return { build: cross ? online.crossBuildId(installedBuild) : online.buildId(installedBuild), version, launcher: app.getVersion() };
+  // the game's battle version, when it declares one (host/battleversion.h): rooms pair games by it, not by their commits
+  const battle = onlineFeatures(config.repo).battle;
+  const id = cross ? online.crossBuildId(installedBuild, { battle }) : online.buildId(installedBuild, { battle, game: config.game });
+  return { build: id, version, launcher: app.getVersion(), battle };
 }
 
 // Who the player battles online as (src/hero-bake.js): the Customize page's hero for online battles, else their save's,
@@ -2162,6 +2197,15 @@ const BATTLE_OVER = {
   desync: 'The battle stopped: the two games no longer agreed. This is a bug, please report it.'
 };
 
+// The versions a report of a battle out of sync needs: which games disagreed. Both games declared one battle version
+// (host/battleversion.h), so a change between their versions should have bumped it. The host hears nothing of the
+// joiner's version, so it names its own alone.
+function desyncVersions(theirs) {
+  const own = gameBuild();
+  const mine = `game ${own.version || 'unknown'}${own.battle ? `, battle version ${own.battle}` : ''}`;
+  return theirs && theirs !== own.version ? `Include the versions: you have ${mine}, and they have game ${theirs}.` : `Include your version: ${mine}.`;
+}
+
 // How a watched battle ended, as the page says it: by the players' names.
 function watchedOutcome(result, players, set = null) {
   const name = side => players?.[side] || (side ? 'The challenger' : 'The host');
@@ -2257,6 +2301,7 @@ function watchSession(session) {
     // a spectator's game may be a game or more behind the set: each game it plays is named
     const outcome = session.watcher ? watchedOutcome(result, battle?.players, battle?.bestOf > 1 && result.reason === 'over' ? { game: battle.game } : null)
       : battleOutcome(result, session.side, set);
+    if (outcome && result.reason === 'desync' && !session.watcher) outcome.message = `${outcome.message} ${desyncVersions(battle?.opponentVersion)}`;
     if (outcome) battleResult = { ...outcome, opponent: battle?.opponent || null };
     if (battle) battle.status = set ? 'between' : 'ended';
     broadcastOnline();
@@ -2325,11 +2370,11 @@ async function joinRoom(input) {
   const info = await online.lookup(code);
   if (info.status !== 'waiting') throw new Error('That battle has already started.');
   const cross = online.isCrossBuild(info.build);
-  if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
+  requireSameVersions(info);
   const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   const rules = formats.normalize(info.rules || {});
   const chosen = partyFor(rules, { cross });
-  battle = { session, status: 'connecting', role: 'joiner', rules, bestOf: info.bestOf || 1, code, opponent: info.name };
+  battle = { session, status: 'connecting', role: 'joiner', rules, bestOf: info.bestOf || 1, code, opponent: info.name, opponentVersion: info.version || null };
   broadcastOnline();
   watchSession(session);
   recordReplay(session, 'joiner', cross);
@@ -2356,9 +2401,8 @@ async function watchRoom(input) {
   battleResult = null;
   const info = await online.lookup(code);
   const cross = online.isCrossBuild(info.build);
-  if (cross && !onlineFeatures(config.repo).crossplay) throw new Error('That room is for both games, which this version of the game can\'t play. Update it from the Play page.');
   // the spectator's game plays the players' battle, so it has to be the very same build
-  if (gameBuild(cross).build !== info.build) throw new Error(`That battle is on another version of the game (${info.version || 'unknown'}). Watching needs the same version.`);
+  requireSameVersions(info);
   const session = new online.Session({ features: sessionFeatures(cross), dress: dressPlayers });
   const players = Array.isArray(info.players) ? info.players : [info.name, null];
   battle = { session, status: 'connecting', role: 'watcher', rules: formats.normalize(info.rules || {}), bestOf: info.bestOf || 1, code, opponent: null, players };
@@ -2572,7 +2616,7 @@ async function checkAppUpdate() {
   try { await updater.checkForUpdates(); }
   catch (error) {
     const missing = config.settings.updateChannel !== 'stable' && /\b404\b/.test(error.message);
-    appUpdate = { state: 'error', message: missing
+    appUpdate = { state: 'error', kind: 'auto', message: missing
       ? `${updateChannel.channelLabel(config.settings.updateChannel)} is no longer available. Choose another update channel in Settings.`
       : `Launcher update check failed: ${error.message}` };
     broadcast('app-update', appUpdate);
@@ -2638,54 +2682,80 @@ function markChangelogSeen() {
 }
 
 // Development runs stay out of the numbers unless pointed at a test API.
+// Launcher updates. Update automatically on: found updates download by themselves and install when the launcher
+// quits. Off: the launcher still checks, at start and every half hour, so the top bar can show Update ready. Its
+// update (renderer.js startUpdate) downloads it (download-app-update), then restarts into it (install-app-update).
 function setupAppUpdater() {
   const url = process.env.COLO_LAUNCHER_UPDATE_URL;
   const bundledFeed = fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'));
+  const releasesPage = `https://github.com/${updateChannel.REPOSITORY}/releases/latest`;
+  ipcMain.handle('open-releases-page', () => shell.openExternal(releasesPage));
   // The updater would replace a portable launcher with the installer build.
   if (portableRoot) {
-    appUpdate = portable.updateNotice(app.getVersion(), null);
+    appUpdate = { ...portable.updateNotice(app.getVersion(), null), kind: 'portable' };
     const check = async () => {
       try {
         const response = await net.fetch(`https://api.github.com/repos/${updateChannel.REPOSITORY}/releases/latest`,
           { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(8000) });
         if (response.ok) {
           const before = appUpdate.state;
-          appUpdate = portable.updateNotice(app.getVersion(), (await response.json())?.tag_name);
+          const notice = portable.updateNotice(app.getVersion(), (await response.json())?.tag_name);
+          appUpdate = { ...notice, kind: 'portable', version: notice.latest || null };
           broadcast('app-update', appUpdate);
           if (appUpdate.state === 'available' && before !== 'available') log(appUpdate.message);
         }
       } catch (_) { /* offline, or GitHub's hourly limit: keep the last notice */ }
       return appUpdate;
     };
-    if (app.isPackaged) setTimeout(() => { if (config.settings.autoUpdate) check(); }, 10000);
+    if (app.isPackaged) setTimeout(check, 10000);
     ipcMain.handle('check-app-update', check);
+    ipcMain.handle('download-app-update', () => shell.openExternal(releasesPage));
     return;
   }
   if (!app.isPackaged || (!url && !bundledFeed) || (process.platform === 'linux' && !process.env.APPIMAGE)) {
-    appUpdate = { state: 'unconfigured', message: app.isPackaged ? 'Launcher updates are unavailable for this install.' : 'Launcher updates come with new releases.' };
+    appUpdate = { state: 'unconfigured', kind: 'none', message: app.isPackaged ? 'Launcher updates are unavailable for this install.' : 'Launcher updates come with new releases.' };
     ipcMain.handle('check-app-update', () => appUpdate);
+    ipcMain.handle('download-app-update', () => { throw new Error('This launcher doesn\'t update itself. Download a new one from the releases page.'); });
     return;
   }
   ({ autoUpdater: updater } = require('electron-updater'));
   // Updates keep the AppImage's name and folder, so shortcuts to it keep working
   if (process.platform === 'linux') appImageUpdate.keepAppImagePath(updater);
-  updater.autoDownload = true;
+  updater.autoDownload = config.settings.autoUpdate;
   updater.autoInstallOnAppQuit = true;
   applyUpdateChannel();
-  const set = (state, message) => {
-    appUpdate = { state, message }; broadcast('app-update', appUpdate);
+  const set = (state, message, extra = {}) => {
+    const changed = state !== appUpdate.state;
+    appUpdate = { ...appUpdate, percent: null, ...extra, state, message, kind: 'auto' }; broadcast('app-update', appUpdate);
+    // the Online page says whether an update would let this player into a room (myOnlineVersions)
+    if (changed && window) broadcastOnline();
     if (state !== 'downloading' || !message.startsWith('Downloading launcher update:')) log(message);
   };
   updater.on('checking-for-update', () => set('checking', 'Checking launcher updates…'));
-  updater.on('update-available', info => set('downloading', `Downloading launcher ${info.version}…`));
-  updater.on('update-not-available', () => set('current', 'Launcher is up to date.'));
-  updater.on('download-progress', progress => set('downloading', `Downloading launcher update: ${Math.round(progress.percent)}%`));
-  updater.on('update-downloaded', info => set('ready', `Launcher ${info.version} downloaded; it will install when you quit.`));
-  updater.on('error', error => set('error', `Launcher update check failed: ${error.message}`));
-  const check = () => { if (config.settings.autoUpdate) checkAppUpdate(); };
+  updater.on('update-available', info => {
+    if (updater.autoDownload) set('downloading', `Downloading launcher ${info.version}…`, { version: info.version });
+    else set('available', `Launcher ${info.version} is out. Press Update ready in the top bar to get it.`, { version: info.version });
+  });
+  updater.on('update-not-available', () => set('current', 'Launcher is up to date.', { version: null }));
+  updater.on('download-progress', progress => set('downloading', `Downloading launcher update: ${Math.round(progress.percent)}%`, { percent: Math.round(progress.percent) }));
+  updater.on('update-downloaded', info => set('ready', `Launcher ${info.version} downloaded; it will install when you quit.`, { version: info.version }));
+  updater.on('error', error => {
+    // A download asked for with Update now that failed: the update is still out, ready to try again.
+    if (appUpdate.state === 'downloading' && !updater.autoDownload) set('available', `Launcher update download failed: ${error.message}`);
+    else set('error', `Launcher update check failed: ${error.message}`);
+  });
+  // Checks run whether or not updates are automatic; with them off, nothing downloads by itself.
+  const check = () => { if (!['downloading', 'ready'].includes(appUpdate.state)) checkAppUpdate(); };
   setTimeout(check, 10000);
   setInterval(check, 30 * 60 * 1000);
   ipcMain.handle('check-app-update', () => checkAppUpdate());
+  ipcMain.handle('download-app-update', async () => {
+    if (appUpdate.state === 'ready' || appUpdate.state === 'downloading') return appUpdate;
+    if (appUpdate.state !== 'available') throw new Error('No launcher update is waiting to download. Check for updates first.');
+    set('downloading', `Downloading launcher ${appUpdate.version}…`);
+    updater.downloadUpdate().catch(() => { /* the 'error' event says why */ });
+    return appUpdate;
+  });
   ipcMain.handle('install-app-update', () => {
     if (appUpdate.state !== 'ready') throw new Error('No launcher update is ready to install.');
     if (operation || active) throw new Error('Finish the current task or close the game before installing the update.');
@@ -2851,8 +2921,16 @@ function registerHandlers() {
     if (operation || active) throw new Error('Finish the current task before changing settings.');
     const settings = port.normalizeSettings(input);
     const channelChanged = settings.updateChannel !== config.settings.updateChannel;
+    const autoOn = settings.autoUpdate && !config.settings.autoUpdate;
     config.settings = settings;
     saveConfig();
+    if (updater) updater.autoDownload = settings.autoUpdate;
+    // Turned on with an update waiting: it downloads now, as it would have.
+    if (autoOn && updater && appUpdate.state === 'available' && !channelChanged) {
+      appUpdate = { ...appUpdate, state: 'downloading', message: `Downloading launcher ${appUpdate.version}…` };
+      broadcast('app-update', appUpdate);
+      updater.downloadUpdate().catch(() => { /* the 'error' event says why */ });
+    }
     if (channelChanged) {
       applyUpdateChannel();
       log(`Launcher updates now follow ${updateChannel.channelLabel(settings.updateChannel)}.`);

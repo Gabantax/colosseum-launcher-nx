@@ -1033,6 +1033,7 @@ function refresh(data) {
   $('choose-repo-settings').disabled = Boolean(data.active);
   renderActivity(data.active);
   renderAppUpdate(data.appUpdate);
+  renderUpdateUi();
   const installedVersion = data.binaryReady ? data.game.installedVersion : null;
   const gameVersion = installedVersion || (data.binaryReady ? 'Version unavailable' : 'Not installed');
   $('version-summary').textContent = `Launcher v${data.game.launcherVersion} · Game ${installedVersion || (data.binaryReady ? 'version unavailable' : 'not installed')}`;
@@ -1991,7 +1992,7 @@ $('steam-add-confirm').addEventListener('click', async () => {
 refreshSteamBanner().then(offerSteamFix);
 
 $('play').addEventListener('click', () => {
-  if (wizardStep === 0) { if (!offerSteam()) runWizardAction('launchGame'); }
+  if (wizardStep === 0) { if (!askBeforePlay() && !offerSteam()) runWizardAction('launchGame'); }
   else if (wizardStep === 1) {
     if (current.platform.id === 'macos' && !current.tools.appleReady) { showMacHelp(); return; }
     if (current.repoReady && current.tools.ready) { wizardStep = 2; refresh(current); }
@@ -2102,16 +2103,13 @@ window.colo.onActivity(value => {
   const gameStarted = isGameLabel(value?.label) && current?.active?.label !== value.label;
   if (current) current.active = value;
   renderActivity(value);
+  // an update waiting for a task to end, or showing a build's progress
+  if (current && updateFlow) { advanceUpdate(); renderUpdateUi(); }
   // Lock the settings now: the next state (sync) can take a while to arrive.
   if (changed && current) refresh(current);
   if (changed || gameStarted) sync().catch(showError);
 });
 let checkingUpdates = false;
-function renderAppUpdate(value) {
-  $('app-update').textContent = value.message;
-  $('install-app-update').hidden = value.state !== 'ready';
-  $('check-updates').disabled = checkingUpdates || value.state === 'checking' || value.state === 'downloading';
-}
 // Check the launcher's update channel now, then reread the game's versions and the channel list.
 async function checkForUpdates() {
   if (checkingUpdates) return;
@@ -2128,6 +2126,274 @@ async function checkForUpdates() {
     $('check-updates').disabled = false;
   }
 }
+
+// --- Updates (src/update-status.js says what each part shows): Update ready in the top bar, a card under it when an
+// update arrives, and one window that offers the update and shows it going. The launcher picks the order: a new
+// launcher first (download, restart), then the game. The restart can't keep this page, so the update to finish is
+// kept in localStorage and carried on when the new launcher opens. Later, the card's ×, or playing without updating
+// leaves the card and the question before Play alone until the launcher opens again.
+const UPDATE_CONTINUE = 'colo.updateContinue';
+const updateStore = {
+  get() { try { return JSON.parse(window.localStorage?.getItem(UPDATE_CONTINUE) || 'null'); } catch (_) { return null; } },
+  set(value) { try { window.localStorage?.setItem(UPDATE_CONTINUE, JSON.stringify(value)); } catch (_) { /* no carrying on */ } },
+  clear() { try { window.localStorage?.removeItem(UPDATE_CONTINUE); } catch (_) { /* nothing kept */ } }
+};
+let updateNotes = null, updateFlow = null, updateSnoozed = false, updateCardShown = false, updateResumeChecked = false;
+let updateModal = { mode: null, context: null };
+const U = () => window.coloUpdateStatus;
+const updatePlan = () => current ? U().plan(current, updateNotes) : { launcher: null, game: null, laterGame: false };
+function loadUpdateNotes() {
+  window.colo.changelog?.().then(notes => { updateNotes = notes; renderUpdateUi(); }).catch(() => { /* the versions alone */ });
+}
+
+function renderAppUpdate(value) {
+  $('app-update').textContent = value.message;
+  $('install-app-update').hidden = value.state !== 'ready';
+  $('check-updates').disabled = checkingUpdates || value.state === 'checking' || value.state === 'downloading';
+  if (!current) return;
+  const before = current.appUpdate?.version;
+  current.appUpdate = value;
+  // a launcher version the changelog didn't have yet: its notes say which game it brings
+  if (value.version && value.version !== before && !U().releaseOf(updateNotes, value.version)) loadUpdateNotes();
+  advanceUpdate();
+  renderUpdateUi();
+}
+
+function renderUpdateUi() {
+  if (!current || !U()) return;
+  resumeUpdate();
+  const plan = updatePlan();
+  const item = U().chip(current, plan, updateFlow);
+  $('update-chip').hidden = !item;
+  if (item) {
+    $('update-chip-label').textContent = item.label;
+    $('update-chip').title = item.title;
+    $('update-chip').classList.toggle('busy', item.busy);
+  }
+  if ($('update-modal').open) drawUpdateModal();
+  // the card: once a launch, when an update is there, updates aren't automatic and nothing else is showing
+  const quiet = !document.querySelectorAll('.launcher-modal[open]').length && !current.active && !setupPending && wizardStep === 0;
+  if (!updateCardShown && !updateSnoozed && !updateFlow && U().hasUpdate(plan) && !current.config.settings.autoUpdate && current.config.completedSetup && quiet)
+    showUpdateCard(plan);
+  else if (updateCardOpen() && (updateFlow || !U().hasUpdate(plan))) $('update-card').hidePopover();
+}
+
+// A popover has no open property: it matches :popover-open.
+function updateCardOpen() {
+  const card = $('update-card');
+  return typeof card.matches === 'function' ? card.matches(':popover-open') : Boolean(card.open);
+}
+// Under Update ready, its arrow at the button's middle, kept inside the window.
+function placeUpdateCard() {
+  const chip = $('update-chip').getBoundingClientRect(), width = 380;
+  const middle = ((chip.left || 0) + (chip.right || 0)) / 2;
+  const left = Math.max(12, Math.min(middle - width / 2, (window.innerWidth || 1280) - width - 12));
+  $('update-card').style.left = `${left}px`;
+  $('update-card').style.top = `${(chip.bottom || 0) + 10}px`;
+  $('update-card').style.setProperty('--arrow', `${middle - left}px`);
+}
+window.addEventListener('resize', () => { if (updateCardOpen()) placeUpdateCard(); });
+function showUpdateCard(plan) {
+  updateCardShown = true;
+  const card = U().card(plan, U().news(updateNotes, plan));
+  $('update-card-title').textContent = card.title;
+  $('update-card-detail').textContent = card.detail;
+  $('update-card').showPopover();
+  // the button has only just shown: placed again once the top bar has laid it out
+  placeUpdateCard();
+  requestAnimationFrame(placeUpdateCard);
+}
+const snoozeUpdates = () => { updateSnoozed = true; if (updateCardOpen()) $('update-card').hidePopover(); };
+$('update-card-close').addEventListener('click', snoozeUpdates);
+$('update-card-later').addEventListener('click', snoozeUpdates);
+$('update-card-details').addEventListener('click', () => { $('update-card').hidePopover(); openUpdateModal(); });
+$('update-card-now').addEventListener('click', () => { $('update-card').hidePopover(); startUpdate().catch(showError); });
+
+// The window: an offer when nothing is under way (context: null, 'play', or the Online page's words), else the steps.
+function openUpdateModal(context = null) {
+  updateModal = { mode: null, context };
+  if (updateCardOpen()) $('update-card').hidePopover();
+  drawUpdateModal();
+  if (!$('update-modal').open) $('update-modal').showModal();
+}
+function updateMode() {
+  if (updateFlow?.phase === 'done' || updateFlow?.phase === 'error') return updateFlow.phase;
+  return updateFlow ? 'progress' : 'offer';
+}
+function drawUpdateModal() {
+  const mode = updateMode();
+  const view = U().modal(mode, { data: current, notes: updateNotes, value: updatePlan(), flow: updateFlow, context: updateModal.context });
+  updateModal.mode = mode;
+  updateModal.view = view;
+  $('update-modal-eyebrow').textContent = view.eyebrow;
+  $('update-modal-title').textContent = view.title;
+  $('update-modal-lead').textContent = view.lead;
+  $('update-rows').replaceChildren(...view.rows.map(row => {
+    const line = document.createElement('div');
+    line.className = 'update-row';
+    const icon = Object.assign(document.createElement('span'), { className: 'update-icon', textContent: row.kind === 'launcher' ? '⇩' : '◉' });
+    const text = document.createElement('span');
+    text.append(Object.assign(document.createElement('strong'), { textContent: row.title }), Object.assign(document.createElement('small'), { textContent: row.detail }));
+    const version = Object.assign(document.createElement('span'), { className: 'update-version', textContent: `${row.from} → ` });
+    version.append(Object.assign(document.createElement('b'), { textContent: row.to }));
+    line.append(icon, text, version);
+    return line;
+  }));
+  $('update-steps').hidden = !view.steps;
+  $('update-steps').replaceChildren(...(view.steps || []).map((step, index) => {
+    const item = document.createElement('li');
+    item.className = `update-step ${step.state}`.trim();
+    item.append(Object.assign(document.createElement('span'), { className: 'update-dot', textContent: step.state === 'done' ? '✓' : String(index + 1) }));
+    const text = document.createElement('span');
+    text.append(Object.assign(document.createElement('strong'), { textContent: step.title }), Object.assign(document.createElement('small'), { textContent: step.detail }));
+    if (step.state === 'active') {
+      const bar = Object.assign(document.createElement('div'), { className: `update-bar${step.percent === null ? ' indeterminate' : ''}` });
+      const fill = document.createElement('span');
+      if (step.percent !== null) fill.style.width = `${step.percent}%`;
+      bar.append(fill);
+      text.append(bar);
+    }
+    item.append(text);
+    return item;
+  }));
+  $('update-news').hidden = !view.news.length;
+  $('update-news-list').replaceChildren(...view.news.map(line => Object.assign(document.createElement('li'), { textContent: line })));
+  $('update-note').hidden = !view.note;
+  $('update-note').textContent = view.note || '';
+  $('update-warn').hidden = !view.warn;
+  $('update-warn').textContent = view.warn || '';
+  $('update-auto-row').hidden = !view.auto;
+  if (view.auto) {
+    $('update-auto-label').textContent = view.auto.label;
+    $('update-auto').checked = Boolean(current.config.settings.autoUpdate);
+  }
+  $('update-secondary').hidden = !view.secondary;
+  $('update-secondary').textContent = view.secondary?.label || '';
+  $('update-primary').textContent = view.primary.label;
+  $('update-primary').className = view.primary.action === 'hide' ? 'solid' : 'update-primary';
+}
+// Closing an offer is Later; closing the steps only hides them, and the button in the top bar brings them back.
+function closeUpdateModal(snooze) {
+  if (snooze && updateModal.mode === 'offer') snoozeUpdates();
+  if (updateFlow?.phase === 'done' || updateFlow?.phase === 'error') updateFlow = null;
+  if ($('update-modal').open) $('update-modal').close();
+  renderUpdateUi();
+}
+$('update-modal-close').addEventListener('click', () => closeUpdateModal(true));
+$('update-modal').addEventListener('cancel', event => { event?.preventDefault?.(); closeUpdateModal(true); });
+$('update-news-more').addEventListener('click', () => { closeUpdateModal(false); showPage('changelog'); });
+// The window's checkbox is Settings' Update automatically.
+async function keepUpdatingAutomatically() {
+  if (!$('update-auto-row').hidden && $('update-auto').checked && !current.config.settings.autoUpdate) {
+    $('autoUpdate').checked = true;
+    await saveSettings();
+  }
+}
+const UPDATE_BUTTONS = {
+  later: () => closeUpdateModal(true),
+  close: () => closeUpdateModal(false),
+  hide: () => closeUpdateModal(false),
+  log: () => { closeUpdateModal(false); showActivityLog(); },
+  changelog: () => { closeUpdateModal(false); showPage('changelog'); },
+  releases: async () => { await keepUpdatingAutomatically(); closeUpdateModal(false); await window.colo.openReleasesPage(); },
+  update: async () => { await keepUpdatingAutomatically(); updateFlow = null; await startUpdate(); },
+  'update-play': async () => { await keepUpdatingAutomatically(); closeUpdateModal(false); runWizardAction('updateAndPlay'); },
+  play: async () => { await keepUpdatingAutomatically(); updateSnoozed = true; closeUpdateModal(false); runWizardAction('launchGame'); },
+  'play-now': () => { closeUpdateModal(false); showPage('play'); if (!current.active) runWizardAction('launchGame'); }
+};
+for (const id of ['update-primary', 'update-secondary']) $(id).addEventListener('click', async () => {
+  const view = updateModal.view, button = id === 'update-primary' ? view?.primary : view?.secondary;
+  try { await UPDATE_BUTTONS[button?.action]?.(); } catch (error) { failUpdate(errorText(error)); }
+});
+$('update-chip').addEventListener('click', () => openUpdateModal());
+
+// The update itself. A portable launcher's new version comes from the releases page; any other downloads, restarts
+// into the new launcher (which carries on, resumeUpdate), and the game is updated last.
+async function startUpdate() {
+  const plan = updatePlan();
+  if (!U().hasUpdate(plan)) { closeUpdateModal(false); return; }
+  if (plan.launcher?.kind === 'portable') { closeUpdateModal(false); await window.colo.openReleasesPage(); return; }
+  updateFlow = { phase: plan.launcher ? 'launcher' : 'game', launcher: plan.launcher && { from: plan.launcher.from, to: plan.launcher.to },
+    game: plan.game && { to: plan.game.to }, laterGame: plan.laterGame, resumed: false, waiting: false, started: false };
+  updateModal.context = null;
+  if (!$('update-modal').open) openUpdateModal();
+  renderUpdateUi();
+  if (!plan.launcher) { await updateGameNow(); return; }
+  updateStore.set({ from: plan.launcher.from, to: plan.launcher.to, game: plan.game?.to || null, laterGame: plan.laterGame });
+  if (current.appUpdate?.state === 'available') {
+    const value = await window.colo.downloadAppUpdate();
+    if (value?.state) { current.appUpdate = value; renderAppUpdate(value); }
+  }
+  updateFlow.started = true;
+  advanceUpdate();
+  renderUpdateUi();
+}
+function failUpdate(message) {
+  updateStore.clear();
+  updateFlow = { ...(updateFlow || {}), phase: 'error', error: message };
+  if (!$('update-modal').open) openUpdateModal();
+  renderUpdateUi();
+}
+// What the launcher's download and the tasks say moves the update on.
+function advanceUpdate() {
+  if (!updateFlow || !current) return;
+  const state = current.appUpdate?.state;
+  if (updateFlow.phase === 'launcher' && updateFlow.started) {
+    if (state === 'ready') { updateFlow.phase = 'restart'; restartForUpdate(); }
+    else if (state === 'available' || state === 'error') failUpdate(current.appUpdate.message || 'The launcher download stopped.');
+  } else if (updateFlow.phase === 'restart' && updateFlow.waiting && !current.active && !setupPending) restartForUpdate();
+  else if (updateFlow.phase === 'game' && updateFlow.waiting && !current.active && !setupPending) updateGameNow();
+}
+async function restartForUpdate() {
+  if (current.active || setupPending) { updateFlow.waiting = true; renderUpdateUi(); return; }
+  updateFlow.waiting = false;
+  renderUpdateUi();
+  try { await window.colo.installAppUpdate(); }
+  catch (error) {
+    // the game or a task started in the meantime: once it's done
+    if (current.active) { updateFlow.waiting = true; renderUpdateUi(); }
+    else failUpdate(errorText(error));
+  }
+}
+async function updateGameNow() {
+  if (current.active || setupPending) { updateFlow.waiting = true; renderUpdateUi(); return; }
+  updateFlow.waiting = false;
+  if (!current.game.needsUpdate) { Object.assign(updateFlow, { phase: 'done', gameSkipped: true }); renderUpdateUi(); return; }
+  updateFlow.phase = 'game';
+  renderUpdateUi();
+  await updateOnly();
+  if (!updateFlow) return;
+  if (current.game.needsUpdate) failUpdate($('message-text').textContent || 'The game update stopped. The activity log says why.');
+  // done: the window says so if it's open; hidden, the message under Play does
+  else if ($('update-modal').open) { updateFlow.phase = 'done'; setMessage(''); renderUpdateUi(); }
+  else { updateFlow = null; renderUpdateUi(); }
+}
+// The new launcher, opened by the restart: the update it was part of carries on with the game.
+function resumeUpdate() {
+  if (updateResumeChecked) return;
+  updateResumeChecked = true;
+  const saved = updateStore.get();
+  if (!saved) return;
+  updateStore.clear();
+  const flow = { phase: 'game', launcher: { from: saved.from, to: saved.to }, game: saved.game ? { to: saved.game } : null,
+    laterGame: Boolean(saved.laterGame), resumed: true, waiting: false };
+  if (current.game.launcherVersion === saved.from) {
+    updateFlow = { ...flow, phase: 'error', resumed: false, error: `Launcher ${saved.to || 'update'} didn't install, so this is still v${saved.from}. Try again, or download it from the releases page.` };
+    Promise.resolve().then(() => openUpdateModal());
+    return;
+  }
+  updateFlow = flow;
+  Promise.resolve().then(() => { openUpdateModal(); return updateGameNow(); }).catch(error => failUpdate(errorText(error)));
+}
+// Play with a game update waiting, when updates aren't automatic: update first, or play what's there.
+function askBeforePlay() {
+  if (updateSnoozed || updateFlow || !current || current.config.settings.autoUpdate || !current.binaryReady || !current.game.needsUpdate) return false;
+  openUpdateModal('play');
+  return true;
+}
+// The Online page: a room this player could join once updated.
+window.coloUpdateFlow = { offer: context => { if (updateFlow) openUpdateModal(); else openUpdateModal(context); } };
+loadUpdateNotes();
 window.colo.onAppUpdate(renderAppUpdate);
 $('install-app-update').addEventListener('click', () => window.colo.installAppUpdate().catch(showError));
 $('check-updates').addEventListener('click', checkForUpdates);

@@ -92,9 +92,11 @@ HD textures are **on by default for first-time setup**: all 7,498 of the game's 
 
 ### Updates
 
+Each launcher version brings a game version. When there's an update, **Update ready** shows in the top bar, and a card under it says what's new. **Update now** does the rest in the right order: it downloads the new launcher, restarts into it, then updates the game, showing each step as it goes. You can hide the steps and keep using the launcher. Only the game has an update? Then it just updates the game. **Later** leaves you alone until the launcher opens again. A portable launcher gets its new version from the releases page.
+
 When a game update is ready, the main button becomes **Update & play**. Your current game stays available until the new setup succeeds. The **▾** beside it has **Update only** and **Play now**.
 
-Launcher updates download automatically when **Update automatically** is on and install when you quit. After an update, What's new opens once to show what changed.
+With **Update automatically** on, launcher updates download by themselves and install when you quit, and Play installs a waiting game update first. With it off, the launcher still checks, at start and every half hour, and shows **Update ready**. Pressing Play with a game update waiting asks whether to update first or play the version you have. Nothing downloads or builds until you say so. After an update, What's new opens once to show what changed.
 
 ### Join the Beta
 
@@ -165,11 +167,11 @@ A party is of **Generation 3** or **Generation 4**, chosen at the top of the tea
 
 Your game starts and waits in the stadium, and your room appears for everyone on the list. Untick **Show on the room list** to keep it private and give a friend the code instead. When someone joins, your game starts again and you're both in the battle: first the screen with both trainers and their Pokémon, then, with team preview, the game's own selection screen, where you each pick your Pokémon in order with the buttons shown beside them (you have 90 seconds, then the first of your party go; the other player's picks show once you've both chosen), and after the battle its results, with each Pokémon's HP and who won. A game from before these screens closes while you each pick on the Online tab instead. Players choose their moves at the same time. **Give in** from the battle menu ends the battle, and closing the game counts as leaving.
 
-Both players need the same build of the game. A room on another version says which one it needs.
+Both players need games that battle the same way, and launchers that do too. Games have a battle version, which changes only when a battle could go differently: a move, an ability, an item, the rules or the online battle itself. So a friend on an older or newer game can still battle you until that number changes. Games from before battle versions need the very same build. The Rooms tab shows your own game, its battle version and your launcher version to compare with a friend's. A room you can't join says why: whose game or launcher is older, so who needs to update, or that one of you is on Beta and the other on Stable, and, when the update is yours, **Update to join** opens the update. Afterwards, find their room on the Rooms tab again. Join and Watch by code say the same. While you wait in a room, the banner says which battle version challengers need. If a battle still stops because the two games no longer agree, the message names the game versions to put in your report.
 
 **Watch** a battle under way from the room list, or type its code and choose **Watch**. Your game plays the battle from its start with the same screens and battle camera the players see, without their menus: while they choose, the text box says *Players are selecting moves...*. Come in late and it fast-forwards until it has caught up. You don't need a party to watch, only the same version of the game as the room, and the players see how many are watching. **Stop watching** closes it.
 
-**Pokémon XD** battles online too. Its parties come from the team builder, which reads the Pokémon from your Colosseum disc, so set up Colosseum's disc as well. Tick **Colosseum and XD players can join** when you create a room, and a player of either game can take it: the two games play one battle, with XD following Colosseum's rules where they differ. XD's online battles have Colosseum's timers, the in-game pick screen with team preview, and the screens around a battle. Rooms for both games don't have Platinum's rules yet, and both games must come from the same version of the port.
+**Pokémon XD** battles online too. Its parties come from the team builder, which reads the Pokémon from your Colosseum disc, so set up Colosseum's disc as well. **Colosseum and XD players can join** is on by default, so a player of either game can take your room (untick it for a room for your own game only), and **Show on the room list** is on too: the two games play one battle, with XD following Colosseum's rules where they differ. XD's online battles have Colosseum's timers, the in-game pick screen with team preview, and the screens around a battle. Both games must have the same battle version, or, for games from before battle versions, come from the same version of the port.
 
 ### Game Boy Advance
 
@@ -218,7 +220,7 @@ Node 22.12 or newer.
 
 ### Online battles
 
-The rooms and the online count are [colosseum-server-api](https://github.com/chasem-dev/colosseum-server-api), a Cloudflare Worker. `COLO_TELEMETRY_URL=http://localhost:8787 npm start` points a development launcher at one running with `npm run dev` (a development launcher reports nothing without it). `src/online.js` is the launcher's side, and the game's `host/online.c` lists the lines the two exchange. `src/formats.js` holds the formats and checks parties; the room server keeps a copy (its `scripts/formats.mjs` makes it from this one), so change it here and make that again.
+The rooms and the online count are [colosseum-server-api](https://github.com/chasem-dev/colosseum-server-api), a Cloudflare Worker. `COLO_TELEMETRY_URL=http://localhost:8787 npm start` points a development launcher at one running with `npm run dev` (a development launcher reports nothing without it). `src/online.js` is the launcher's side, and the game's `host/online.c` lists the lines the two exchange. A room's build is the game's battle version (`colosseum-battle-N`, `xd-battle-N`, `cross-battle-N`), which the game declares in `host/battleversion.h` and the launcher reads from its executable; games from before it are named by their commits. The game's header says when to bump it. `src/formats.js` holds the formats and checks parties; the room server keeps a copy (its `scripts/formats.mjs` makes it from this one), so change it here and make that again.
 
 ### Test and package
 

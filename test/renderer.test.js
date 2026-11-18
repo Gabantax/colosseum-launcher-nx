@@ -21,9 +21,9 @@ function state() {
 // The system a state's platformInfo describes, so saving settings in a test does not depend on the computer.
 function host(platform) { return { linux: 'linux', macos: 'darwin', windows: 'win32' }[platform.id]; }
 
-async function renderer(data = state(), copyError = null, notes = { releases: [], unseen: [], current: '0.1.39' }) {
+async function renderer(data = state(), copyError = null, notes = { releases: [], unseen: [], current: '0.1.39' }, extra = {}) {
   const changelogSeen = [], calls = [], elements = new Map(), listeners = {}, gamepad = {}, featured = [];
-  let logCallback, resetCallback, activityCallback, settingsCallback;
+  let logCallback, resetCallback, activityCallback, settingsCallback, appUpdateCallback;
   const text = node => typeof node === 'string' ? node : node.textContent + node.children.map(text).join(' ');
   function element(classes = '') {
     const names = new Set(classes.split(' ')), listeners = new Map();
@@ -56,7 +56,7 @@ async function renderer(data = state(), copyError = null, notes = { releases: []
     state: async () => data, windowState: async () => ({}), zoomFactor: () => 1,
     toggleMaximize: async () => { calls.push('toggleMaximize'); return { maximized: calls.filter(call => call === 'toggleMaximize').length % 2 === 1 }; },
     toggleFullScreen: async () => { calls.push('toggleFullScreen'); return { fullscreen: true }; },
-    onLog(callback) { logCallback = callback; }, onActivity(callback) { activityCallback = callback; }, onSettingsChanged(callback) { settingsCallback = callback; }, onAppUpdate() {}, onWindowState() {},
+    onLog(callback) { logCallback = callback; }, onActivity(callback) { activityCallback = callback; }, onSettingsChanged(callback) { settingsCallback = callback; }, onAppUpdate(callback) { appUpdateCallback = callback; }, onWindowState() {},
     onLogReset(callback) { resetCallback = callback; },
     saveActivityLog: async () => { calls.push('saveActivityLog'); },
     copyActivityLog: async () => { calls.push('copyActivityLog'); if (copyError) throw copyError; },
@@ -66,6 +66,10 @@ async function renderer(data = state(), copyError = null, notes = { releases: []
     play: async () => { calls.push('play'); }, launchGame: async () => { calls.push('launchGame'); },
     removeBuildTools: async () => { calls.push('removeBuildTools'); },
     updateAndPlay: async () => { calls.push('updateAndPlay'); },
+    checkAppUpdate: async () => { calls.push('checkAppUpdate'); return data.appUpdate; },
+    downloadAppUpdate: async () => { calls.push('downloadAppUpdate'); return { ...data.appUpdate, state: 'downloading', percent: 0 }; },
+    installAppUpdate: async () => { calls.push('installAppUpdate'); },
+    openReleasesPage: async () => { calls.push('openReleasesPage'); },
     updateChannels: async () => [{ id: 'stable', label: 'Stable' }, { id: 'beta', label: 'Beta' }],
     setGameSource: async value => { calls.push(['setGameSource', value]); return data; },
     selectGame: async id => { calls.push(['selectGame', id]); data.currentGame = games.summary(id); return data; },
@@ -78,8 +82,8 @@ async function renderer(data = state(), copyError = null, notes = { releases: []
   };
   const context = vm.createContext({ console, setInterval() {}, clearInterval() {}, requestAnimationFrame: callback => setImmediate(callback),
     cancelAnimationFrame() {}, navigator: { getGamepads: () => [] }, ColoBindings: require('../src/bindings'), ColoPresets: require('../src/presets'),
-    window: { colo, ColoPlayStage: require('../src/play-stage'), coloActivityLog: require('../src/activity-log'), coloChangelogText: require('../src/changelog-text'), coloGamepadNav: { start: options => Object.assign(gamepad, options) },
-      addEventListener(event, callback) { (listeners.window ||= {})[event] = [...(listeners.window[event] || []), callback]; }, removeEventListener() {} }, document: {
+    window: { colo, ColoPlayStage: require('../src/play-stage'), coloActivityLog: require('../src/activity-log'), coloChangelogText: require('../src/changelog-text'), coloUpdateStatus: require('../src/update-status'), coloGamepadNav: { start: options => Object.assign(gamepad, options) },
+      addEventListener(event, callback) { (listeners.window ||= {})[event] = [...(listeners.window[event] || []), callback]; }, removeEventListener() {}, ...extra }, document: {
     getElementById(id) { assert.ok(elements.has(id), `Missing HTML element ${id}`); return elements.get(id); },
     querySelectorAll(selector) {
       const modals = ['mac-tools-help', 'path-too-long', 'pbr-offer'].map(id => elements.get(id));
@@ -93,6 +97,7 @@ async function renderer(data = state(), copyError = null, notes = { releases: []
     async emitLog(entry) { logCallback(entry); await new Promise(setImmediate); },
     async resetLog(sequence) { resetCallback(sequence); await new Promise(setImmediate); },
     async emitActivity(active) { activityCallback(active); await new Promise(setImmediate); },
+    async emitAppUpdate(value) { appUpdateCallback(value); await new Promise(setImmediate); },
     async emitSettingsChanged() { settingsCallback(); await new Promise(setImmediate); await new Promise(setImmediate); },
     async refresh() { vm.runInContext('refresh(current)', context); },
     run: code => vm.runInContext(code, context),
@@ -1061,4 +1066,129 @@ test('a change on the game\'s Settings screen shows in Settings while the game r
   assert.equal(ui.elements.get('volumeMusic').value, '60');
   assert.equal(ui.elements.get('volumeMusic-value').textContent, '60%');
   assert.equal(ui.elements.get('msaa').value, '4');
+});
+
+function memoryStorage(initial = {}) {
+  const items = new Map(Object.entries(initial));
+  return { items, getItem: key => items.has(key) ? items.get(key) : null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key) };
+}
+const updateNotes = { releases: [{ version: '0.1.40', launcher: ['A launcher change.'], game: { version: 'newer', changes: ['A game change.'] } }], unseen: [], current: '0.1.39' };
+const tick = async () => { for (let i = 0; i < 5; i++) await new Promise(setImmediate); };
+
+test('Update ready offers the launcher and its game as one update, in the right order', async () => {
+  const data = state();
+  data.config.settings = port.normalizeSettings({ autoUpdate: false });
+  data.appUpdate = { state: 'available', kind: 'auto', version: '0.1.40', message: 'Launcher 0.1.40 is out.' };
+  const storage = memoryStorage();
+  const ui = await renderer(data, null, updateNotes, { localStorage: storage });
+  await tick();
+  assert.equal(ui.elements.get('update-chip').hidden, false);
+  assert.equal(ui.elements.get('update-chip-label').textContent, 'Update ready');
+  // the card under it, once, with automatic updates off
+  assert.equal(ui.elements.get('update-card').open, true);
+  assert.equal(ui.elements.get('update-card-title').textContent, 'Launcher 0.1.40 and game newer');
+  await ui.click('update-card-later');
+  assert.equal(ui.elements.get('update-card').open, false);
+  await ui.refresh();
+  assert.equal(ui.elements.get('update-card').open, false, 'Later lasts until the launcher opens again');
+  await ui.click('update-chip');
+  assert.equal(ui.elements.get('update-modal').open, true);
+  assert.equal(ui.elements.get('update-modal-title').textContent, 'Update the launcher and game');
+  assert.equal(ui.elements.get('update-primary').textContent, 'Update now');
+  await ui.click('update-primary');
+  await tick();
+  assert.ok(ui.calls.includes('downloadAppUpdate'));
+  assert.deepEqual(JSON.parse(storage.getItem('colo.updateContinue')), { from: '0.1.39', to: '0.1.40', game: 'newer', laterGame: false });
+  assert.equal(ui.elements.get('update-chip-label').textContent, 'Updating 0%');
+  assert.equal(ui.elements.get('update-modal-eyebrow').textContent, 'UPDATING · STEP 1 OF 3');
+  // downloaded: the launcher restarts into the new one by itself
+  await ui.emitAppUpdate({ state: 'ready', kind: 'auto', version: '0.1.40', message: 'Launcher 0.1.40 downloaded.' });
+  await tick();
+  assert.ok(ui.calls.includes('installAppUpdate'));
+});
+
+test('the new launcher carries on with the game after the restart, then says it is up to date', async () => {
+  const data = state();
+  data.config.settings = port.normalizeSettings({ autoUpdate: false });
+  data.game = { ...data.game, launcherVersion: '0.1.40' };
+  data.appUpdate = { state: 'current', kind: 'auto', message: '' };
+  const storage = memoryStorage({ 'colo.updateContinue': JSON.stringify({ from: '0.1.39', to: '0.1.40', game: 'newer', laterGame: false }) });
+  const ui = await renderer(data, null, updateNotes, { localStorage: storage });
+  await tick();
+  assert.equal(storage.getItem('colo.updateContinue'), null);
+  assert.ok(ui.calls.includes('updatePort'));
+  assert.equal(ui.elements.get('update-modal').open, true);
+  assert.equal(ui.elements.get('update-modal-title').textContent, 'You\'re up to date');
+  assert.equal(ui.elements.get('update-chip').hidden, true);
+});
+
+test('a launcher update that didn\'t install says so instead of carrying on', async () => {
+  const data = state();
+  data.game = { ...data.game, needsUpdate: false };
+  const storage = memoryStorage({ 'colo.updateContinue': JSON.stringify({ from: '0.1.39', to: '0.1.40', game: null, laterGame: true }) });
+  const ui = await renderer(data, null, updateNotes, { localStorage: storage });
+  await tick();
+  assert.equal(ui.elements.get('update-modal-title').textContent, 'The update didn\'t finish');
+  assert.match(ui.elements.get('update-modal-lead').textContent, /Launcher 0\.1\.40 didn't install/);
+  assert.equal(ui.calls.includes('updatePort'), false);
+});
+
+test('a game update alone is one step, with no restart', async () => {
+  const data = state();
+  data.config.settings = port.normalizeSettings({ autoUpdate: false });
+  data.appUpdate = { state: 'current', kind: 'auto', message: '' };
+  const ui = await renderer(data, null, updateNotes, { localStorage: memoryStorage() });
+  await tick();
+  await ui.click('update-card-now');
+  await tick();
+  assert.ok(ui.calls.includes('updatePort'));
+  assert.equal(ui.calls.includes('downloadAppUpdate'), false);
+  assert.equal(ui.elements.get('update-modal-title').textContent, 'You\'re up to date');
+});
+
+test('with automatic updates off, Play asks first; playing the old game asks no more until the next launch', async () => {
+  const data = state();
+  data.config.settings = port.normalizeSettings({ autoUpdate: false });
+  data.appUpdate = { state: 'current', kind: 'auto', message: '' };
+  const ui = await renderer(data, null, updateNotes, { localStorage: memoryStorage() });
+  await tick();
+  ui.calls.length = 0;
+  await ui.click('play');
+  assert.equal(ui.elements.get('update-modal').open, true);
+  assert.equal(ui.elements.get('update-modal-title').textContent, 'A game update is ready');
+  assert.equal(ui.elements.get('update-secondary').textContent, 'Play older');
+  assert.equal(ui.elements.get('update-primary').textContent, 'Update and play');
+  assert.equal(ui.calls.includes('launchGame'), false);
+  await ui.click('update-secondary');
+  await tick();
+  assert.equal(ui.elements.get('update-modal').open, false);
+  assert.deepEqual(ui.calls.filter(call => call === 'launchGame'), ['launchGame']);
+  await ui.click('play');
+  await tick();
+  assert.equal(ui.elements.get('update-modal').open, false, 'asked once a launch');
+  assert.deepEqual(ui.calls.filter(call => call === 'launchGame'), ['launchGame', 'launchGame']);
+});
+
+test('the window\'s Update automatically box turns the setting on', async () => {
+  const data = state();
+  data.config.settings = port.normalizeSettings({ autoUpdate: false });
+  data.appUpdate = { state: 'current', kind: 'auto', message: '' };
+  const ui = await renderer(data, null, updateNotes, { localStorage: memoryStorage() });
+  await tick();
+  await ui.click('play');
+  ui.elements.get('update-auto').checked = true;
+  await ui.click('update-primary');
+  await tick();
+  const saved = ui.calls.find(call => Array.isArray(call) && call[0] === 'saveSettings');
+  assert.equal(saved?.[1].autoUpdate, true);
+  assert.ok(ui.calls.includes('updateAndPlay'));
+});
+
+test('nothing to get leaves Update ready hidden', async () => {
+  const data = state();
+  data.game = { ...data.game, needsUpdate: false };
+  data.appUpdate = { state: 'current', kind: 'auto', message: 'Launcher is up to date.' };
+  const ui = await renderer(data);
+  assert.equal(ui.elements.get('update-chip').hidden, true);
+  assert.equal(ui.elements.get('update-card').open, false);
 });
