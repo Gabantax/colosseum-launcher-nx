@@ -306,15 +306,22 @@ function findPokemon(ctx, identity, place) {
 }
 
 // Why a Pokémon of this save can't go to Shadowtrade, or null when it can. pokemon: one of the model's.
-// The species Shadowtrade carries: the third generation's (1-251, 277-411), numbered the same in both games and on every
-// launcher. Gen 4 and pack Pokémon (a randomizer can make them Shadows) aren't in every player's game.
-const shadowtradeSpecies = species => (species >= 1 && species <= 251) || (species >= 277 && species <= 411);
+// The species Shadowtrade carries, in each game's numbers: 'base', the third generation's (and XD's own Bonsly and
+// Munchlax), which every player's game has; 'later', the fourth generation's (a randomizer can make them Shadows: Colosseum
+// national + 26, XD two higher), which goes only to a game with Generation 4 Pokémon turned on (colosseum-server-api
+// src/shadowtrade.js); null for a pack's, which each launcher numbers its own way.
+const SHADOWTRADE_LATER = { colosseum: [413, 519], xd: [415, 521] };
+function shadowtradeKind(game, species) {
+  if ((species >= 1 && species <= 251) || (species >= 277 && species <= 411) || (game === 'xd' && (species === 413 || species === 414))) return 'base';
+  const later = SHADOWTRADE_LATER[game];
+  return later && species >= later[0] && species <= later[1] ? 'later' : null;
+}
 
 function offerProblem(saveModel, pokemon) {
   if (!pokemon) return 'There is no Pokémon there.';
   if (pokemon.egg) return 'Eggs can\'t be traded.';
   if (!pokemon.shadow) return 'Only Shadow Pokémon can go to Shadowtrade.';
-  if (!shadowtradeSpecies(pokemon.species)) return 'Gen 4 and Pokémon pack Shadow Pokémon can\'t go to Shadowtrade: other players\' games may not have them.';
+  if (!shadowtradeKind(saveModel.game, pokemon.species)) return 'Pokémon pack Shadow Pokémon can\'t go to Shadowtrade: each launcher numbers them its own way.';
   if (saveModel.game === 'xd') {
     if (pokemon.shadowId === XD_LUGIA) return 'XD-001 can\'t be traded: the Purify Chamber needs it.';
     if (!pokemon.traded) {
@@ -523,4 +530,4 @@ function editCard(saveDir, gameId, change) {
 }
 
 module.exports = { COLOSSEUM, XD, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, liveFrom, parseLive, cardCopies,
-  colosseumFlag, offerProblem, shadowtradeSpecies, tradeProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };
+  colosseumFlag, offerProblem, shadowtradeKind, tradeProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };

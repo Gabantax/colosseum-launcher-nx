@@ -1731,7 +1731,8 @@ function closeStoryLink(link) {
 }
 function trades() {
   if (!shadowtradeTrades) shadowtradeTrades = new shadowtrade.Shadowtrade({ folder: path.join(app.getPath('userData'), 'shadowtrade'),
-    fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view), arrivals: arrivals() });
+    fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('shadowtrade', view), arrivals: arrivals(),
+    takesLater: game => tradeReceiver(game).laterPokemon });
   return shadowtradeTrades;
 }
 
@@ -1872,7 +1873,8 @@ function pokemonPage() {
     notice = notice || (binaryReady(games.allFields(config)[game]?.repo, game) ? 'Update the game to use Shadowtrade: this version of it can\'t take a traded Shadow Pokémon.' : 'Set up the game to use Shadowtrade.');
   }
   if (model) {
-    const each = pokemon => pokemon && { ...pokemon, tradeProblem: savePokemon.offerProblem(model, pokemon) };
+    const each = pokemon => pokemon && { ...pokemon, tradeProblem: savePokemon.offerProblem(model, pokemon),
+      tradeLater: pokemon.shadow && savePokemon.shadowtradeKind(game, pokemon.species) === 'later' };
     model = { ...model, party: model.party.map(each), boxes: model.boxes.map(box => ({ ...box, pokemon: box.pokemon.map(each) })) };
   }
   return { game, source, model, notice, canTrade: canTrade && Boolean(model), pool: shadowtrade.poolFor(game, saveRandomized(game)),
