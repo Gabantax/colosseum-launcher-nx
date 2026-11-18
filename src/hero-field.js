@@ -4,8 +4,9 @@
 // carries Colosseum's battle model of each, at the field's scale (Colosseum's own field Wes is as tall as his battle
 // model). This makes a people model from one: the hero's battle model as it is (joints, meshes, textures), with its
 // battle clips replaced by Michael's field clips moved onto the hero's skeleton, each at the clip index Michael's own
-// model (rinto_0000 in people_archive.fsys) has it, so XD's people code plays them unchanged: idle 3, walk 5, run 8 and
-// the rest. A people model has 155 clip slots; a slot Michael leaves empty points at an empty animation joint, as his.
+// models (rinto_0000 in people_archive.fsys, then his other rinto entries for the clips it hasn't got) have it, so
+// XD's people code plays them unchanged: idle 3, walk 5, run 8, pushing a crate 31-33 and the rest. A people model has
+// 155 clip slots; a slot none of Michael's models fills points at an empty animation joint, as his do.
 //
 // How a clip is moved over:
 //   - the limbs are matched place by place (hips, each leg's hip, knee, ankle and toes, each arm's collarbone, shoulder,
@@ -35,7 +36,7 @@ const retarget = require('./hero-retarget');
 const { colosseumPkx } = require('./xd-disc');
 
 // The models' version: made again when it changes (raise it whenever what buildFieldModel makes changes)
-const VERSION = 1;
+const VERSION = 2;
 const PKX_HEADER = 0x40;
 const CLIP_SLOTS = 155;
 // JObj: flags at +4, child +8, next +0x0C, constraints (RObj list) +0x3C. The flags that make a joint part of a leg the
@@ -685,15 +686,32 @@ function fieldInfo(heroBattlePkxXd, michaelPeople) {
 }
 
 // An XD people model (a people_archive.fsys entry's bytes, an HSD .dat) of the hero whose XD battle pkx is given, with
-// Michael's field clips (`michaelPeople`, his rinto_0000 entry) at his clip indices.
-function buildFieldModel(heroBattlePkxXd, michaelPeople, { compact = true } = {}) {
+// Michael's field clips at his clip indices. `michaelPeople` is his rinto_0000 entry (his walk, run and idle, and the
+// skeleton the rest is fitted to); `more` his other field models (people_archive's other rinto entries), whose clips
+// fill the slots rinto_0000 leaves empty. XD numbers the people clips once for every model, and the game opens rinto_1000
+// on the S.S. Libra and elsewhere, asking it for clips rinto_0000 hasn't got: gimmickBox.cpp's crate push (31, 32, 33)
+// and jump off a crate (34), timed by their lengths. The hero's one model stands in for all of Michael's
+// (host/xd/player.c), so it carries every clip any of his has: each slot from the first model, in the order given, that
+// has that slot, fitted from that model's own skeleton.
+function buildFieldModel(heroBattlePkxXd, michaelPeople, { compact = true, more = [] } = {}) {
   const { heroDat, hero, michael, slots, rig } = prepare(heroBattlePkxXd, michaelPeople);
-  const longer = longerClips(michaelPeople, slots), rest = restValues(hero);
-  const clips = slots.map((slot, index) => {
-    if (!slot) return null;
-    const clip = michaelClip(longer, index);
+  const rest = restValues(hero);
+  const lists = [slots, ...more.map(people => {
+    const other = clipSlots(people);
+    if (other.length !== CLIP_SLOTS) throw new Error('Michael\'s field model isn\'t as expected.');
+    return other;
+  })];
+  const from = clipSources(lists), sources = [];
+  // only a model a clip comes from is fitted
+  for (const k of new Set(from.filter(k => k >= 0))) {
+    const people = k ? more[k - 1] : michaelPeople, body = k ? hsd.parseModel(asPkx(people)) : michael;
+    sources[k] = { michael: body, slots: lists[k], rig: k ? rigFor(body, hero) : rig, longer: longerClips(people, lists[k]) };
+  }
+  const clips = from.map((k, index) => {
+    if (k < 0) return null;
+    const source = sources[k], slot = source.slots[index], clip = michaelClip(source.longer, index);
     if (clip.frames !== Math.ceil(slot.end) + 1) throw new Error('Michael\'s field model isn\'t as expected.');
-    const moved = fieldClip(michael, hero, rig, clip);
+    const moved = fieldClip(source.michael, hero, source.rig, clip);
     steadyTurns(moved.values, moved.samples, rest);
     return { ...moved, end: slot.end, flags: slot.flags };
   });
@@ -703,8 +721,14 @@ function buildFieldModel(heroBattlePkxXd, michaelPeople, { compact = true } = {}
   return fieldDat(heroDat, clips, keyed, tolerances, rigEdits(heroDat, rig.match), { compact });
 }
 
+// Which of several people models' clip slots (clipSlots lists, in order) each slot's clip comes from: the first that
+// has one, or -1 when none has.
+function clipSources(lists) {
+  return Array.from({ length: Math.max(0, ...lists.map(list => list.length)) }, (_, index) => lists.findIndex(list => list[index]));
+}
+
 module.exports = {
-  VERSION, CLIP_SLOTS, buildFieldModel, fieldInfo,
+  VERSION, CLIP_SLOTS, buildFieldModel, fieldInfo, clipSources,
   // for hero-snag.js, which moves Michael's battle clips onto the heroes' battle models as these move his field clips
   rigFor, fieldClip, addClip, readDat, writeDat, Added, reader, sceneSet, jointOffsets, worlds, restValues, steadyTurns,
   // for the tests
