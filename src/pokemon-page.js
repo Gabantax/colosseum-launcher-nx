@@ -210,6 +210,9 @@ async function trade() {
   $('shadowtrade-confirm-name').textContent = shown(pokemon);
   $('shadowtrade-confirm-sprite').replaceChildren(sprite(pokemon, 72));
   $('shadowtrade-confirm-live').hidden = data.source !== 'live';
+  // Colosseum's Ho-Oh needs every story Shadow purified: the story's own one, sent away, can't be (a traded-in one isn't
+  // the story's, and purifying another player's of the same story id stands in for it: game host/shadowtrade.c credit_story)
+  $('shadowtrade-confirm-hooh').hidden = !(data.game === 'colosseum' && pokemon.shadow && !pokemon.traded);
   $('shadowtrade-confirm').showModal();
 }
 
