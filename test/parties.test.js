@@ -6,7 +6,7 @@ const parties = require('../src/parties');
 
 test('a first run has no parties and the default rules', () => {
   assert.deepEqual(parties.normalize(undefined),
-    { trainer: 'Trainer', parties: [], selected: null, level: 50, size: 6, turnTime: 0, battleTime: 0, listed: true, crossplay: false, battleRules: 3, format: 'casual',
+    { trainer: 'Trainer', parties: [], selected: null, level: 50, size: 6, turnTime: 0, battleTime: 0, listed: true, crossplay: true, crossplayChosen: false, battleRules: 3, format: 'casual',
       custom: {}, bestOf: 1 });
 });
 
@@ -76,6 +76,14 @@ test('rules come from what rooms offer', () => {
   assert.equal(parties.normalize({ level: 75, size: 4 }).level, 50);
   assert.equal(parties.normalize({ level: 75, size: 4 }).size, 6);
   assert.equal(parties.normalize({ listed: false }).listed, false);
+});
+
+test('rooms for both games are on unless the player turned them off on the Online page', () => {
+  assert.equal(parties.normalize({}).crossplay, true);
+  // settings saved while it was off by default kept crossplay: false without the player choosing it
+  assert.equal(parties.normalize({ crossplay: false }).crossplay, true);
+  assert.deepEqual([parties.normalize({ crossplay: false, crossplayChosen: true }).crossplay, parties.normalize({ crossplay: false, crossplayChosen: true }).crossplayChosen], [false, true]);
+  assert.equal(parties.normalize({ crossplay: true, crossplayChosen: true }).crossplay, true);
 });
 
 test('each member has a set, kept with it when others are dropped', () => {

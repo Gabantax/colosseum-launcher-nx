@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld('colo', {
   openCrashReports: () => ipcRenderer.invoke('open-crash-reports'),
   checkAppUpdate: () => ipcRenderer.invoke('check-app-update'),
   installAppUpdate: () => ipcRenderer.invoke('install-app-update'),
+  downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
+  openReleasesPage: () => ipcRenderer.invoke('open-releases-page'),
   zoomFactor: () => webFrame.getZoomFactor(),
   windowState: () => ipcRenderer.invoke('window-state'),
   minimizeWindow: () => ipcRenderer.invoke('window-minimize'),

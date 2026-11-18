@@ -1,7 +1,11 @@
 {
   "beta": {
     "launcher": [
-      "Pokémon XD in French, German, Spanish, Italian and Japanese, and Pokémon Colosseum in Japanese, with Rui in her original Japanese outfit: choose the language at the top of Settings → Gameplay, and it downloads the first time you play. Each game keeps its own languages folder for fan translations."
+      "Pokémon XD in French, German, Spanish, Italian and Japanese, and Pokémon Colosseum in Japanese, with Rui in her original Japanese outfit: choose the language at the top of Settings → Gameplay, and it downloads the first time you play. Each game keeps its own languages folder for fan translations.",
+      "Updates: Update ready in the top bar, and a card under it when an update arrives, say what's new. Update now does everything in the right order by itself: it downloads the new launcher, restarts, then updates the game, showing each step. With Update automatically off, Play asks whether to update first or play the version you have, and Later leaves you alone until the launcher opens again.",
+      "Online: a room on another version now says who is behind, your game or launcher or theirs, or that one of you is on Beta and the other on Stable. When your update would let you in, Update to join gets it. The Rooms tab shows your own versions, and a room you host tells challengers which they need. Joining by code explains the same instead of just turning you away.",
+      "Online: Colosseum and XD players can join is now on by default, so a room you create takes players of either game. It stays off if you turned it off yourself. Show on the room list stays on by default.",
+      "Online: players on different game versions can now battle, as long as their games battle the same way. Each game has a battle version that changes only when a move, an ability, an item, the rules or the online battle itself changes, and the Rooms tab and room notes show it. A battle that stops out of sync now names the game versions to report. Everyone needs this launcher to battle with it."
     ],
     "game": [
       "Walk through Rui: in Colosseum, Wes walks straight through Rui instead of pushing her back a step at a time, so turning round on a narrow walkway is easy. Turn it off under Gameplay.",

@@ -45,7 +45,9 @@ const formats = require('./formats');
 //    start its game with six where the other's has the picked few.
 // 8: a party can have the fourth generation's Pokémon (src/team-sets.js), in a room on Platinum's rules, whose games then
 //    have them: a launcher before 8 would start its game without them.
-const PROTOCOL = 8;
+// 9: a game that declares its battle version (host/battleversion.h in the game) goes in rooms by it (buildId), so a
+//    launcher before 9 names the very same game by its commits, and the two wouldn't find each other's rooms.
+const PROTOCOL = 9;
 const STAGES = 6;              // the game's stadiums a room can use
 const PING_EVERY = 30000;      // ms between WebSocket keepalives
 const STATUS_EVERY = 30000;    // ms between a host's refreshes of its row on the room list
@@ -88,9 +90,16 @@ async function lookup(code, { url = serverUrl(), fetch = globalThis.fetch } = {}
   }
 }
 
-// What tells two builds of the game apart. The room keeps 64 characters of it, and the page compares it with the
-// list's, so two whole commit hashes wouldn't do.
-function buildId(build) {
+// What tells apart games that battle differently: the room server lets a player in only with the room's very build.
+// A game that declares its battle version (host/battleversion.h, read by main.js onlineFeatures) is named by it and
+// its game, "colosseum-battle-3" or "xd-battle-3", so games of different versions battle until a battle changes. An
+// older game is named by its commits, as a build of the game was before: the room keeps 64 characters, so two whole
+// commit hashes wouldn't do.
+const BATTLE = /-battle-(\d+)$/;
+const battleOf = id => { const match = BATTLE.exec(String(id || '')); return match ? Number(match[1]) : null; };
+const declared = battle => Number.isInteger(battle) && battle > 0;
+function buildId(build, { battle = null, game = 'colosseum' } = {}) {
+  if (declared(battle)) return `${game === 'xd' ? 'xd' : 'colosseum'}-battle-${battle}`;
   return `${String(build?.commit || '').slice(0, 16)}-${String(build?.decomp || '').slice(0, 16)}`;
 }
 
@@ -98,8 +107,9 @@ function buildId(build) {
 // battle code (and each game's decomp, which that commit pins) they share. The room server takes it as any build, so
 // a room of either game is joined only by a game of that same commit; XD then plays by Colosseum's rules where the
 // two battles differ (crossplay=1 in the rules line), and each player's Pokémon go whole, as a Story party's do.
+// With a battle version, "cross-battle-3": both games have one number, so any Colosseum and XD games of it pair.
 const CROSS = 'cross-';
-const crossBuildId = build => `${CROSS}${String(build?.commit || '').slice(0, 16)}`;
+const crossBuildId = (build, { battle = null } = {}) => declared(battle) ? `${CROSS}battle-${battle}` : `${CROSS}${String(build?.commit || '').slice(0, 16)}`;
 const isCrossBuild = id => String(id || '').startsWith(CROSS);
 
 // A name on one line of the game's protocol: no spaces in it.
@@ -174,8 +184,8 @@ function openSocket(url, WebSocketImpl = globalThis.WebSocket) {
 }
 
 const REFUSED = {
-  version: 'That room is on another version of the game. Both players need the same version.',
-  launcher: 'That room\'s player has another version of the launcher. Both players need the newest one.',
+  version: 'That room is on another build of the game. Both players need the very same one: the room list on the Online page says who needs to update.',
+  launcher: 'That room\'s player has a launcher that battles another way. Both players need the same launcher version: the room list on the Online page says who needs to update.',
   full: 'That battle has already started.',
   crowded: 'That battle has as many watching as it can take.',
   party: 'The room server didn\'t accept your party.',
@@ -660,4 +670,4 @@ class Session extends EventEmitter {
   }
 }
 
-module.exports = { PROTOCOL, STAGES, WATCHING, parseRoomCode, formatRoomCode, buildId, crossBuildId, isCrossBuild, serverUrl, listRooms, lookup, configLine, startLines, createBridge, Session };
+module.exports = { PROTOCOL, STAGES, WATCHING, parseRoomCode, formatRoomCode, buildId, crossBuildId, isCrossBuild, battleOf, serverUrl, listRooms, lookup, configLine, startLines, createBridge, Session };

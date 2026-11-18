@@ -23,6 +23,20 @@ test('a build id fits what the room keeps, and tells builds apart', () => {
   assert.notEqual(online.buildId({ commit, decomp }), online.buildId({ commit, decomp: `c${decomp.slice(1)}` }));
 });
 
+test('a game with a battle version is named by it, so games of other commits battle until a battle changes', () => {
+  const commit = 'a'.repeat(40), decomp = 'b'.repeat(40);
+  assert.equal(online.buildId({ commit, decomp }, { battle: 3 }), 'colosseum-battle-3');
+  assert.equal(online.buildId({ commit: 'c'.repeat(40), decomp }, { battle: 3 }), 'colosseum-battle-3');
+  assert.equal(online.buildId({ commit, decomp }, { battle: 3, game: 'xd' }), 'xd-battle-3');
+  assert.equal(online.crossBuildId({ commit }, { battle: 3 }), 'cross-battle-3');
+  assert.equal(online.isCrossBuild(online.crossBuildId({ commit }, { battle: 3 })), true);
+  assert.equal(online.battleOf('cross-battle-3'), 3);
+  // a game from before them keeps its commits
+  assert.equal(online.buildId({ commit, decomp }, { battle: null }), online.buildId({ commit, decomp }));
+  assert.equal(online.battleOf(online.buildId({ commit, decomp })), null);
+  assert.equal(online.PROTOCOL, 9);
+});
+
 test('a room for both games is one commit of the port, whichever game and decomp', () => {
   const commit = 'a'.repeat(40);
   const colosseum = { commit, decomp: 'b'.repeat(40) }, xd = { commit, decomp: 'c'.repeat(40) };
@@ -281,7 +295,7 @@ test('a refused joiner hears why', async () => {
   const joined = session.join({ ...details, code: 'KQ7M2D' });
   await new Promise(resolve => setImmediate(resolve));
   FakeSocket.last.receive({ type: 'refused', reason: 'version' });
-  await assert.rejects(joined, /another version/);
+  await assert.rejects(joined, /another build of the game/);
   session.close();
 });
 
@@ -493,7 +507,7 @@ test('a spectator of a waiting room starts its game with the battle, and is refu
   const opened = refused.watch({ code: 'KQ7M2D', build: 'x', version: 'v', launcher: 'l' });
   await new Promise(resolve => setImmediate(resolve));
   FakeSocket.last.receive({ type: 'refused', reason: 'version' });
-  await assert.rejects(opened, /another version of the game/);
+  await assert.rejects(opened, /another build of the game/);
   refused.close();
 });
 

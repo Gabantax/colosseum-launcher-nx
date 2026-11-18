@@ -9,6 +9,7 @@
   let state = null, setup = null, rooms = null, loaded = false, customOpen = false, picking = [], pickTimer = null;
   const builder = () => window.coloTeamBuilder;
   const F = window.coloFormats;
+  const V = window.coloOnlineVersions;
 
   // The sprites and names come with the team builder's Pokédex, read from the disc once.
   function loadSpecies() {
@@ -300,32 +301,69 @@
     if (customOpen) renderCustom(rules);
   }
 
+  // A room whose player has another version: which of you is behind, in a word and in full.
+  function versionNote(fit) {
+    const note = Object.assign(document.createElement('p'), { className: `online-room-version ${fit.direction || 'other'}` });
+    note.append(Object.assign(document.createElement('strong'), { textContent: fit.short.charAt(0).toUpperCase() + fit.short.slice(1) }));
+    note.append(` · ${fit.detail}`);
+    return note;
+  }
+
+  // What a challenger's game needs, for the waiting room's banner.
+  function challengers() {
+    const mine = state.mine;
+    if (mine?.battle) return ` Challengers need a game of battle version ${mine.battle}.`;
+    return mine?.version ? ` Challengers need game ${mine.version} and launcher v${mine.launcher}.` : '';
+  }
+
+  // This player's versions, to compare with a friend's before they share a code.
+  function renderVersions() {
+    const mine = state.mine;
+    $('online-versions').textContent = mine?.build && mine.battle
+      ? `You have game ${mine.version || 'unknown'} (battle version ${mine.battle}) and launcher v${mine.launcher}. Friends can battle you on any game of battle version ${mine.battle}.`
+      : mine?.build ? `You have game ${mine.version || 'unknown'} and launcher v${mine.launcher}. A friend joins you with the same versions.`
+      : `Launcher v${mine?.launcher || '?'}. Set up the game on the Play page to battle online.`;
+  }
+
   function renderRooms() {
     const busy = Boolean(state.battle) || Boolean(state.ready);
     $('online-rooms-empty').textContent = NO_ROOMS;
     $('online-rooms-empty').hidden = rooms.length > 0;
     $('online-rooms').replaceChildren(...rooms.map(room => {
       // Both games play the same battle, so a room takes the same build of the game only.
-      // A room for both games takes either game built from the same commit of the port (src/online.js crossBuildId).
+      // A room for both games takes either game of the same battle version (src/online.js crossBuildId).
       const cross = String(room.build || '').startsWith('cross-');
       const rules = F.normalize(room.rules || {}), waiting = room.status === 'waiting';
-      const sameGame = cross ? Boolean(state.crossBuild) && room.build === state.crossBuild : room.build === state.build;
+      // the same build and launcher protocol, or which side is behind (src/online-versions.js)
+      const fit = V.compare(room, state.mine || { build: state.build, crossBuild: state.crossBuild });
+      const sameGame = fit.ok;
       const needsGame = rules.format !== 'casual' && !state.rulesSupported;
       const problems = waiting && sameGame && !needsGame ? partyProblems(rules) : [];
       const crossText = cross ? ` · ${String(room.version || '').startsWith('XD ') ? 'XD' : 'Colosseum'}, either game can join` : '';
-      const detail = !waiting ? ' · in battle' : !sameGame ? ` · needs ${cross ? 'the game from' : 'game'} ${room.version}` : needsGame ? ' · update the game to join'
+      const detail = !waiting ? ' · in battle' : !sameGame ? '' : needsGame ? ' · update the game to join'
         : problems.length ? ` · ${rules.size > partyCount() ? 'your party is too short' : 'your party can\'t play this'}` : '';
       const row = Object.assign(document.createElement('div'), { className: 'online-room' });
       row.append(Object.assign(document.createElement('span'), { textContent: room.name }));
       row.append(Object.assign(document.createElement('small'), { textContent: `${rulesText(rules)}${gamesText(room.bestOf || 1)}${crossText}${detail}` }));
-      row.title = [F.rulesText(rules).join(', '), ...problems].join('\n');
+      row.title = [F.rulesText(rules).join(', '), fit.detail, ...problems].join('\n');
+      if (!fit.ok) row.append(versionNote(fit));
       // a battle under way can be watched, by a game of the same build
       if (!waiting) {
         const watch = Object.assign(document.createElement('button'), { className: 'subtle', type: 'button', textContent: 'Watch' });
         watch.disabled = Boolean(state.battle) || !sameGame || !state.spectateSupported;
-        watch.title = !sameGame ? `Watching needs the same version of the game: ${room.version}` : !state.spectateSupported ? 'Update the game from the Play page to watch battles.' : `Watch ${room.name}'s battle`;
+        watch.title = !sameGame ? fit.detail : !state.spectateSupported ? 'Update the game from the Play page to watch battles.' : `Watch ${room.name}'s battle`;
         watch.addEventListener('click', () => watchRoom(room.code));
         row.append(watch);
+        return row;
+      }
+      // a room this player's waiting update would let them into: Update to join opens the update window
+      if (fit.fix === 'updates' && window.coloUpdateFlow) {
+        const update = Object.assign(document.createElement('button'), { className: 'solid', type: 'button', textContent: 'Update to join' });
+        update.disabled = busy;
+        update.title = fit.detail;
+        update.addEventListener('click', () => window.coloUpdateFlow.offer({ eyebrow: 'UPDATE TO BATTLE', title: `Update to battle ${room.name}`,
+          lead: fit.summary || fit.detail, warn: `${room.name}'s room might fill up while you update. Once it's done, find it on the Rooms tab.` }));
+        row.append(update);
         return row;
       }
       const join = Object.assign(document.createElement('button'), { className: 'solid', type: 'button', textContent: 'Join' });
@@ -410,7 +448,7 @@
     const score = set && battle.side !== null && battle.game ? ` You ${battle.wins[battle.side]}, ${battle.opponent || 'them'} ${battle.wins[1 - battle.side]}.` : '';
     const watchers = battle.watchers ? ` ${battle.watchers} watching.` : '';
     $('online-banner-detail').textContent = battle.peerLost ? `${battle.opponent || 'The other player'} lost their connection. Waiting for them to come back.`
-      : battle.status === 'waiting' ? `Waiting for a challenger. ${rulesText(battle.rules)}${gamesText(battle.bestOf)}.${watchers}` : `${rulesText(battle.rules)}.${score}${watchers}`;
+      : battle.status === 'waiting' ? `Waiting for a challenger. ${rulesText(battle.rules)}${gamesText(battle.bestOf)}.${watchers}${challengers()}` : `${rulesText(battle.rules)}.${score}${watchers}`;
     renderPick();
   }
 
@@ -679,12 +717,13 @@
   function render() {
     if (!state) return;
     setup = state.setup;
+    renderVersions();
     if (document.activeElement !== $('online-trainer')) $('online-trainer').value = setup.trainer;
     $('online-level').value = String(setup.level);
     $('online-size').value = String(setup.size);
     $('online-rules').value = String(setup.battleRules || 3);
     $('online-listed').checked = setup.listed;
-    // rooms for both games, when this game can play them; such a room has no timers, and Platinum's rules once both games' sets have them
+    // rooms for both games, when this game can play them, and Platinum's rules there once both games' sets have them
     $('online-crossplay-row').hidden = !state.crossBuild;
     $('online-crossplay').checked = Boolean(setup.crossplay) && Boolean(state.crossBuild);
     // the game's own battle rules: Colosseum's, or XD's (the third generation's in both)
@@ -718,7 +757,7 @@
   for (const [id, key, value] of [['online-level', 'level', Number], ['online-size', 'size', Number], ['online-rules', 'battleRules', Number]])
     $(id).addEventListener('change', event => { setup[key] = value(event.target.value); save(); });
   $('online-listed').addEventListener('change', event => { setup.listed = event.target.checked; save(); });
-  $('online-crossplay').addEventListener('change', event => { setup.crossplay = event.target.checked; save(); });
+  $('online-crossplay').addEventListener('change', event => { setup.crossplay = event.target.checked; setup.crossplayChosen = true; save(); });
   for (const [id, key] of TIMER_FIELDS) $(id).addEventListener('change', event => changeTimer(key, Number(event.target.value)));
   $('online-format').addEventListener('change', event => { setup.format = event.target.value; customOpen = false; save(); });
   $('online-best-of').addEventListener('change', event => { setup.bestOf = Number(event.target.value); save(); });
