@@ -1521,8 +1521,10 @@ function pokedexList(rom) {
     if (pokedexPacks.get(String(key).slice('pack:'.length))?.ownCry) return true;
     try { return pokedexCries.has(rom, pokedexCry(rom, key)); } catch (_) { return false; }
   };
-  // canMakePacks: Make a pack is offered for the game's own Pokémon
-  return { species: species.map(entry => ({ ...entry, hasCry: hasCry(entry.national) })), packs: packs.map(entry => ({ ...entry, hasCry: hasCry(entry.key) })), problems,
+  // canMakePacks: Make a pack is offered for the game's own Pokémon. A pack's speciesId is its number in the chosen game's
+  // saves (XD's Generation 4 Pokémon are numbered 2 past Colosseum's), for the Pokémon tab to find it by.
+  return { species: species.map(entry => ({ ...entry, hasCry: hasCry(entry.national) })),
+    packs: packs.map(entry => ({ ...entry, speciesId: tradeConvert.speciesFromColosseum(config.game, entry.packId), hasCry: hasCry(entry.key) })), problems,
     canMakePacks: supports('pokemonPacks') && (own || teamDiscReady()) };
 }
 

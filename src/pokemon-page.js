@@ -20,13 +20,15 @@ const STAGE = {
   received: 'Received: going into your save', giving: 'Going into your save…', given: 'In your save'
 };
 
-// The Pokédex's names and sprites, by the game's species number, read once for each game (null: none, the page shows numbers).
+// The Pokédex's names and sprites, by the game's species number, read once for each game (null: none, the page shows numbers):
+// the game's own Pokémon, and its later generations' and packs' (the game's own come first where both have a number).
 async function species(game) {
   if (dexFor === game) return dex;
   dexFor = game;
   try {
     const list = await window.colo.pokedex();
-    dex = new Map(list.species.map(entry => [entry.id, entry]));
+    dex = new Map([...(list.packs || []).filter(entry => entry.speciesId).map(entry => [entry.speciesId, entry]),
+      ...list.species.map(entry => [entry.id, entry])]);
   } catch (_) { dex = null; }
   return dex;
 }
