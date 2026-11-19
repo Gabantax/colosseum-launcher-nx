@@ -24,7 +24,8 @@
       "On Windows, when the game can't read a GameCube adapter in Wii U mode, its log now says what Windows shows for the adapter in Device Manager and to install WinUSB for it with Zadig.",
       "The game's own Pokémon can show Battle Revolution models made from your disc, in both games, including their own shiny models.",
       "Make assets keeps going when one Pokémon's model can't be made, and says which one, instead of stopping there.",
-      "Battle Revolution models: shiny Pokémon show their own Battle Revolution colours (184 of Bulbasaur to Deoxys looked like their normal selves), Ninjask's wings no longer vanish as they turn, Flygon, Metagross and 11 others lose the boxes stuck to them, and Makuhita, Vaporeon and Nuzleaf aren't inside out. Make assets offers to make them again."
+      "Battle Revolution models: shiny Pokémon show their own Battle Revolution colours (184 of Bulbasaur to Deoxys looked like their normal selves), Ninjask's wings no longer vanish as they turn, Flygon, Metagross and 11 others lose the boxes stuck to them, and Makuhita, Vaporeon and Nuzleaf aren't inside out. Make assets offers to make them again.",
+      "Fixed being unable to jump down from ledges and crates on the S.S. Libra in XD at 60 fps: the hero walked on the spot at the edge instead."
     ]
   },
   "releases": [
