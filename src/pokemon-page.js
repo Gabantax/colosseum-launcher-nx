@@ -15,6 +15,8 @@ const TRADE_STAGE = {
   taking: 'Your Pokémon is leaving your save…', taken: 'Sent: waiting for the other player\'s Pokémon',
   received: 'Arrived: going into your save', giving: 'Going into your save…', given: 'In your save', evolving: 'Evolving…'
 };
+// A Shadowtrade Pokémon from the other game: which, after its trainer's name
+const fromGame = item => (item?.crossed ? ` in Pokémon ${item.crossed === 'xd' ? 'XD' : 'Colosseum'}` : '');
 const STAGE = {
   taking: 'Leaving your save…', taken: 'Not sent: coming back to your save', waiting: 'In the pool: a Shadow Pokémon comes back when another player trades one your save can take',
   received: 'Received: going into your save', giving: 'Going into your save…', given: 'In your save'
@@ -127,7 +129,7 @@ function describeTrade(trade) {
   const sent = `${trade.sent.nickname || `#${trade.sent.species}`} (Lv. ${trade.sent.level})`;
   text.append(Object.assign(document.createElement('strong'), { textContent: trade.received?.returned || trade.stage === 'taken' ? `${sent} is coming back` : `Sent ${sent}` }));
   let line = STAGE[trade.stage] || trade.stage;
-  if (trade.received && !trade.received.returned) line = `${STAGE[trade.stage]}: ${trade.received.nickname || `#${trade.received.species}`} from ${trade.received.from || 'another player'}`;
+  if (trade.received && !trade.received.returned) line = `${STAGE[trade.stage]}: ${trade.received.nickname || `#${trade.received.species}`} from ${trade.received.from || 'another player'}${fromGame(trade.received)}`;
   if (trade.message) line = trade.message;
   if (waitingGame && ['taking', 'giving'].includes(trade.stage)) line = 'Waiting for the game: walk around in the field, outside menus and battles.';
   text.append(Object.assign(document.createElement('small'), { textContent: line }));
@@ -153,7 +155,7 @@ function renderTrades() {
   const mine = view.history.filter(item => item.game === data.game).slice(0, 8);
   history.replaceChildren(...mine.map(item => {
     const li = document.createElement('li');
-    li.textContent = item.returned ? `${item.sent.nickname} came back to you` : `${item.sent.nickname} for ${item.received.nickname} (Lv. ${item.received.level}) from ${item.from || 'another player'}`;
+    li.textContent = item.returned ? `${item.sent.nickname} came back to you` : `${item.sent.nickname} for ${item.received.nickname} (Lv. ${item.received.level}) from ${item.from || 'another player'}${fromGame(item)}`;
     return li;
   }));
   $('shadowtrade-history-title').hidden = !mine.length;
@@ -227,7 +229,7 @@ async function confirmTrade() {
   try {
     const view = await window.colo.shadowtradeOffer({ area: pokemon.area, box: pokemon.box, slot: pokemon.slot });
     const done = view.history.find(item => item.sent.nickname === pokemon.nickname && Date.now() - item.at < 60000);
-    setStatus(done ? `Traded! ${done.received.nickname} from ${done.from || 'another player'} is in your save.` : `${shown(pokemon)} is in the Shadowtrade pool. A Shadow Pokémon comes back when another player trades.`);
+    setStatus(done ? `Traded! ${done.received.nickname} from ${done.from || 'another player'}${fromGame(done)} is in your save.` : `${shown(pokemon)} is in the Shadowtrade pool. A Shadow Pokémon comes back when another player trades.`);
     selected = null;
   } catch (error) { setStatus(message(error)); }
   waitingGame = false;
