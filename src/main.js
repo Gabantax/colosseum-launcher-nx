@@ -73,6 +73,7 @@ const shadowtrade = require('./shadowtrade');
 const { GameLink } = require('./game-link');
 const { OnlineTrades, summary: tradeSummary } = require('./online-trades');
 const { LocalTrades } = require('./local-trades');
+const saveImport = require('./save-import');
 const { Arrivals } = require('./arrivals');
 const tradeConvert = require('./trade-convert');
 const { arrivalLines } = require('./arrival-show');
@@ -2109,6 +2110,100 @@ function syncLocalTrades() {
   return localSyncing;
 }
 
+// --- Import from a GBA or DS save (src/save-import.js): the Pokémon page's Import button opens one, shows its party and
+// boxes, and copies the Pokémon picked into the chosen game's save, reached as Online Trades reach it (the card, or the
+// running game). The file is only read. A DS save needs the Generation 4 Pokémon setting (tradeReceiver).
+let importing = null;   // { file, read: save-import's reading of it, game: the game it was opened for }
+const IMPORT_KINDS = {
+  gba: { name: 'GBA save', games: 'Ruby, Sapphire, Emerald, FireRed or LeafGreen', extensions: ['sav', 'srm'] },
+  ds: { name: 'DS save', games: 'Diamond, Pearl or Platinum', extensions: ['sav', 'srm', 'dsv'] }
+};
+// Why the chosen game can't import from that kind of save now, or null
+function importProblem(kind) {
+  if (kind === 'ds' && !tradeReceiver(config.game).laterPokemon)
+    return 'Turn on Generation 4 Pokémon first, under Settings → Gameplay → Later generations: Pokémon from a DS save need it.';
+  return null;
+}
+// The Pokémon already in the chosen game's save, by species:personality:trainer (the page's model)
+function importKeys() {
+  const model = pokemonPage().model;
+  return new Set(model ? [...model.party, ...model.boxes.flatMap(box => box.pokemon)].filter(Boolean).map(each => each.key) : []);
+}
+function importView() {
+  const game = config.game, problems = Object.fromEntries(Object.keys(IMPORT_KINDS).map(kind => [kind, importProblem(kind)]));
+  if (!importing || importing.game !== game) return { game, problems, file: null };
+  const receiver = tradeReceiver(game), keys = importKeys(), read = importing.read;
+  const each = (entry, place) => {
+    if (!entry) return null;
+    const judged = saveImport.judge(entry, receiver);
+    let bytes = judged.bytes, shown = null;
+    try { bytes ||= tradeConvert.write(game, judged.pokemon); shown = tradeSummary(game, bytes, game); } catch (_) { /* damaged: no picture of it */ }
+    const at = game === 'xd' ? savePokemon.XD.at : savePokemon.COLOSSEUM.at;
+    const already = Boolean(judged.bytes) && keys.has(`${bytes.readUInt16BE(at.species)}:${bytes.readUInt32BE(at.rnd) >>> 0}:${bytes.readUInt32BE(at.trainer) >>> 0}`);
+    return { ...place, summary: shown ? { ...shown, evolvesInto: 0 } : null, problems: judged.problems, notes: judged.notes, already,
+      canImport: Boolean(judged.bytes) && !already };
+  };
+  return { game, problems, file: { name: path.basename(importing.file), kind: read.kind, gameName: read.gameName, trainer: read.trainer, trainerId: read.trainerId,
+    party: read.party.map((entry, slot) => each(entry, { area: 'party', box: 0, slot })),
+    boxes: read.boxes.map((box, b) => ({ name: box.name, pokemon: box.pokemon.map((entry, slot) => each(entry, { area: 'box', box: b, slot })) })) } };
+}
+async function importOpen(kind) {
+  const about = IMPORT_KINDS[kind];
+  if (!about) throw new Error('No such kind of save.');
+  const problem = importProblem(kind);
+  if (problem) throw new Error(problem);
+  const chosen = await dialog.showOpenDialog(window, { title: `Import from a ${about.name} (${about.games})`, properties: ['openFile'],
+    filters: [{ name: `${about.name}s`, extensions: about.extensions }, { name: 'All files', extensions: ['*'] }] });
+  if (chosen.canceled || !chosen.filePaths.length) return importView();
+  const read = saveImport.readFile(chosen.filePaths[0]);
+  if (read.kind !== kind) {
+    const other = importProblem(read.kind);
+    if (other) throw new Error(`That's a ${IMPORT_KINDS[read.kind].name}. ${other}`);
+  }
+  importing = { file: chosen.filePaths[0], read, game: config.game };
+  log(`Import: opened ${path.basename(chosen.filePaths[0])} (${read.gameName}, ${read.trainer}).`);
+  return importView();
+}
+// The Pokémon at each place of the open file, copied into the chosen game's save one at a time; stops at the first the
+// save can't take. Returns { view, results: [{ place, ok, nickname, area, box, slot, code, message }] }.
+async function importPokemon(places) {
+  if (!importing || importing.game !== config.game) throw new Error('Open a GBA or DS save first.');
+  const game = config.game, problem = importProblem(importing.read.kind);
+  if (problem) throw new Error(problem);
+  if (storyGame === game && !storyLive?.current()?.head.loaded) throw new Error(`${shortGameName(game)} is running: continue your save in it first, or close it.`);
+  // the card is backed up once, before the first Pokémon goes in
+  let backedUp = false;
+  const access = storyGame === game ? onlineTradeAccess(game) : shadowtrade.cardAccess({ game, saveDir: saveDirectoryOf(game), backup: () => {
+    if (backedUp) return;
+    backedUp = true;
+    const result = saves.backupSaves(saveDirectoryOf(game), saves.backupRoot(), 'before-import');
+    if (!result.empty) log(`Saved ${result.count} memory card file(s) to ${result.directory}`);
+  } });
+  if (!access) throw new Error(`This version of ${shortGameName(game)} can't take a Pokémon while it runs: update it, or close it and import.`);
+  if (access.mode === 'card' && !access.read()) throw new Error(`There's no ${shortGameName(game)} save yet: play and save once, then import.`);
+  const receiver = tradeReceiver(game), results = [];
+  for (const place of places) {
+    const list = place.area === 'party' ? importing.read.party : importing.read.boxes[place.box]?.pokemon;
+    const entry = list?.[place.slot];
+    if (!entry) continue;
+    const judged = saveImport.judge(entry, receiver), nickname = entry.pokemon.nicknameText || 'It';
+    if (!judged.bytes) { results.push({ place, ok: false, nickname, message: judged.problems[0] }); continue; }
+    const at = game === 'xd' ? savePokemon.XD.at : savePokemon.COLOSSEUM.at, bytes = judged.bytes;
+    const identity = { species: bytes.readUInt16BE(at.species), rnd: bytes.readUInt32BE(at.rnd), trainer: bytes.readUInt32BE(at.trainer) };
+    if (access.has(identity)) { results.push({ place, ok: false, nickname, code: 'already', message: 'It\'s in your save already.' }); continue; }
+    const given = await access.tradeGive(bytes);
+    if (!given.ok) {
+      results.push({ place, ok: false, nickname, code: given.code, message: given.code === 'full' ? 'Your party and PC boxes are full.' : `The game couldn't take it (${given.code}).` });
+      if (['full', 'timeout', 'save', 'unknown'].includes(given.code)) break;
+      continue;
+    }
+    results.push({ place, ok: true, nickname, area: given.area, box: given.box, slot: given.slot });
+    log(`Import: ${nickname} from ${importing.read.gameName} is in your ${shortGameName(game)} save (${given.area === 'party' ? 'party' : `box ${given.box + 1}`}).`);
+  }
+  broadcast('pokemon-changed');
+  return { view: importView(), results };
+}
+
 // --- Discord activity (src/discord.js, src/presence.js): only while the game runs, and only with the setting on.
 let discordPresence = null;
 let presenceSession = null;   // { startedAt, game: the game's latest [presence], online }
@@ -3291,6 +3386,16 @@ function registerHandlers() {
     if (action === 'trade') { await manager.trade(); return view(); }
     if (action === 'sync') { await syncLocalTrades(); return view(); }
     throw new Error('No such trade action.');
+  });
+  ipcMain.handle('save-import', async (_event, action, value) => {
+    if (action === 'view') return importView();
+    if (action === 'open') return importOpen(String(value));
+    if (action === 'close') { importing = null; return importView(); }
+    if (action === 'import') {
+      const places = (Array.isArray(value) ? value : []).slice(0, 6 + 18 * 30).map(place => ({ area: place?.area === 'box' ? 'box' : 'party', box: Number(place?.box) || 0, slot: Number(place?.slot) || 0 }));
+      return importPokemon(places);
+    }
+    throw new Error('No such import action.');
   });
   ipcMain.handle('online-save', (_event, value) => {
     config.online = parties.normalize(value);
