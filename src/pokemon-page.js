@@ -260,8 +260,8 @@ const BALLS = ['', 'Master Ball', 'Ultra Ball', 'Great Ball', 'Poké Ball', 'Saf
 const RIBBONS = ['Champion', 'Winning', 'Victory', 'Artist', 'Effort', 'Marine', 'Land', 'Sky', 'Country', 'National', 'Earth', 'World'];
 const CONTEST = ['Cool', 'Beauty', 'Cute', 'Smart', 'Tough'];
 const RANKS = ['', 'Normal', 'Super', 'Hyper', 'Master'];
-const ORIGINS = { 1: 'FireRed', 2: 'LeafGreen', 8: 'Sapphire', 9: 'Ruby', 10: 'Emerald', 11: 'Colosseum or XD' };
-const LANGUAGES = { 1: 'Japanese', 2: 'English', 3: 'German', 4: 'French', 5: 'Italian', 6: 'Spanish' };
+const ORIGINS = { 1: 'FireRed', 2: 'LeafGreen', 8: 'Sapphire', 9: 'Ruby', 10: 'Emerald', 11: 'Colosseum or XD', 12: 'Diamond, Pearl or Platinum' };
+const LANGUAGES = { 1: 'Japanese', 2: 'English', 3: 'German', 4: 'French', 5: 'Italian', 6: 'Spanish', 8: 'Korean' };
 
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -269,7 +269,7 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-function statSheet(summary, heading, { problems = [], evolvesInto = 0 } = {}) {
+function statSheet(summary, heading, { problems = [], evolvesInto = 0, from = null } = {}) {
   const sheet = el('section', { className: 'trade-sheet' }, el('h2', { textContent: heading }));
   if (!summary) { sheet.append(el('p', { className: 'helper', textContent: 'No Pokémon offered yet.' })); return sheet; }
   const ts = TS(), species = names?.species?.[summary.species] || null, entry = dex?.get(summary.species);
@@ -280,7 +280,7 @@ function statSheet(summary, heading, { problems = [], evolvesInto = 0 } = {}) {
   const head = el('div', { className: 'trade-sheet-head' }, sprite(summary, 72),
     el('div', {}, el('strong', { textContent: `${shown(summary)}${gender === 'M' ? ' ♂' : gender === 'F' ? ' ♀' : ''}${summary.shiny ? ' ★' : ''}` }),
       el('small', { textContent: `${speciesName(summary)} · Lv. ${summary.level}${entry?.types?.length ? ` · ${entry.types.join('/')}` : ''}` }),
-      el('small', { textContent: `From ${summary.game === 'xd' ? 'XD' : 'Colosseum'}${summary.shiny ? ' · Shiny' : ''}` })));
+      el('small', { textContent: `From ${from || (summary.game === 'xd' ? 'XD' : 'Colosseum')}${summary.shiny ? ' · Shiny' : ''}` })));
   sheet.append(head);
   // the six stats: value, base, IV, EV, and the nature's tenth up or down
   const base = entry?.stats || [];
@@ -976,5 +976,175 @@ window.colo.onOnlineTrades(view => {
   tradeHistorySeen = progress;
   if (visible) renderTradePanel();
 });
+
+// ---- Import from a GBA or DS save (main.js importView, src/save-import.js): the Import menu, then the file's party and
+// boxes in a window of their own. Pokémon are picked (several at once) and copied into the save; one that can't come
+// says why, and what comes off it (an item the game hasn't got) is said too.
+let importView = null, importTab = 'party', importBox = 0, importPicked = new Map(), importFocus = null, importBusy = false;
+const placeKey = place => `${place.area}:${place.box}:${place.slot}`;
+function importSlots() {
+  const file = importView?.file;
+  if (!file) return [];
+  return importTab === 'party' ? file.party : file.boxes[importBox]?.pokemon || [];
+}
+function importAll() {
+  const file = importView?.file;
+  return file ? [...file.party, ...file.boxes.flatMap(each => each.pokemon)].filter(Boolean) : [];
+}
+function importStatus(text) {
+  $('save-import-status').textContent = text;
+  $('save-import-status').hidden = !text;
+}
+
+function renderImportMenu() {
+  const problem = importView?.problems?.ds;
+  $('import-ds').disabled = Boolean(problem);
+  $('import-ds-detail').textContent = problem || 'Diamond, Pearl, Platinum · .sav, .srm or .dsv';
+}
+
+function renderImport() {
+  const file = importView?.file;
+  if (!file) { if ($('save-import').open) $('save-import').close(); return; }
+  const gameName = gameLabel(importView.game);
+  $('save-import-kind').textContent = file.kind === 'ds' ? 'IMPORT FROM A DS SAVE' : 'IMPORT FROM A GBA SAVE';
+  $('save-import-title').textContent = `${file.trainer || 'Your'}'s ${file.gameName} save`;
+  $('save-import-file').textContent = `${file.name} · ID ${String(file.trainerId).padStart(5, '0')}`;
+  for (const name of ['party', 'boxes']) $(`save-import-tab-${name}`).setAttribute('aria-selected', String(importTab === name));
+  const select = $('save-import-box');
+  if (importBox >= file.boxes.length) importBox = 0;
+  select.replaceChildren(...file.boxes.map((each, i) => Object.assign(document.createElement('option'), { value: String(i),
+    textContent: `${each.name || `Box ${i + 1}`} (${each.pokemon.filter(Boolean).length}/${each.pokemon.length})` })));
+  select.value = String(importBox);
+  $('save-import-box-bar').hidden = importTab !== 'boxes';
+  // the grid
+  const grid = $('save-import-grid'), list = importSlots();
+  grid.className = `pokemon-grid${importTab === 'party' ? ' party' : ''}`;
+  grid.replaceChildren();
+  for (const pokemon of list) {
+    const button = el('button', { type: 'button', className: 'pokemon-slot' });
+    button.setAttribute('role', 'option');
+    if (!pokemon) { button.classList.add('empty'); button.disabled = true; button.setAttribute('aria-label', 'Empty'); grid.append(button); continue; }
+    const key = placeKey(pokemon), picked = importPicked.has(key), summary = pokemon.summary;
+    button.classList.toggle('picked', picked);
+    button.classList.toggle('refused', !pokemon.canImport);
+    button.classList.toggle('focused', importFocus === key);
+    button.setAttribute('aria-selected', String(picked));
+    const why = pokemon.already ? 'It\'s in your save already.' : pokemon.problems[0] || '';
+    button.title = summary ? `${shown(summary)}, level ${summary.level}${why ? `. ${why}` : ''}` : why;
+    if (summary) button.append(sprite(summary, importTab === 'party' ? 56 : 44));
+    else button.append(el('span', { className: 'pokedex-no-sprite', textContent: '?' }));
+    button.append(el('span', { className: 'pokemon-slot-label' }, el('strong', { textContent: summary ? shown(summary) : 'Damaged' }),
+      el('small', { textContent: summary ? `Lv. ${summary.level}` : '' })));
+    if (summary?.shiny) button.append(el('span', { className: 'pokemon-shiny-mark', textContent: '★', title: 'Shiny' }));
+    if (pokemon.canImport) button.append(el('span', { className: 'import-check', textContent: picked ? '✓' : '' }));
+    else button.append(el('span', { className: 'import-mark', textContent: pokemon.already ? 'In your save' : 'Can\'t come' }));
+    button.addEventListener('click', () => {
+      importFocus = key;
+      if (pokemon.canImport && !importBusy) { if (picked) importPicked.delete(key); else importPicked.set(key, { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }); }
+      renderImport();
+    });
+    grid.append(button);
+  }
+  const count = list.filter(Boolean).length;
+  $('save-import-empty').hidden = count > 0;
+  $('save-import-empty').textContent = importTab === 'party' ? 'No Pokémon in this party.' : 'This box is empty.';
+  const open = list.filter(each => each?.canImport);
+  $('save-import-all').hidden = !open.length;
+  $('save-import-all').textContent = open.length && open.every(each => importPicked.has(placeKey(each))) ? 'Clear these' : 'Select all here';
+  // the one looked at
+  const focus = importAll().find(each => placeKey(each) === importFocus) || null;
+  const detail = $('save-import-detail');
+  if (!focus) {
+    detail.replaceChildren(el('p', { className: 'helper', textContent: `Pick the Pokémon to bring to your ${gameName} save: each one you click is ticked, and its every stat shows here.` }));
+  } else {
+    const problems = focus.already ? ['It\'s in your save already.', ...focus.problems] : focus.problems;
+    const sheet = focus.summary ? statSheet(focus.summary, `In ${file.trainer || 'your'}'s ${file.gameName} save`, { problems, from: file.gameName })
+      : el('section', { className: 'trade-sheet' }, ...problems.map(text => el('p', { className: 'trade-problem', textContent: text })));
+    for (const note of focus.notes) sheet.append(el('p', { className: 'save-import-note-line', textContent: note }));
+    detail.replaceChildren(sheet);
+  }
+  // bringing them
+  const n = importPicked.size, go = $('save-import-go');
+  go.disabled = !n || importBusy;
+  go.textContent = importBusy ? 'Bringing them over…' : n ? `Bring ${n} Pokémon to your ${gameName} save` : 'Pick Pokémon to bring';
+  $('save-import-note').textContent = `A copy comes over: it stays in your ${file.gameName} save too, and that file isn't changed. `
+    + (data?.source === 'live' ? `${gameName} is running, so it takes each one itself and saves.` : `Your ${gameName} save is backed up first.`);
+}
+
+async function loadImport(action, value) {
+  importView = await window.colo.saveImport(action, value);
+  renderImportMenu();
+  return importView;
+}
+
+async function openImport(kind) {
+  $('import-menu').hidePopover();
+  setStatus('');
+  try {
+    await tradeNames();
+    const view = await loadImport('open', kind);
+    if (!view.file) return;
+    importTab = view.file.party.length ? 'party' : 'boxes';
+    importBox = 0; importPicked = new Map(); importFocus = null;
+    importStatus('');
+    renderImport();
+    if (!$('save-import').open) $('save-import').showModal();
+  } catch (error) { setStatus(message(error)); }
+}
+
+async function bringImport() {
+  if (importBusy || !importPicked.size) return;
+  // in the file's order: the party, then each box
+  const order = importAll().map(placeKey);
+  const places = [...importPicked.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([, place]) => place);
+  importBusy = true;
+  importStatus('');
+  renderImport();
+  try {
+    const { view, results } = await window.colo.saveImport('import', places);
+    importView = view;
+    // each by the name the grid shows it by (its nickname, or its species' name when it has none of its own)
+    const named = new Map(importAll().filter(each => each.summary).map(each => [placeKey(each), shown(each.summary)]));
+    for (const each of results) each.nickname = named.get(placeKey(each.place)) || each.nickname;
+    const done = results.filter(each => each.ok), missed = results.filter(each => !each.ok);
+    for (const each of done) importPicked.delete(placeKey(each.place));
+    const where = each => (each.area === 'party' ? 'your party' : `box ${each.box + 1}`);
+    const lines = [];
+    if (done.length) lines.push(`${done.length === 1 ? `${done[0].nickname} is` : `${done.length} Pokémon are`} in your ${gameLabel(view.game)} save: ${done.map(each => `${each.nickname} in ${where(each)}`).join(', ')}.`);
+    for (const each of missed) lines.push(`${each.nickname} didn't come: ${each.message}`);
+    const notDone = places.length - results.length;
+    if (notDone > 0) lines.push(`${notDone} more ${notDone === 1 ? 'wasn\'t' : 'weren\'t'} tried.`);
+    importStatus(lines.join('\n'));
+    refresh();
+  } catch (error) { importStatus(message(error)); } finally { importBusy = false; renderImport(); }
+}
+
+$('import-menu').addEventListener('beforetoggle', event => {
+  if (event.newState !== 'open') return;
+  const anchor = $('pokemon-import').getBoundingClientRect();
+  $('import-menu').style.top = `${anchor.bottom + 6}px`;
+  $('import-menu').style.left = `${Math.max(8, anchor.right - 340)}px`;
+  loadImport('view').catch(() => {});
+});
+$('import-menu').addEventListener('toggle', event => {
+  const isOpen = event.newState === 'open';
+  $('pokemon-import').setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) $('import-gba').focus();
+});
+$('import-gba').addEventListener('click', () => openImport('gba'));
+$('import-ds').addEventListener('click', () => openImport('ds'));
+$('save-import-tab-party').addEventListener('click', () => { importTab = 'party'; renderImport(); });
+$('save-import-tab-boxes').addEventListener('click', () => { importTab = 'boxes'; renderImport(); });
+$('save-import-box').addEventListener('change', event => { importBox = Number(event.target.value); renderImport(); });
+$('save-import-box-prev').addEventListener('click', () => { const n = importView?.file?.boxes.length || 1; importBox = (importBox + n - 1) % n; renderImport(); });
+$('save-import-box-next').addEventListener('click', () => { const n = importView?.file?.boxes.length || 1; importBox = (importBox + 1) % n; renderImport(); });
+$('save-import-all').addEventListener('click', () => {
+  if (importBusy) return;
+  const open = importSlots().filter(each => each?.canImport), all = open.every(each => importPicked.has(placeKey(each)));
+  for (const each of open) { if (all) importPicked.delete(placeKey(each)); else importPicked.set(placeKey(each), { area: each.area, box: each.box, slot: each.slot }); }
+  renderImport();
+});
+$('save-import-go').addEventListener('click', bringImport);
+$('save-import').addEventListener('close', () => { if (!importBusy) { importPicked = new Map(); window.colo.saveImport('close').then(view => { importView = view; }).catch(() => {}); } });
 
 window.coloPokemon = { show, hide, refresh };

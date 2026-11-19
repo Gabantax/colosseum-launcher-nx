@@ -233,7 +233,8 @@
       </section>
       <section id="page-pokemon" class="page sheet pokedex-page pokemon-page" aria-labelledby="pokemon-title" hidden>
         <div class="modal-head"><div><h1 id="pokemon-title">Pokémon</h1><p id="pokemon-summary">Your party and PC boxes, from your save.</p></div>
-          <div class="pokemon-head-actions"><span id="pokemon-source" class="badge" hidden></span><button class="subtle" id="pokemon-refresh" title="Read the save again and check on your trades">Refresh</button></div></div>
+          <div class="pokemon-head-actions"><span id="pokemon-source" class="badge" hidden></span><button class="subtle import-button" id="pokemon-import" type="button" popovertarget="import-menu" aria-haspopup="menu" aria-expanded="false" title="Copy Pokémon from a GBA or DS game's save into this one">Import<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg></button><button class="subtle" id="pokemon-refresh" title="Read the save again and check on your trades">Refresh</button></div></div>
+        <div id="import-menu" class="play-menu import-menu" popover role="menu" aria-label="Import from"><button id="import-gba" class="play-menu-item" role="menuitem" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="5.5" width="15" height="9" rx="2.5"/><path d="M5.5 10h3M7 8.5v3M13 9.2h.01M14.6 10.8h.01"/></svg><span><strong>From a GBA save</strong><small>Ruby, Sapphire, Emerald, FireRed, LeafGreen · .sav or .srm</small></span></button><button id="import-ds" class="play-menu-item" role="menuitem" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="2.5" width="11" height="6.5" rx="1.5"/><rect x="4.5" y="11" width="11" height="6.5" rx="1.5"/></svg><span><strong>From a DS save</strong><small id="import-ds-detail">Diamond, Pearl, Platinum · .sav, .srm or .dsv</small></span></button><p>A copy comes over: the Pokémon stays in that game's save too, and the file isn't changed.</p></div>
         <div class="pokemon-body">
           <div class="pokemon-browse">
             <div class="pokemon-tabs" role="tablist" aria-label="Party or boxes"><button id="pokemon-tab-party" class="pokemon-tab" role="tab" type="button" aria-selected="true">Party</button><button id="pokemon-tab-boxes" class="pokemon-tab" role="tab" type="button" aria-selected="false">Boxes</button></div>
@@ -650,6 +651,23 @@
     <dialog id="trade-stats" class="launcher-modal trade-stats" aria-labelledby="trade-stats-title">
       <div class="modal-head"><div><p class="eyebrow">ONLINE TRADE</p><h1 id="trade-stats-title">Every stat</h1><p>Both Pokémon as the games keep them.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
       <div class="modal-body"><div id="trade-stats-sheets" class="trade-stats-sheets"></div></div>
+    </dialog>
+    <dialog id="save-import" class="launcher-modal save-import" aria-labelledby="save-import-title">
+      <div class="modal-head"><div><p class="eyebrow" id="save-import-kind">IMPORT</p><h1 id="save-import-title">Import</h1><p id="save-import-file"></p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
+      <div class="save-import-body">
+        <div class="save-import-browse">
+          <div class="save-import-bar">
+            <div class="pokemon-tabs" role="tablist" aria-label="Party or boxes"><button id="save-import-tab-party" class="pokemon-tab" role="tab" type="button" aria-selected="true">Party</button><button id="save-import-tab-boxes" class="pokemon-tab" role="tab" type="button" aria-selected="false">Boxes</button></div>
+            <div id="save-import-box-bar" class="pokemon-box-bar" hidden><button id="save-import-box-prev" class="subtle" type="button" aria-label="Previous box">‹</button><select id="save-import-box" aria-label="Box"></select><button id="save-import-box-next" class="subtle" type="button" aria-label="Next box">›</button></div>
+            <button id="save-import-all" class="subtle save-import-all" type="button">Select all here</button>
+          </div>
+          <div id="save-import-grid" class="pokemon-grid" role="listbox" aria-multiselectable="true" aria-label="Pokémon to bring"></div>
+          <p id="save-import-empty" class="helper pokemon-empty" hidden></p>
+        </div>
+        <aside id="save-import-detail" class="save-import-detail" aria-live="polite"></aside>
+      </div>
+      <p id="save-import-status" class="pokemon-status save-import-status" role="status" aria-live="polite" hidden></p>
+      <div class="actions"><p id="save-import-note" class="helper save-import-note"></p><button class="subtle" data-close-modal>Close</button><button id="save-import-go" class="solid" type="button" disabled>Bring them over</button></div>
     </dialog>
     <dialog id="shadowtrade-confirm" class="launcher-modal shadowtrade-confirm" aria-labelledby="shadowtrade-confirm-title">
       <div class="modal-head"><div><p class="eyebrow">SHADOWTRADE</p><h1 id="shadowtrade-confirm-title">Send <span id="shadowtrade-confirm-name"></span>?</h1><p>Another player gets it, and you get a Shadow Pokémon someone sent.</p></div><button class="modal-close" data-close-modal aria-label="Close">×</button></div>
