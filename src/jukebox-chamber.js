@@ -15,6 +15,7 @@ const DANCERS = 6;               // round the middle, as the game's chamber has 
 const RING = 3.6, HEIGHT = 1.9, STAR_HEIGHT = 2.5, DAIS = 0.75;   // DAIS: how high the middle platform stands, for Miror B.  // the ring's radius, and how tall each Ludicolo stands, in the scene's units
 const FOV = 38;
 const FACING = 7;                // the point on the floor, toward the camera, that the ring's dancers look at
+const GROOVE_MIN = 2.6;          // seconds the dancers take over the groove into the next song, at the least
 const LAND_FRAMES = 10, LAST_FRAMES = 8;        // the hop: frames to settle after landing (it turns and winds up for a beat each, and takes off on the song's drop or break)
 const NOMINAL = 0.5;           // the beat (seconds) a motion is sized for: it takes as many beats as it would at 120 BPM, so a faster song plays it faster and a slower one slower
 const SLIGHT = 30;             // (and what Miror B. does with them: from INTENSE up he strikes, from EASY up he makes slight movements)
@@ -1022,10 +1023,11 @@ export function createChamber(canvas) {
     for (const ring of room.pulse) ring.material.color.copy(palette.glow);
     for (const edge of room.edges) edge.material.color.copy(palette.glow);
     room.moteMaterial.color.copy(palette.glow);
-    // a song has crossed into the next: the dancers groove into it, the length of the crossfade
+    // a song has crossed into the next: the dancers groove into it, over the crossfade, and never faster than a song's own end would have them (a song picked from the list
+    // fades over well under a second, which would have them leap and spin at twice the pace)
     if (groovePending > 0) {
       if (groovePending >= 0.5 && dancers.length) {
-        groove = { start: seconds, duration: Math.min(3.2, groovePending) };
+        groove = { start: seconds, duration: Math.max(GROOVE_MIN, Math.min(3.2, groovePending)) };
         for (const dancer of dancers) room.emit?.(dancer.group.position.x, 2.4, dancer.group.position.z);
       }
       groovePending = 0;

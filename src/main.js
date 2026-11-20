@@ -148,15 +148,20 @@ function broadcast(channel, data) {
 
 // The Jukebox can be taken out of the launcher into a window of its own (the music, the song list and the Purification Chamber, to leave on another
 // screen). The music plays from that window while it is open; the launcher's window says so, and closing the window ends the music.
-let jukeboxWindow = null;
+// What was playing is handed over when the window opens (from the launcher's page) and when it closes (back to it): the window reports its song and place
+// twice a second, and the place is taken on by the time that has passed since.
+let jukeboxWindow = null, jukeboxReport = null, jukeboxHandoff = null;
 const jukeboxWindowOpen = () => Boolean(jukeboxWindow && !jukeboxWindow.isDestroyed());
-function openJukeboxWindow() {
+const aged = report => (report?.snapshot?.id ? { ...report.snapshot, position: report.snapshot.position + (report.snapshot.paused ? 0 : (Date.now() - report.at) / 1000) } : null);
+function openJukeboxWindow(snapshot = null) {
   if (jukeboxWindowOpen()) {
     if (jukeboxWindow.isMinimized()) jukeboxWindow.restore();
     jukeboxWindow.show();
     jukeboxWindow.focus();
     return true;
   }
+  jukeboxHandoff = snapshot?.id ? { snapshot, at: Date.now() } : null;
+  jukeboxReport = null;
   const opened = new BrowserWindow({
     width: 1100, height: 760, minWidth: 640, minHeight: 480, backgroundColor: '#1a1420', title: 'Orre Launcher: Jukebox',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
@@ -165,8 +170,12 @@ function openJukeboxWindow() {
   opened.setMenuBarVisibility(false);
   opened.loadFile(path.join(__dirname, 'index.html'), { query: { window: 'jukebox' } });
   opened.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  opened.on('closed', () => { if (jukeboxWindow === opened) jukeboxWindow = null; broadcast('jukebox-window', false); });
-  broadcast('jukebox-window', true);
+  opened.on('closed', () => {
+    if (jukeboxWindow === opened) jukeboxWindow = null;
+    broadcast('jukebox-window', { open: false, handoff: aged(jukeboxReport) });
+    jukeboxReport = null;
+  });
+  broadcast('jukebox-window', { open: true });
   return true;
 }
 function closeJukeboxWindow() {
@@ -3504,7 +3513,9 @@ function registerHandlers() {
   ipcMain.handle('game-logos', () => gameLogos());
   ipcMain.handle('jukebox-render', (_event, id) => jukeboxRender(String(id)));
   ipcMain.handle('jukebox-close', () => jukeboxStopWorker());
-  ipcMain.handle('jukebox-window-open', () => openJukeboxWindow());
+  ipcMain.handle('jukebox-window-open', (_event, snapshot) => openJukeboxWindow(snapshot));
+  ipcMain.handle('jukebox-window-take', () => { const taken = aged(jukeboxHandoff); jukeboxHandoff = null; return taken; });
+  ipcMain.on('jukebox-window-report', (event, snapshot) => { if (jukeboxWindowOpen() && event.sender === jukeboxWindow.webContents) jukeboxReport = { snapshot, at: Date.now() }; });
   ipcMain.handle('jukebox-window-close', () => closeJukeboxWindow());
   ipcMain.handle('jukebox-window-state', () => jukeboxWindowOpen());
   ipcMain.handle('jukebox-playlists', () => { requireFeature('jukebox', 'The Jukebox'); return readJukeboxPlaylists()[config.game] ?? []; });

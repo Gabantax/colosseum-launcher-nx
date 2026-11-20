@@ -682,18 +682,50 @@
   window.colo.onJukeboxStop(close);
 
   // The Jukebox can be taken out into a window of its own. That window is this page again (jukebox-window.js), with only the Jukebox showing; the music
-  // plays from there while it is open, so the launcher's own page stops its music and says where it went.
+  // plays from there while it is open, so the launcher's own page hands its song over and says where it went. A song goes across with its place, whether
+  // paused, the volume and the playlist it was playing from, and comes back the same way when the window is closed.
   const alone = document.documentElement.classList.contains('jukebox-window');
-  let popped = false;
-  const setPopped = open => {
+  let popped = false, discard = false;
+  function snapshot() {
+    if (!active) return null;
+    return { id: active.id, position: position(), paused: state.paused, volume: state.volume, loop: $('jukebox-loop').checked, queue: queue ? { ...queue } : null };
+  }
+  // Carries on with a song handed over by the other window, from where it was.
+  async function restore(handoff) {
+    if (!handoff?.id) return;
+    state = { ...state, volume: Number.isFinite(handoff.volume) ? handoff.volume : state.volume };
+    $('jukebox-loop').checked = Boolean(handoff.loop);
+    queue = handoff.queue || null;
+    load();
+    const mine = ++token;
+    current = handoff.id;
+    notice = '';
+    busy = true;
+    render();
+    try {
+      const found = await song(handoff.id);
+      if (mine !== token) return;
+      const ctx = output();
+      gain.gain.value = state.volume / 100;
+      if (handoff.paused) await ctx.suspend();   // (so that it begins silent, and Play starts it)
+      await start(handoff.id, found, Math.max(0, Math.min(found.buffer.duration - 0.05, Number(handoff.position) || 0)), Boolean(handoff.paused), { fade: 0.4 });
+    } catch (error) {
+      if (mine === token) notice = message(error);
+    }
+    if (mine === token) { busy = false; render(); }
+  }
+  const setPopped = (open, handoff = null) => {
     if (alone || open === popped) return;
     popped = open;
     document.documentElement.classList.toggle('jukebox-popped', open);
     $('jukebox-popped').hidden = !open;
-    if (open) { close(); window.coloJukeboxChamber?.hide(); }
-    else if (!$('page-jukebox').hidden) { load(); window.coloJukeboxChamber?.show(); }
+    if (open) { close(); window.coloJukeboxChamber?.hide(); return; }
+    const skip = discard;
+    discard = false;
+    if (!$('page-jukebox').hidden) { load(); window.coloJukeboxChamber?.show(); }
+    if (!skip) restore(handoff);
   };
-  $('jukebox-popout').addEventListener('click', () => { window.colo.jukeboxWindowOpen().catch(() => {}); });
+  $('jukebox-popout').addEventListener('click', () => { window.colo.jukeboxWindowOpen(snapshot()).catch(() => {}); });
   $('jukebox-bring-back').addEventListener('click', () => { window.colo.jukeboxWindowClose().catch(() => {}); });
   if (!alone) {
     window.colo.onJukeboxWindow(setPopped);
@@ -703,6 +735,9 @@
     const open = () => (typeof showPage === 'function' ? showPage('jukebox') : $('nav-jukebox').click());
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open); else open();
     setTimeout(open, 300);
+    // the song that was playing in the launcher carries on here, and where it is goes back to the main process for when this window is closed
+    window.colo.jukeboxWindowTake().then(restore).catch(() => {});
+    setInterval(() => window.colo.jukeboxWindowReport(snapshot()), 500);
   }
 
   window.coloJukebox = {
@@ -716,7 +751,7 @@
     },
     // Another game was chosen: its disc has other songs, so the music ends and the list is read again from it.
     reset() {
-      if (!alone) window.colo.jukeboxWindowClose().catch(() => {});   // another game's disc: the window out of the launcher has the old one's songs
+      if (!alone) { discard = popped; window.colo.jukeboxWindowClose().catch(() => {}); }   // another game's disc: the window out of the launcher has the old one's songs, which don't come back
       close();
       window.coloJukeboxChamber?.reset();
       tracks = null;
