@@ -379,3 +379,24 @@ test('the chamber asks less of a weak machine: tiers, a governor that steps down
   assert.match(post, /colorspace_fragment/);
   assert.match(chamber, /post\?\.wipe\(\)/);
 });
+
+test('the Jukebox can be taken into a window of its own: the same page, with only the Jukebox showing, and the music playing from there', () => {
+  const main = read('main.js'), preload = read('preload.js'), page = read('jukebox-page.js'), html = read('index.html'), css = read('style.css'), flag = read('jukebox-window.js');
+  assert.match(main, /opened\.loadFile\(path\.join\(__dirname, 'index\.html'\), \{ query: \{ window: 'jukebox' \} \}\)/);
+  assert.match(main, /ipcMain\.handle\('jukebox-window-open'/);
+  assert.match(main, /ipcMain\.handle\('jukebox-window-close'/);
+  assert.match(main, /window\.on\('closed', closeJukeboxWindow\)/);
+  // starting the game ends the music in either window
+  assert.match(main, /if \(jukeboxWindowOpen\(\)\) jukeboxWindow\.webContents\.send\('jukebox-stop'\)/);
+  assert.match(preload, /jukeboxWindowOpen: \(\) => ipcRenderer\.invoke\('jukebox-window-open'\)/);
+  assert.match(preload, /onJukeboxWindow: callback =>/);
+  // the window is marked before anything is drawn, and the launcher's frame is hidden by it
+  assert.match(html, /<script src="jukebox-window\.js"><\/script>/);
+  assert.match(flag, /classList\.add\('jukebox-window'\)/);
+  assert.match(css, /\.jukebox-window \.topbar, \.jukebox-window \.nav-bar, \.jukebox-window \.statusbar/);
+  // the launcher's own page stops its music while the window is out, says so, and can bring it back
+  assert.match(page, /if \(open\) \{ close\(\); window\.coloJukeboxChamber\?\.hide\(\); \}/);
+  assert.match(page, /show\(\) \{ if \(popped\) return;/);
+  assert.match(html, /id="jukebox-popout"/);
+  assert.match(html, /id="jukebox-bring-back"/);
+});

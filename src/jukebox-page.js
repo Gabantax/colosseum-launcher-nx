@@ -681,8 +681,32 @@
   $('jukebox-close').addEventListener('click', close);
   window.colo.onJukeboxStop(close);
 
+  // The Jukebox can be taken out into a window of its own. That window is this page again (jukebox-window.js), with only the Jukebox showing; the music
+  // plays from there while it is open, so the launcher's own page stops its music and says where it went.
+  const alone = document.documentElement.classList.contains('jukebox-window');
+  let popped = false;
+  const setPopped = open => {
+    if (alone || open === popped) return;
+    popped = open;
+    document.documentElement.classList.toggle('jukebox-popped', open);
+    $('jukebox-popped').hidden = !open;
+    if (open) { close(); window.coloJukeboxChamber?.hide(); }
+    else if (!$('page-jukebox').hidden) { load(); window.coloJukeboxChamber?.show(); }
+  };
+  $('jukebox-popout').addEventListener('click', () => { window.colo.jukeboxWindowOpen().catch(() => {}); });
+  $('jukebox-bring-back').addEventListener('click', () => { window.colo.jukeboxWindowClose().catch(() => {}); });
+  if (!alone) {
+    window.colo.onJukeboxWindow(setPopped);
+    window.colo.jukeboxWindowState().then(setPopped).catch(() => {});
+  } else {
+    // the window opens on the Jukebox, and the launcher's other pages stay out of it
+    const open = () => (typeof showPage === 'function' ? showPage('jukebox') : $('nav-jukebox').click());
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open); else open();
+    setTimeout(open, 300);
+  }
+
   window.coloJukebox = {
-    show() { load(); render(); window.coloJukeboxChamber?.show(); },
+    show() { if (popped) return; load(); render(); window.coloJukeboxChamber?.show(); },
     // The visualizer was turned on with a song already playing, which was studied only for where it is heard: now it is studied for its beat too.
     study() { if (active) study(active.id, true); },
     // What the Purification Chamber dances to: the player's analyser, and whether a song is sounding.
@@ -692,6 +716,7 @@
     },
     // Another game was chosen: its disc has other songs, so the music ends and the list is read again from it.
     reset() {
+      if (!alone) window.colo.jukeboxWindowClose().catch(() => {});   // another game's disc: the window out of the launcher has the old one's songs
       close();
       window.coloJukeboxChamber?.reset();
       tracks = null;
