@@ -179,6 +179,13 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     chooseStarters: input.chooseStarters !== false,
     // The bag and shops list a TM by its move (Thunderbolt), its number in a tab over the description. On unless turned off.
     tmNames: input.tmNames !== false,
+    // Teaching a TM leaves it in the bag, as in later games. Off unless turned on: it changes what TMs are worth.
+    infiniteTms: Boolean(input.infiniteTms),
+    // Every party Pokémon gets EXP from a knockout, as the Exp. Share does from X and Y on: the ones that battled the
+    // full amount, the rest half. Off unless turned on.
+    expShare: Boolean(input.expShare),
+    // Colosseum: the C-Stick walks and moves menu cursors like the Control Stick, as in XD. Off unless turned on.
+    cstickMove: Boolean(input.cstickMove),
     // Colosseum: Wes walks through Rui in the field instead of pushing her back. On unless turned off.
     partnerPass: input.partnerPass !== false,
     // XD: a Poké Spot draws from every Pokémon a player could find in the wild, not only its own three. Off unless chosen.
@@ -356,6 +363,9 @@ const FEATURE_ENVIRONMENT = {
   shinyStarters: ['COLO_SHINY_STARTERS'],
   starters: ['COLO_CHOOSE_STARTERS'],
   tmNames: ['COLO_TM_NAMES'],
+  infiniteTms: ['COLO_INFINITE_TMS'],
+  expShare: ['COLO_EXP_SHARE'],
+  cstickMove: ['COLO_CSTICK_MOVE'],
   partnerPass: ['COLO_PARTNER_PASS'],
   pokeSpots: ['COLO_POKESPOT_POOL'],
   playAs: ['COLO_CHOOSE_HERO', 'COLO_PLAYER'],
@@ -418,6 +428,9 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   if (settings.shinyStarters === false) env.COLO_SHINY_STARTERS = '0';
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
+  if (settings.infiniteTms) env.COLO_INFINITE_TMS = '1';
+  if (settings.expShare) env.COLO_EXP_SHARE = '1';
+  if (settings.cstickMove) env.COLO_CSTICK_MOVE = '1';
   if (settings.partnerPass === false) env.COLO_PARTNER_PASS = '0';
   if (settings.pokeSpotPool === false) env.COLO_POKESPOT_POOL = '0';
   if (settings.chooseHero === false) env.COLO_CHOOSE_HERO = '0';
