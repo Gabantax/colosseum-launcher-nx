@@ -629,8 +629,11 @@ function pbrMakesCries(root) { return fs.existsSync(path.join(root, 'tools', 'pb
 // before skips the chunk, so Replace all models waits for an update.
 function playsOwnModels(root) { return fs.existsSync(path.join(root, 'host', 'packlooks.c')); }
 function playsPackCries(root) { return fs.existsSync(path.join(root, 'host', 'packcries.c')); }
-function pbrModelsCommand(root, disc, work, numbers, platform = process.platform, environment = process.env) {
+// gamecube: the player's own Colosseum or XD disc, which the converter takes the Pokémon's fire, gas and sparkles from
+// (tools/pbr2pkx/particles.py); an older converter doesn't read it
+function pbrModelsCommand(root, disc, work, numbers, platform = process.platform, environment = process.env, gamecube = null) {
   const args = [pbrModelsScript(root), disc, work, ...numbers.map(String)];
+  if (gamecube) environment = { ...environment, PBR2PKX_GAMECUBE_DISC: gamecube };
   if (platform !== 'win32') return { command: 'python3', args, cwd: path.dirname(args[0]), env: environment };
   const { msys } = msysBash(environment);
   return { command: path.join(msys, 'mingw64', 'bin', 'python.exe'), args, cwd: path.dirname(args[0]), env: msysEnvironment(msys, environment) };
