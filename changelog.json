@@ -37,7 +37,7 @@
       "Battle Revolution models: Pokémon have their fire, gas and sparkles again. Charmander, Charmeleon and Charizard have their tail flames, Moltres, Magmar, Ponyta, Rapidash, Chimchar, Monferno, Infernape and Magmortar burn, Koffing, Weezing and Gastly give off gas, and Articuno, Vaporeon, Torkoal and Magcargo have their effects back. These come from your Colosseum or XD disc, so Make assets remakes these 18 Pokémon.",
       "Fixed Battle Revolution models showing the inside of parts that should be hidden, such as a blue patch on the tip of Charizard's wings, Rotom's shell covering its orange body and Spiritomb's swirl covering its face. Make assets remakes most Battle Revolution models for this.",
       "Infinite TMs: teaching a TM doesn't use it up, in Colosseum and XD. It's off unless you turn it on under Gameplay.",
-      "EXP Share for the whole party: in Colosseum and XD, every Pokémon in your party gets EXP when a foe is knocked out, as the Exp. Share works from Pokémon X and Y on. Each one that battled gets the full amount, the rest half, with one message for the rest of your team. It's off unless you turn it on under Gameplay.",
+      "Exp All: in Colosseum and XD, every Pokémon in your party gets EXP when a foe is knocked out, as the Exp. Share works from Pokémon X and Y on. Each one that battled gets the full amount, the rest half, with one message for the rest of your team, and a Pokémon holding an EXP. SHARE still gets its share on top. It's off unless you turn it on under Gameplay.",
       "C-Stick moves like the Control Stick: in Colosseum, walk and move menu cursors with the C-Stick, as in XD, for playing one-handed. It's off unless you turn it on under Controls."
     ]
   },

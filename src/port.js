@@ -181,9 +181,9 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     tmNames: input.tmNames !== false,
     // Teaching a TM leaves it in the bag, as in later games. Off unless turned on: it changes what TMs are worth.
     infiniteTms: Boolean(input.infiniteTms),
-    // Every party Pokémon gets EXP from a knockout, as the Exp. Share does from X and Y on: the ones that battled the
-    // full amount, the rest half. Off unless turned on.
-    expShare: Boolean(input.expShare),
+    // Exp All: every party Pokémon gets EXP from a knockout, as the Exp. Share does from X and Y on (the ones that battled
+    // the full amount, the rest half), with a held EXP. SHARE still adding its own share. Off unless turned on.
+    expAll: Boolean(input.expAll),
     // Colosseum: the C-Stick walks and moves menu cursors like the Control Stick, as in XD. Off unless turned on.
     cstickMove: Boolean(input.cstickMove),
     // Colosseum: Wes walks through Rui in the field instead of pushing her back. On unless turned off.
@@ -364,7 +364,7 @@ const FEATURE_ENVIRONMENT = {
   starters: ['COLO_CHOOSE_STARTERS'],
   tmNames: ['COLO_TM_NAMES'],
   infiniteTms: ['COLO_INFINITE_TMS'],
-  expShare: ['COLO_EXP_SHARE'],
+  expAll: ['COLO_EXP_ALL'],
   cstickMove: ['COLO_CSTICK_MOVE'],
   partnerPass: ['COLO_PARTNER_PASS'],
   pokeSpots: ['COLO_POKESPOT_POOL'],
@@ -429,7 +429,7 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.infiniteTms) env.COLO_INFINITE_TMS = '1';
-  if (settings.expShare) env.COLO_EXP_SHARE = '1';
+  if (settings.expAll) env.COLO_EXP_ALL = '1';
   if (settings.cstickMove) env.COLO_CSTICK_MOVE = '1';
   if (settings.partnerPass === false) env.COLO_PARTNER_PASS = '0';
   if (settings.pokeSpotPool === false) env.COLO_POKESPOT_POOL = '0';

@@ -301,8 +301,8 @@ test('Choose your hero is on unless turned off, in both games', () => {
   }
 });
 
-test('Infinite TMs, EXP Share and the C-Stick as the stick are off unless turned on; XD has the first two', () => {
-  const keys = { infiniteTms: 'COLO_INFINITE_TMS', expShare: 'COLO_EXP_SHARE', cstickMove: 'COLO_CSTICK_MOVE' };
+test('Infinite TMs, Exp All and the C-Stick as the stick are off unless turned on; XD has the first two', () => {
+  const keys = { infiniteTms: 'COLO_INFINITE_TMS', expAll: 'COLO_EXP_ALL', cstickMove: 'COLO_CSTICK_MOVE' };
   const saved = Object.fromEntries(Object.values(keys).map(key => [key, process.env[key]]));
   for (const key of Object.values(keys)) delete process.env[key];
   try {
