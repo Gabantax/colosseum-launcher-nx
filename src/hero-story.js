@@ -21,7 +21,7 @@ const { png } = require('./pokedex');
 const { colosseumPkx } = require('./xd-disc');
 
 // The folders' version: made again when it changes (raise it whenever what's made changes)
-const VERSION = 1;
+const VERSION = 2;  // 2: the faces' blink frames, and regions sorted by where they're drawn
 const KEPT = 4;
 const PKX_HEADER = 0x40;
 
@@ -85,7 +85,8 @@ function readImage(found) {
 function heroImages(heroId, models, chosen, index) {
   const out = new Map();
   for (const pkx of models) {
-    const textures = hsd.parseModel(pkx).textures, base = colors.prepare(heroId, textures);
+    // with the images its texture animations swap in (a battle model's face as the hero blinks)
+    const textures = hsd.parseModel(pkx, { animated: true }).textures, base = colors.prepare(heroId, textures);
     const found = textures.map(texture => (index && texture.disc ? texturePackLookup.findReplacement(index, texture.disc) : null));
     const large = found.map(readImage), sorted = large.some(Boolean) ? colors.prepare(heroId, large.map((image, i) => image || textures[i])) : null;
     textures.forEach((texture, i) => {
@@ -119,7 +120,7 @@ function makeStoryPack(rom, game, looks, root, folders = []) {
     const hash = crypto.createHash('sha256').update(JSON.stringify({ VERSION, game, colors: heroes.map(id => [id, Object.entries(looks.colors[id]).sort()]) }));
     for (const id of heroes) for (const pkx of models.get(id)) {
       hash.update(pkx);
-      if (index) for (const texture of hsd.parseModel(pkx).textures) {
+      if (index) for (const texture of hsd.parseModel(pkx, { animated: true }).textures) {
         const found = texture.disc && texturePackLookup.findReplacement(index, texture.disc);
         if (!found) continue;
         try { const { size, mtimeMs } = fs.statSync(found.file); hash.update(`${found.file}:${size}:${mtimeMs}`); } catch (_) { /* not there after all */ }

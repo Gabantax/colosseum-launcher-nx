@@ -31,7 +31,7 @@
       { id: 'machine', label: 'Snag Machine', seeds: seeds(['6d657b', '94869c', 'd6cfde', '29345a', '473f76', '6b558c']) },
       { id: 'hair', label: 'Hair', seeds: seeds(['786d57', '867965', '91826d']) },
       { id: 'skin', label: 'Skin', face: true, body: true, seeds: seeds(['a16d44', 'c6925a', 'c8935d', 'bd865a', 'cb9b6b', 'd0a073', 'ac7147', 'bd794a', 'a66f55']) },
-      { id: 'eyes', label: 'Eyes', face: true, body: false, onePatch: true, strays: 'sort', at: [[0.262, 0.545, 0.085, 0.085], [0.74, 0.545, 0.085, 0.085]], seeds: seeds(['8c5710', 'b57510', 'ce8a18', 'e79e08', '682709', '592409']) },
+      { id: 'eyes', label: 'Eyes', face: true, body: false, onePatch: true, strays: 'sort', at: [[0.262, 0.545, 0.11, 0.085], [0.74, 0.545, 0.11, 0.085]], seeds: seeds(['8c5710', 'b57510', 'ce8a18', 'e79e08', '682709', '592409']) },
     ], keep: seeds(['d6c7b5', 'ded3c6', 'e7dfd6', '4a1410', '652f1d', '7b5139', '6b594a', '8c6a4f']), presets: [
       { id: 'crimson', label: 'Crimson', colors: { coat: '#8c1c24', trim: '#e0a43a' } },
       { id: 'forest', label: 'Forest', colors: { coat: '#1f5a32', trim: '#d2b44a', suit: '#1c211c' } },
@@ -244,9 +244,9 @@
           for (let i = 0; i < mask.length; i++) if (mask[i] === region && inside[i] < 0) mask[i] = sortAgain(i, region);
           if (!regions[region].onePatch) return;
           // the middle of an iris is all eye, line and highlight: a small texture's iris shades blend towards the skin's,
-          // so there they're sorted without the skin
+          // so there they're sorted without the skin (not on a larger one, whose blink frames have skin there: the lids)
           const { at: ellipses } = regions[region], noSkin = faceRegions.filter(r => r !== skin && (!regions[r].at || r === region));
-          for (let i = 0; i < mask.length; i++) if (mask[i] === skin && inside[i] >= 0) {
+          if (width * height <= SMALL_FACE) for (let i = 0; i < mask.length; i++) if (mask[i] === skin && inside[i] >= 0) {
             const [cu, cv, ru, rv] = ellipses[inside[i]], u = (i % width + 0.5) / width, v = (Math.floor(i / width) + 0.5) / height;
             if (((u - cu) / ru) ** 2 + ((v - cv) / rv) ** 2 <= IRIS_MIDDLE ** 2)
               mask[i] = nearest(labOf(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]), noSkin, keepSeeds);
@@ -261,9 +261,25 @@
             const [cu, cv, ru, rv] = at[inside[part.texels[0]]], n = part.texels.length;
             return ((u / n - cu) / ru) ** 2 + ((v / n - cv) / rv) ** 2 <= 0.5 ** 2;
           };
+          // and an iris is tall: a closed eye's lash line in the eyes' colour (a blink frame's) is not one
+          const tall = part => {
+            let top = height, bottom = -1;
+            for (const i of part.texels) { const y = Math.floor(i / width); top = Math.min(top, y); bottom = Math.max(bottom, y); }
+            return width * height <= SMALL_FACE || bottom - top + 1 >= IRIS_HEIGHT * 2 * at[inside[part.texels[0]]][3] * height;
+          };
           const kept = new Uint8Array(mask.length);
-          for (const part of parts) if (part === largest[inside[part.texels[0]]] || centred(part)) for (const i of part.texels) kept[i] = 1;
+          for (const part of parts) if ((part === largest[inside[part.texels[0]]] || centred(part)) && tall(part)) for (const i of part.texels) kept[i] = 1;
           for (let i = 0; i < mask.length; i++) if (mask[i] === region && !kept[i]) mask[i] = sortAgain(i, region);
+          // An iris's shade under the lid can be nearer the skin's colours: a patch of skin touching the iris and wholly
+          // inside its ellipse is the iris (the lid's own shade runs on out of it)
+          if (skin >= 0) for (const part of components(mask, rgba, width, height, skin, i => inside[i])) {
+            let touches = false, rim = false;
+            for (const i of part.border) {
+              if (kept[i]) touches = true;
+              else if (inside[i] !== inside[part.texels[0]]) { rim = true; break; }
+            }
+            if (!rim && touches) for (const i of part.texels) mask[i] = region;
+          }
         });
       }
     }
@@ -271,8 +287,10 @@
     return { mask, face };
   }
 
-  // How far out from an iris ellipse's middle (as a share of its size) no skin is looked for
-  const IRIS_MIDDLE = 0.6;
+  // How far out from an iris ellipse's middle (as a share of its size) no skin is looked for, on a face this small
+  const IRIS_MIDDLE = 0.6, SMALL_FACE = 64 * 64;
+  // The least an iris patch spans of its ellipse's height (a shorter one is a closed eye's lashes)
+  const IRIS_HEIGHT = 0.3;
   // The 8-connected patches of one region's texels, each in one `group` (none where it's below 0): each one's texels
   // and the opaque texels around it
   function components(mask, rgba, width, height, region, group = () => 0) {
