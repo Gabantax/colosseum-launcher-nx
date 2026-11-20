@@ -1228,7 +1228,9 @@ async function makePbrModels() {
   if (!wanted.length) throw new Error('Turn on Generation 4 Pokémon or Replace all models first: their models and cries are what this makes.');
   if (!fs.existsSync(port.pbrModelsScript(root))) throw new Error('This version of the game can\'t make Battle Revolution assets yet. Update it from the Play page.');
   await ensureBuildTools();
-  const cmd = port.pbrModelsCommand(root, config.pbrDisc, pbrWork(), wanted, process.platform, toolEnv());
+  let gamecube = null;   // the game's own disc, for the Pokémon's particles: without it they're made with none
+  try { gamecube = port.validateRom(config.rom, config.game); } catch (_) { /* not chosen yet */ }
+  const cmd = port.pbrModelsCommand(root, config.pbrDisc, pbrWork(), wanted, process.platform, toolEnv(), gamecube);
   await launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, 'Make Battle Revolution assets');
   const { made } = pbrState();
   log(`Battle Revolution assets: ${made} of ${wanted.length} Pokémon made. They show in the Pokédex, and in your next game.`);
