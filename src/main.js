@@ -3515,7 +3515,7 @@ function registerHandlers() {
   ipcMain.handle('jukebox-close', () => jukeboxStopWorker());
   ipcMain.handle('jukebox-window-open', (_event, snapshot) => openJukeboxWindow(snapshot));
   ipcMain.handle('jukebox-window-take', () => { const taken = aged(jukeboxHandoff); jukeboxHandoff = null; return taken; });
-  ipcMain.on('jukebox-window-report', (event, snapshot) => { if (jukeboxWindowOpen() && event.sender === jukeboxWindow.webContents) jukeboxReport = { snapshot, at: Date.now() }; });
+  ipcMain.handle('jukebox-window-report', (event, snapshot) => { if (jukeboxWindowOpen() && event.sender === jukeboxWindow.webContents) jukeboxReport = { snapshot, at: Date.now() }; });
   ipcMain.handle('jukebox-window-close', () => closeJukeboxWindow());
   ipcMain.handle('jukebox-window-state', () => jukeboxWindowOpen());
   ipcMain.handle('jukebox-playlists', () => { requireFeature('jukebox', 'The Jukebox'); return readJukeboxPlaylists()[config.game] ?? []; });

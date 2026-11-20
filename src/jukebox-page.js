@@ -737,7 +737,7 @@
     setTimeout(open, 300);
     // the song that was playing in the launcher carries on here, and where it is goes back to the main process for when this window is closed
     window.colo.jukeboxWindowTake().then(restore).catch(() => {});
-    setInterval(() => window.colo.jukeboxWindowReport(snapshot()), 500);
+    setInterval(() => window.colo.jukeboxWindowReport(snapshot()).catch(() => {}), 500);
   }
 
   window.coloJukebox = {

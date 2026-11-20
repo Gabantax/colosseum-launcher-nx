@@ -109,7 +109,7 @@ contextBridge.exposeInMainWorld('colo', {
   onJukeboxStop: callback => ipcRenderer.on('jukebox-stop', () => callback()),
   jukeboxWindowOpen: snapshot => ipcRenderer.invoke('jukebox-window-open', snapshot),
   jukeboxWindowTake: () => ipcRenderer.invoke('jukebox-window-take'),
-  jukeboxWindowReport: snapshot => ipcRenderer.send('jukebox-window-report', snapshot),
+  jukeboxWindowReport: snapshot => ipcRenderer.invoke('jukebox-window-report', snapshot),
   jukeboxWindowClose: () => ipcRenderer.invoke('jukebox-window-close'),
   jukeboxWindowState: () => ipcRenderer.invoke('jukebox-window-state'),
   onJukeboxWindow: callback => ipcRenderer.on('jukebox-window', (_event, change) => callback(Boolean(change?.open), change?.handoff || null)),

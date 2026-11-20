@@ -390,6 +390,8 @@ test('the Jukebox can be taken into a window of its own: the same page, with onl
   assert.match(main, /if \(jukeboxWindowOpen\(\)\) jukeboxWindow\.webContents\.send\('jukebox-stop'\)/);
   assert.match(preload, /jukeboxWindowOpen: snapshot => ipcRenderer\.invoke\('jukebox-window-open', snapshot\)/);
   assert.match(preload, /onJukeboxWindow: callback =>/);
+  // (the tests' stand-in for ipcMain only has handle, so everything goes through it)
+  assert.doesNotMatch(main, /ipcMain\.on\(/);
   // the window is marked before anything is drawn, and the launcher's frame is hidden by it
   assert.match(html, /<script src="jukebox-window\.js"><\/script>/);
   assert.match(flag, /classList\.add\('jukebox-window'\)/);
