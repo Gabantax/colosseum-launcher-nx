@@ -1193,13 +1193,13 @@ export function createChamber(canvas) {
     if (glowing) {
       const mode = quality().mode, flare = 1 + 0.8 * flash;
       post.prepare(scene, camera, mode, {
-        occlude: true, aspect: camera.aspect, inject: 0.55,
-        decay: Math.pow(Math.min(0.94, 0.8 + 0.1 * energyS + 0.05 * buildupS), step * 60),
-        zoom: 1 + (0.006 + 0.012 * energyS + 0.02 * buildupS) * step * 60,
+        occlude: true, aspect: camera.aspect, inject: 0.4,
+        decay: Math.pow(Math.min(0.9, 0.7 + 0.1 * energyS + 0.05 * buildupS), step * 60),
+        zoom: 1 + (0.004 + 0.007 * energyS + 0.012 * buildupS) * step * 60,
         turn: (0.0015 + 0.006 * buildupS) * step * 60,
       });
       renderer.render(scene, camera);
-      post.composite((0.3 + 0.4 * buildupS) * (1 - 0.4 * palette.tone), (0.14 + 0.28 * energyS + 0.18 * pulse * energyS) * flare * (1 - 0.4 * palette.tone));
+      post.composite((0.22 + 0.3 * buildupS) * (1 - 0.4 * palette.tone), (0.14 + 0.28 * energyS + 0.18 * pulse * energyS) * flare * (1 - 0.4 * palette.tone));
     } else {
       renderer.render(scene, camera);
     }

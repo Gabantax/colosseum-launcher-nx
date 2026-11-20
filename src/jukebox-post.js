@@ -86,10 +86,12 @@ export function createPost(renderer) {
   // through, which costs less
   function drawGlow(scene, camera, occlude) {
     const was = { target: renderer.getRenderTarget(), alpha: renderer.getClearAlpha(), color: renderer.getClearColor(new THREE.Color()), fog: scene.fog, mask: camera.layers.mask, auto: renderer.autoClear };
-    const hidden = new Map();
+    const hidden = new Map(), unseen = [];
     scene.fog = null;
     camera.layers.mask = occlude ? 1 | (1 << GLOW_LAYER) : 1 << GLOW_LAYER;
     // what is not glowing is drawn without colour: it only keeps the glow behind it from showing
+    // (the music notes are sprites, and would be drawn into the glow in full colour, and bleed)
+    scene.traverse(object => { if (object.isSprite && object.visible) { object.visible = false; unseen.push(object); } });
     if (occlude) scene.traverse(object => {
       if (!object.isMesh || !object.visible || (object.layers.mask & (1 << GLOW_LAYER))) return;
       for (const m of Array.isArray(object.material) ? object.material : [object.material]) if (m && !hidden.has(m)) { hidden.set(m, m.colorWrite); m.colorWrite = false; }
@@ -99,6 +101,7 @@ export function createPost(renderer) {
     renderer.setRenderTarget(glow);
     renderer.render(scene, camera);
     for (const [m, write] of hidden) m.colorWrite = write;
+    for (const object of unseen) object.visible = true;
     scene.fog = was.fog;
     camera.layers.mask = was.mask;
     renderer.setRenderTarget(was.target);
