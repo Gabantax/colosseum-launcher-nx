@@ -1525,6 +1525,7 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .pokemon-heart-bar { height: 8px; border-radius: 999px; background: var(--dex-hover); overflow: hidden; }
 .pokemon-heart-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6d3aa8, #b07cf0); }
 .pokemon-heart small { color: var(--dex-muted); font-size: 11px; }
+.pokemon-friendship .pokemon-heart-bar i { background: linear-gradient(90deg, #d8508a, #f08bb6); }
 .pokemon-trade { justify-self: start; }
 /* Online Trade (src/pokemon-page.js): the start card beside the grid, and the trade window that takes the page over
    while a room is open: the picker on the left, the two offers facing each other, Ready below. */

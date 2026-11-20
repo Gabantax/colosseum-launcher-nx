@@ -114,6 +114,14 @@ function renderDetail() {
     $('pokemon-heart-fill').style.width = `${pokemon.heartPercent}%`;
     $('pokemon-heart-text').textContent = pokemon.heartPercent ? `Heart gauge ${pokemon.heartPercent}% closed` : 'Its heart is open: ready to purify';
   }
+  // friendship (happiness), 0 to 255; an egg's is its hatch counter, so it isn't shown
+  const friendship = $('pokemon-friendship');
+  friendship.hidden = pokemon.egg || pokemon.friendship === undefined;
+  if (!friendship.hidden) {
+    const value = Math.min(255, pokemon.friendship);
+    $('pokemon-friendship-fill').style.width = `${Math.round((value / 255) * 100)}%`;
+    $('pokemon-friendship-text').textContent = `Friendship ${value}/255`;
+  }
   const problem = pokemon.tradeProblem || (!data.canTrade ? data.notice || 'Trading isn\'t possible right now.' : null);
   $('pokemon-trade').hidden = !pokemon.shadow;
   $('pokemon-trade').disabled = Boolean(problem) || Boolean(data.trades?.busy);
