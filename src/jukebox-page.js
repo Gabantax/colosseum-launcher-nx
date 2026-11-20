@@ -6,7 +6,10 @@
 (() => {
   const $ = id => document.getElementById(id);
   const message = error => String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-  const KEEP = 3;   // rendered songs kept, for playing one again
+  const KEEP = 4;   // rendered songs kept: the one playing, the one before it, the one coming, and one more
+  // How songs give way to each other, in seconds: a song that plays through is overlapped with the next for CROSS; a song picked, or Next and Previous,
+  // are crossfaded over MANUAL; and every start, seek and stop has at least a QUICK fade, so that there is never a click.
+  const CROSS = 2.5, MANUAL = 0.7, QUICK = 0.12;
   // A time as a clock shows it: 1:41.
   const clock = seconds => {
     const whole = seconds >= 0 ? Math.round(seconds) : 0;
@@ -22,7 +25,7 @@
   // previous, next and a song's end go through it alone.
   const lists = window.coloJukeboxPlaylists;
   let playlists = [], queue = null;
-  let context = null, gain = null, active = null, token = 0;
+  let context = null, gain = null, analyser = null, active = null, token = 0, crossing = false, prefetching = null;
   const songs = new Map();   // id -> { buffer, loop }, oldest first
   // Music or a sound effect: each has its tab, and the previous and next buttons stay among those of the same kind.
   const kindOf = track => (track?.kind === 'sfx' ? 'sfx' : 'music');
@@ -232,26 +235,87 @@
       gain = context.createGain();
       gain.gain.value = state.volume / 100;
       gain.connect(context.destination);
+      // listened to by the Purification Chamber, before the volume so that a quiet player dances as much as a loud one
+      analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.5;
     }
     return context;
   }
 
-  // Ends what is playing, quietly: its end does not count as a song that finished.
-  function silence() {
-    const source = active?.source;
+  // A fade as it sounds right: out follows the cosine and in the sine, so that two songs crossing keep the same loudness through the middle.
+  const curve = (fadeIn, points = 48) => Float32Array.from({ length: points }, (_, i) => Math.sin((fadeIn ? i : points - 1 - i) / (points - 1) * Math.PI / 2));
+  function fade(param, fadeIn, seconds) {
+    const at = context.currentTime;
+    param.cancelScheduledValues(at);
+    if (!(seconds > 0)) { param.setValueAtTime(fadeIn ? 1 : 0, at); return; }
+    param.setValueCurveAtTime(curve(fadeIn), at, seconds);
+  }
+
+  // Lets a song go: it fades out over `seconds` and is stopped when it has, on the sound's own clock (so a pause in the middle waits too).
+  function retire(song, seconds) {
+    if (!song) return;
+    song.source.onended = null;
+    try {
+      fade(song.fader.gain, false, seconds);
+      song.source.stop(context.currentTime + Math.max(0, seconds) + 0.05);
+    } catch (_) { /* never started */ }
+    song.source.addEventListener('ended', () => { try { song.fader.disconnect(); song.source.disconnect(); } catch (_) { /* already */ } }, { once: true });
+  }
+
+  // Ends what is playing, quietly: it fades out, and its end does not count as a song that finished.
+  function silence(seconds = 0.3) {
+    const song = active;
     active = null;
-    if (source) { source.onended = null; try { source.stop(); } catch (_) { /* never started */ } source.disconnect(); }
+    retire(song, seconds);
     state = { ...state, playing: null, paused: false };
   }
 
-  async function song(id) {
-    if (songs.has(id)) return songs.get(id);
+  const inFlight = new Map();   // id -> the render under way, so that a song asked for twice (ahead of time, then for real) is made once
+  function song(id) {
+    if (songs.has(id)) { const found = songs.get(id); songs.delete(id); songs.set(id, found); return Promise.resolve(found); }   // (the most recently used goes last)
+    if (!inFlight.has(id)) inFlight.set(id, makeSong(id).finally(() => inFlight.delete(id)));
+    return inFlight.get(id);
+  }
+
+  // Where a song is really heard: when it first gets loud enough to hear (a second's silence before the music is not worth waiting out) and when it
+  // last is (its end is often a fade-out, or a reverb tail, that the next song should not wait for). Loud enough is a fifth of the song's usual level.
+  function audible(left, right, rate) {
+    const step = Math.max(1, Math.round(rate * 0.05)), windows = Math.floor(left.length / step);
+    if (windows < 40) return { lead: 0, end: left.length / rate };
+    const level = new Float32Array(windows);
+    for (let w = 0; w < windows; w++) {
+      let sum = 0;
+      for (let i = w * step; i < (w + 1) * step; i++) { const x = (left[i] + right[i]) / 2; sum += x * x; }
+      level[w] = Math.sqrt(sum / step);
+    }
+    const usual = Float32Array.from(level).sort()[Math.floor(windows * 0.6)], floor = usual * 0.2;
+    let first = 0, last = windows - 1;
+    while (first < windows - 1 && level[first] < floor) first++;
+    while (last > first && level[last] < floor) last--;
+    return { lead: Math.min(1.5, first * 0.05), end: Math.min(left.length / rate, (last + 1) * 0.05) };
+  }
+
+  // The song rendered from the disc (in the main process), as the page keeps it: its sound, loop, beat grid and intensity.
+  async function makeSong(id) {
     const rendered = await window.colo.jukeboxRender(id);
     const ctx = output();
     const buffer = ctx.createBuffer(2, rendered.left.length, rendered.rate);
     buffer.copyToChannel(rendered.left, 0);
     buffer.copyToChannel(rendered.right, 1);
-    songs.set(id, { buffer, loop: rendered.loop });
+    // where the beats fall, for the Purification Chamber's dancers: worked out once, from the sound itself (null where there is no clear beat)
+    let grid = null;
+    try {
+      const found = window.coloJukeboxTempo?.analyze(rendered.left, rendered.right, rendered.rate);
+      if (found && found.confidence >= window.coloJukeboxTempo.CONFIDENT) grid = found;
+    } catch (_) { /* the dancers keep their own time */ }
+    let intensity = null;
+    try {
+      intensity = window.coloJukeboxTempo?.intensity(rendered.left, rendered.right, rendered.rate) ?? null;
+      // the drops and changes of the song, each put on the beat of its grid where the change is
+      if (intensity && grid) intensity.events = window.coloJukeboxTempo.refineEvents(intensity.events, grid, rendered.left, rendered.right, rendered.rate);
+    } catch (_) { /* the dancers go by the live sound */ }
+    songs.set(id, { buffer, loop: rendered.loop, grid, intensity, heard: audible(rendered.left, rendered.right, rendered.rate) });
     while (songs.size > KEEP) songs.delete(songs.keys().next().value);
     return songs.get(id);
   }
@@ -280,23 +344,32 @@
   }
   setInterval(tick, 250);
 
-  // offset: where in the song to begin; keepPaused: seeking while paused leaves it paused, at the new place.
-  async function start(id, { buffer, loop }, offset = 0, keepPaused = false) {
+  // offset: where in the song to begin; keepPaused: seeking while paused leaves it paused, at the new place; fade: seconds over which it comes in as the
+  // song that was playing, if any, goes out (a song starting from nothing comes in over QUICK).
+  async function start(id, { buffer, loop }, offset = 0, keepPaused = false, { fade: seconds = QUICK } = {}) {
     const ctx = output();
     if (!keepPaused) await ctx.resume();
-    const source = ctx.createBufferSource();
+    const source = ctx.createBufferSource(), fader = ctx.createGain();
     source.buffer = buffer;
     // in a playlist a song plays through once, and Loop starts the playlist again after its last
     if (loop) { source.loopStart = loop.start; source.loopEnd = loop.end; source.loop = $('jukebox-loop').checked && !queue; }
-    source.connect(gain);
+    fader.gain.value = 0;
+    source.connect(fader);
+    fader.connect(gain);
+    fader.connect(analyser);
     source.onended = () => { if (active?.source === source) { active = null; state = { ...state, playing: null, paused: false }; render(); finished(); } };
     // the length shown is the list's (the song played once), not the buffer's: that has the seconds the sound takes to die away after it
     const known = tracks?.find(each => each.id === id)?.seconds;
     const shown = known > 0 ? Math.min(known, buffer.duration) : buffer.duration;
-    active = { id, source, loop: Boolean(loop), region: loop, duration: buffer.duration, shown, offset, startedAt: ctx.currentTime };
+    const going = active;
+    active = { id, source, fader, loop: Boolean(loop), region: loop, duration: buffer.duration, shown, offset, startedAt: ctx.currentTime, heardEnd: songs.get(id)?.heard?.end ?? buffer.duration };
     state = { ...state, playing: id, paused: keepPaused };
     source.start(0, offset);
+    fade(fader.gain, true, seconds);
+    retire(going, seconds);
+    window.coloJukeboxChamber?.wake();
     tick();
+    prefetchSoon();
   }
 
   // Begin again from `seconds` into the song. A repeating song asked for a place after its loop starts again at the loop's start.
@@ -304,14 +377,11 @@
     if (!active) return;
     const id = active.id, found = songs.get(id);
     if (!found) return;
-    const paused = state.paused, old = active.source;
+    const paused = state.paused;
     let at = Math.max(0, Math.min(active.duration - 0.05, seconds));
     if (found.loop && $('jukebox-loop').checked && !queue && at >= found.loop.end) at = found.loop.start;
-    old.onended = null;
-    try { old.stop(); } catch (_) { /* already over */ }
-    old.disconnect();
-    active = null;   // so that the old sound's end is not taken for a song that finished
-    await start(id, found, at, paused);
+    // the old place gives way to the new over a few hundredths of a second (start() retires it, so that its end is not taken for a song that finished)
+    await start(id, found, at, paused, { fade: 0.05 });
     render();
   }
 
@@ -322,12 +392,12 @@
     current = id;
     notice = '';
     busy = true;
-    silence();
+    // what is playing goes on while the song is made (and is not cut off for the wait), then gives way to it
     render();
     try {
       const found = await song(id);
       if (mine !== token) return;
-      await start(id, found);
+      await start(id, found, 0, false, { fade: active ? MANUAL : QUICK });
     } catch (error) {
       if (mine === token) notice = message(error);
     }
@@ -336,6 +406,9 @@
 
   async function pause() {
     if (!active) return;
+    // the sound is ramped down before the device is stopped, and back up after it is started
+    fade(active.fader.gain, false, 0.08);
+    await new Promise(done => setTimeout(done, 100));
     await context.suspend();
     state = { ...state, paused: true };
     render();
@@ -344,6 +417,8 @@
   async function resume() {
     if (!active) return;
     await context.resume();
+    if (active) fade(active.fader.gain, true, 0.1);
+    window.coloJukeboxChamber?.wake();
     state = { ...state, paused: false };
     render();
   }
@@ -351,7 +426,8 @@
   function stop() {
     token++;
     busy = false;
-    silence();
+    crossing = false;
+    silence(0.4);
     render();
   }
 
@@ -372,22 +448,64 @@
     return play(list[(at < 0 ? (offset > 0 ? 0 : list.length - 1) : (at + offset + list.length) % list.length)].id);
   }
 
-  // A song that played through on its own: the same one again when looping, else the next, and the list's end stops.
-  function finished() {
+  // What comes after the song playing, when it plays through on its own: { id, fromQueue, advance() (moves the playlist on), same } or null for nothing.
+  // The same one again when looping, else the next of the playlist or list; a list's end stops, and a sound effect is played once (and again only
+  // when Loop is on); it does not go on to the next.
+  function upcoming() {
     if (queue) {
-      if (queue.at < queue.order.length - 1) { queue.at++; return play(queue.order[queue.at], true); }
-      if (!$('jukebox-loop').checked) return;
+      if (queue.at < queue.order.length - 1) return { id: queue.order[queue.at + 1], fromQueue: true, advance: () => { queue.at++; } };
+      if (!$('jukebox-loop').checked) return null;
       const playlist = playlists.find(each => each.id === queue.id);
       const again = playlist ? lists.order(playlist, has, queue.shuffled) : queue.order;
-      if (!again.length) return;
-      queue = { ...queue, order: again, at: 0 };
-      return play(again[0], true);
+      if (!again.length) return null;
+      return { id: again[0], fromQueue: true, advance: () => { queue = { ...queue, order: again, at: 0 }; } };
     }
-    if ($('jukebox-loop').checked) return play(current);
-    // a sound effect is played once, and again only when Loop is on; it does not go on to the next
+    if ($('jukebox-loop').checked) return { id: current, fromQueue: false, advance() {}, same: true };
     const list = pool(), at = index();
-    if (at >= 0 && at < list.length - 1 && kindOf(tracks.find(each => each.id === current)) === 'music') return play(list[at + 1].id);
+    if (at >= 0 && at < list.length - 1 && kindOf(tracks.find(each => each.id === current)) === 'music') return { id: list[at + 1].id, fromQueue: false, advance() {} };
+    return null;
   }
+
+  // A song that played through on its own, with nothing already crossing into the next.
+  function finished() {
+    const next = upcoming();
+    if (!next) return;
+    next.advance();
+    return play(next.id, next.fromQueue);
+  }
+
+  // The song to come is made while this one plays (a while after it begins, so that making it does not stutter the start), so that it is there to
+  // cross into the moment this one is nearly over: no wait in silence between the two.
+  let prefetchTimer = null;
+  function prefetchSoon() {
+    clearTimeout(prefetchTimer);
+    const mine = token;
+    prefetchTimer = setTimeout(() => {
+      if (mine !== token || !active) return;
+      const next = upcoming();
+      if (next && !next.same && !songs.has(next.id)) song(next.id).catch(() => {});
+    }, 3000);
+  }
+
+  // Near the end of a song that is to play through, the next one comes in over it: CROSS seconds before the old song's last audible moment, so that it is
+  // still loud as the new one begins, and the new one starts where it first is heard.
+  function watchEnd() {
+    if (!active || state.paused || busy || crossing || active.source.loop || !context) return;
+    const elapsed = active.offset + (context.currentTime - active.startedAt), left = Math.min(active.heardEnd, active.duration) - elapsed;
+    if (left > CROSS) return;
+    const next = upcoming();
+    // (a song that begins again, or one not yet made, goes by the song's own end)
+    if (!next || next.same || !songs.has(next.id)) return;
+    crossing = true;
+    next.advance();
+    if (!next.fromQueue) queue = null;
+    current = next.id;
+    const mine = ++token, found = songs.get(next.id);
+    start(next.id, found, found.heard?.lead ?? 0, false, { fade: Math.max(0.6, Math.min(CROSS, left + 0.4)) })
+      .catch(error => { if (mine === token) notice = message(error); })
+      .finally(() => { crossing = false; render(); });
+  }
+  setInterval(watchEnd, 100);
 
   function load() {
     loading ||= Promise.all([window.colo.jukeboxTracks(), window.colo.jukeboxPlaylists().catch(() => [])])
@@ -539,9 +657,13 @@
     queue = null;
     token++;
     busy = false;
-    silence();
+    crossing = false;
+    clearTimeout(prefetchTimer);
+    silence(0.2);
     songs.clear();
-    context?.close().catch(() => {});
+    // the sound device is let go of once the fade is over
+    const old = context;
+    if (old) setTimeout(() => old.close().catch(() => {}), 350);
     context = gain = null;
     current = null;
     notice = '';
@@ -553,10 +675,16 @@
   window.colo.onJukeboxStop(close);
 
   window.coloJukebox = {
-    show() { load(); render(); },
+    show() { load(); render(); window.coloJukeboxChamber?.show(); },
+    // What the Purification Chamber dances to: the player's analyser, and whether a song is sounding.
+    listen() {
+      return analyser ? { analyser, playing: () => Boolean(active) && !state.paused, position: () => (active ? position() : 0),
+        id: () => active?.id ?? null, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context.outputLatency || context.baseLatency || 0 } : null;
+    },
     // Another game was chosen: its disc has other songs, so the music ends and the list is read again from it.
     reset() {
       close();
+      window.coloJukeboxChamber?.reset();
       tracks = null;
       loading = null;
       tab = 'music';
@@ -574,6 +702,6 @@
       if (!$('page-jukebox').hidden) load();
     },
     // Leaving the page doesn't end the music: the player stays under whatever page is open.
-    hide() {},
+    hide() { window.coloJukeboxChamber?.hide(); },
   };
 })();

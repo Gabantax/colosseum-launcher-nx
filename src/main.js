@@ -56,6 +56,8 @@ const pokedexCries = pokemonCries.create();
 const jukeboxSongs = require('./jukebox-songs');
 const jukeboxPlaylists = require('./jukebox-playlists');
 const { Disc } = require('./disc');
+const fsysFile = require('./fsys');
+const { colosseumPkx: xdPkx } = require('./xd-disc');
 const texturePackLookup = require('./texture-pack-lookup');
 const { pathToFileURL } = require('node:url');
 const battleData = require('./battle-data').create();
@@ -3477,6 +3479,30 @@ function registerHandlers() {
   ipcMain.handle('pokedex-clip', (_event, key, form, index) => {
     const look = pokedexLook(key, String(form));
     return look.pkx ? hsdModel.parseClip(look.pkx, Number(index)) : pokedexData.clip(port.validateRom(config.rom, config.game), look.national, String(form), Number(index));
+  });
+  // The Jukebox's Purification Chamber dances Miror B. in the middle: his battle model, in XD's disc only (null in Colosseum's, which doesn't have him).
+  let miror = null;
+  const mirorPkx = () => {
+    if (config.game !== 'xd') return null;
+    const rom = port.validateRom(config.rom, config.game);
+    if (miror?.rom === rom) return miror.pkx;
+    const disc = new Disc(rom);
+    try {
+      if (!disc.files.has('pkx_mirrabo_0101.fsys')) return null;
+      miror = { rom, pkx: xdPkx(Buffer.from(fsysFile.entries(disc.file('pkx_mirrabo_0101.fsys'))[0].data())) };
+      return miror.pkx;
+    } finally { disc.close(); }
+  };
+  ipcMain.handle('jukebox-miror-model', () => {
+    requireFeature('jukebox', 'The Jukebox');
+    const pkx = mirorPkx();
+    return pkx ? withHdTextures(hsdModel.parseModel(pkx)) : null;
+  });
+  ipcMain.handle('jukebox-miror-clip', (_event, index) => {
+    requireFeature('jukebox', 'The Jukebox');
+    const pkx = mirorPkx();
+    if (!pkx) throw new Error('Miror B. isn\'t on this disc.');
+    return hsdModel.parseClip(pkx, Number(index));
   });
   ipcMain.handle('pokedex-make-pack', (_event, national) => makePokemonPack(Number(national)));
   ipcMain.handle('open-pokemon-packs', () => {
