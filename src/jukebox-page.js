@@ -671,7 +671,7 @@
     // the sound device is let go of once the fade is over
     const old = context;
     if (old) setTimeout(() => old.close().catch(() => {}), 350);
-    context = gain = null;
+    context = gain = analyser = null;   // (the chamber is told there is nothing to hear: it was reading the old one's latency)
     current = null;
     notice = '';
     window.colo.jukeboxClose().catch(() => {});
@@ -747,7 +747,7 @@
     // What the Purification Chamber dances to: the player's analyser, and whether a song is sounding.
     listen() {
       return analyser ? { analyser, playing: () => Boolean(active) && !state.paused, position: () => (active ? position() : 0),
-        id: () => active?.id ?? null, fade: () => active?.fadeSeconds ?? 0, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context.outputLatency || context.baseLatency || 0 } : null;
+        id: () => active?.id ?? null, fade: () => active?.fadeSeconds ?? 0, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context?.outputLatency || context?.baseLatency || 0 } : null;
     },
     // Another game was chosen: its disc has other songs, so the music ends and the list is read again from it.
     reset() {

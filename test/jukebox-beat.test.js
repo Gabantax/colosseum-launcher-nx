@@ -416,3 +416,9 @@ test('a song picked from the list grooves in as slowly as one that follows on: t
   assert.match(chamber, /const GROOVE_MIN = 2\.6;/);
   assert.match(chamber, /duration: Math\.max\(GROOVE_MIN, Math\.min\(3\.2, groovePending\)\)/);
 });
+
+test('closing the player leaves nothing behind for the chamber to trip on: no analyser, and a latency that copes without a context', () => {
+  const page = read('jukebox-page.js');
+  assert.match(page, /context = gain = analyser = null;/);
+  assert.match(page, /latency: \(\) => context\?\.outputLatency \|\| context\?\.baseLatency \|\| 0/);
+});
