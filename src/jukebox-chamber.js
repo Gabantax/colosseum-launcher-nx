@@ -31,7 +31,11 @@ const TEAL = 0x2ee6c8, DEEP = 0x07262c;
 const clamp01 = x => Math.max(0, Math.min(1, x));
 const palette = { tone: 0.35, hue: 0.5, lightness: 0.5, glow: new THREE.Color(TEAL), warm: new THREE.Color(0xffd45a), bg: new THREE.Color(DEEP),
   floor: new THREE.Color(0x0a2a30), dais: new THREE.Color(0x0f3d44), base: new THREE.Color(0x0d3840) };
+// Which hall: XD's round teal one, or Colosseum's, where Miror B. dances on an eight-sided gold platform on a star-patterned earth floor, in amber light.
+// It sets the colours (the tone still runs dark to light, from a deep wine through to a bright gold, with the key tinting it) and the room's shapes.
+let hall = 'xd';
 function tint(tone, keyShift = 0) {
+  if (hall === 'colosseum') return tintColosseum(tone, keyShift);
   // (songs sit in the middle of what the analysis gives, minor ones a little under 0.45 and major ones a little over, so the middle is steepened: songs of
   // different keys look different, and a swing within one song still goes the whole way)
   const t = palette.tone = clamp01(0.5 + (tone - 0.45) * 1.9), hue = palette.hue = (258 - 86 * t + keyShift) / 360;
@@ -42,6 +46,17 @@ function tint(tone, keyShift = 0) {
   palette.floor.setHSL(hue, 0.62, 0.06 + 0.17 * t);
   palette.dais.setHSL(hue, 0.62, 0.09 + 0.18 * t);
   palette.base.setHSL(hue, 0.62, 0.085 + 0.18 * t);
+}
+function tintColosseum(tone, keyShift) {
+  const t = palette.tone = clamp01(0.5 + (tone - 0.45) * 1.9), hue = palette.hue = (((338 + 78 * t + keyShift) % 360) + 360) % 360 / 360;
+  const earth = ((26 + 10 * t) % 360) / 360;   // the floor and platforms stay earth and gold, and only lean toward the light
+  palette.lightness = 0.38 + 0.34 * t;
+  palette.glow.setHSL(hue, 0.9 - 0.3 * clamp01((t - 0.4) / 0.6), 0.44 + 0.34 * t);
+  palette.warm.setHSL(((18 + 40 * t) % 360) / 360, 0.95, 0.5 + 0.26 * t);
+  palette.bg.setHSL(earth, 0.5, 0.03 + 0.1 * t);
+  palette.floor.setHSL(earth, 0.5, 0.07 + 0.14 * t);
+  palette.dais.setHSL(((40 + 6 * t) % 360) / 360, 0.5, 0.1 + 0.15 * t);
+  palette.base.setHSL(((96 - 20 * t) % 360) / 360, 0.4, 0.07 + 0.12 * t);   // the platforms are green-sided in the game, and gold on top
 }
 const AMBIENT = [0.75, 0.8, 0.82];
 const LIGHTS = [{ direction: [-0.5, 1.2, 1.4], color: [0.8, 0.78, 0.72] }, { direction: [0.7, -0.4, -1], color: [0.12, 0.3, 0.3] }];
@@ -69,8 +84,8 @@ function glyphTexture(glyph, color) {
   return texture;
 }
 
-function glow(radius, color, opacity) {
-  const mesh = new THREE.Mesh(new THREE.RingGeometry(radius * 0.94, radius, 96), new THREE.MeshBasicMaterial({
+function glow(radius, color, opacity, sides = 96) {
+  const mesh = new THREE.Mesh(new THREE.RingGeometry(radius * 0.94, radius, sides, 1, sides === 8 ? Math.PI / 8 : 0), new THREE.MeshBasicMaterial({
     color, transparent: true, opacity, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
   }));
   mesh.rotation.x = -Math.PI / 2;
@@ -83,24 +98,38 @@ function buildRoom(scene) {
   const own = thing => { room.dispose.push(thing); return thing; };
 
   scene.fog = new THREE.FogExp2(DEEP, 0.045);
+  const gold = hall === 'colosseum', sides = gold ? 8 : 96;   // (Colosseum's platforms and rings are eight-sided)
   // the floor: a dark disc with rings of teal light
   room.floorMat = own(new THREE.MeshBasicMaterial({ color: 0x0a2a30 }));
   const floor = new THREE.Mesh(own(new THREE.CircleGeometry(9, 96)), room.floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.02;
   scene.add(floor);
-  for (const [radius, opacity] of [[8.6, 0.25], [6.4, 0.2], [RING + 0.9, 0.5], [1.6, 0.7]]) {
-    const ring = glow(radius, TEAL, opacity);
+  if (gold) {
+    // Colosseum's floor is a great star: a dim gold one laid down, and its outline in light
+    const points = Array.from({ length: 16 }, (_, i) => { const a = i / 16 * Math.PI * 2 + Math.PI / 8, r = i % 2 ? 5.2 : 8.4; return new THREE.Vector2(Math.sin(a) * r, Math.cos(a) * r); });
+    room.starMat = own(new THREE.MeshBasicMaterial({ color: 0x4a3414 }));
+    const star = new THREE.Mesh(own(new THREE.ShapeGeometry(new THREE.Shape(points))), room.starMat);
+    star.rotation.x = -Math.PI / 2;
+    star.position.y = -0.005;
+    scene.add(star);
+    const outline = new THREE.LineLoop(own(new THREE.BufferGeometry().setFromPoints(points.map(p => new THREE.Vector3(p.x, 0.02, -p.y)))),
+      own(new THREE.LineBasicMaterial({ color: TEAL, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })));
+    room.pulse.push({ material: outline.material, base: 0.8 });
+    scene.add(outline);
+  }
+  for (const [radius, opacity] of (gold ? [[8.9, 0.2], [RING + 0.9, 0.45], [1.6, 0.7]] : [[8.6, 0.25], [6.4, 0.2], [RING + 0.9, 0.5], [1.6, 0.7]])) {
+    const ring = glow(radius, TEAL, opacity, gold ? 8 : 96);
     own(ring.geometry); own(ring.material);
     room.pulse.push({ material: ring.material, base: opacity });
     scene.add(ring);
   }
   // a pedestal under each dancer, and the round dais in the middle
   room.daisMat = own(new THREE.MeshBasicMaterial({ color: 0x0f3d44 }));
-  const dais = new THREE.Mesh(own(new THREE.CylinderGeometry(1.5, 1.7, DAIS, 48)), room.daisMat);
+  const dais = new THREE.Mesh(own(new THREE.CylinderGeometry(1.5, 1.7, DAIS, gold ? 8 : 48)), room.daisMat);
   dais.position.y = DAIS / 2 - 0.02;
   scene.add(dais);
-  const rim = glow(1.5, TEAL, 0.9);
+  const rim = glow(1.5, TEAL, 0.9, gold ? 8 : 96);
   rim.position.y = DAIS - 0.01;
   own(rim.geometry); own(rim.material);
   room.pulse.push({ material: rim.material, base: 0.9 });
@@ -108,10 +137,10 @@ function buildRoom(scene) {
   room.pedestals = beatOf().ring(DANCERS, RING, Math.PI / DANCERS).map(({ x, z }) => {
     const baseMat = own(new THREE.MeshBasicMaterial({ color: 0x0d3840 }));
     room.baseMats.push(baseMat);
-    const base = new THREE.Mesh(own(new THREE.CylinderGeometry(1.15, 1.25, 0.22, 40)), baseMat);
+    const base = new THREE.Mesh(own(new THREE.CylinderGeometry(1.15, 1.25, 0.22, gold ? 8 : 40)), baseMat);
     base.position.set(x, 0.09, z);
     scene.add(base);
-    const edge = glow(1.2, TEAL, 0.85);
+    const edge = glow(1.2, TEAL, 0.85, gold ? 8 : 96);
     edge.position.set(x, 0.21, z);
     own(edge.geometry); own(edge.material);
     room.edges.push({ material: edge.material, base: 0.85, level: 1, flash: 0 });
@@ -430,7 +459,8 @@ const savedTier = () => { try { const n = Number(localStorage.getItem(QUALITY));
 const saveTier = tier => { try { localStorage.setItem(QUALITY, String(tier)); } catch (_) { /* private mode */ } };
 const calmer = () => { try { return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } };
 
-export function createChamber(canvas) {
+export function createChamber(canvas, which = 'xd') {
+  hall = which === 'colosseum' ? 'colosseum' : 'xd';
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   let tier = Math.min(savedTier() ?? TIERS.length - 1, calmer() ? 2 : TIERS.length - 1), judged = [], settling = SETTLE_FRAMES;
   const quality = () => TIERS[tier];
@@ -1018,6 +1048,7 @@ export function createChamber(canvas) {
     scene.fog.color.copy(palette.bg);
     renderer.setClearColor(palette.bg, 1);
     room.floorMat.color.copy(palette.floor);
+    room.starMat?.color.copy(palette.floor).multiplyScalar(2.2);
     room.daisMat.color.copy(palette.dais);
     for (const base of room.baseMats) base.color.copy(palette.base);
     for (const ring of room.pulse) ring.material.color.copy(palette.glow);
@@ -1336,12 +1367,16 @@ async function loadStar(mine) {
   } catch (_) { /* no Miror B. on this disc */ }
 }
 
+// Which game's hall: the chosen game's (it is asked again when the game is changed)
+let hallGame = 'xd';
+let hallKnown = window.colo.jukeboxGame().then(game => { hallGame = game; }, () => {});
+
 function open() {
   if (chamber) return chamber;
   // a new canvas each time: a context that was let go can't make another
   const canvas = $('jukebox-chamber-canvas').cloneNode(false);
   $('jukebox-chamber-canvas').replaceWith(canvas);
-  try { chamber = createChamber(canvas); }
+  try { chamber = createChamber(canvas, hallGame); }
   catch (_) { setStatus('The 3D view couldn\'t start. Restart the launcher to reset its graphics.'); return null; }
   chamber.listenTo(window.coloJukebox?.listen ?? null);
   return chamber;
@@ -1362,7 +1397,8 @@ function close() {
   setStatus('');
 }
 
-function sync() {
+function sync() { hallKnown.then(syncNow); }
+function syncNow() {
   const page = $('page-jukebox');
   const show = wanted && !page.hidden;
   $('jukebox-chamber').hidden = !show;
@@ -1391,7 +1427,7 @@ window.coloJukeboxChamber = {
   show() { sync(); },
   hide() { close(); },
   // another game's disc: its Ludicolo are read again
-  reset() { close(); },
+  reset() { close(); hallKnown = window.colo.jukeboxGame().then(game => { hallGame = game; }, () => {}); },
   // music has started: the dancers wake
   wake() { chamber?.wake(); },
 };

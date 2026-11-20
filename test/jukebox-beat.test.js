@@ -89,14 +89,15 @@ test('the chamber\'s page and script agree: every element it looks up exists, an
   assert.match(chamber, /NATIONAL_LUDICOLO = 272/);
 });
 
-test('Miror B. dances in the middle: the page asks for his model, and only XD\'s disc answers', () => {
+test('Miror B. dances in the middle: the page asks for his model, which each game\'s disc has under its own name', () => {
   const chamber = read('jukebox-chamber.js'), main = read('main.js'), preload = read('preload.js');
   assert.match(chamber, /jukeboxMirorModel\(\)/);
   assert.match(chamber, /setStar\(model, idleClip, stepClips\)/);
   assert.match(preload, /jukeboxMirorModel: \(\) => ipcRenderer\.invoke\('jukebox-miror-model'\)/);
   assert.match(preload, /jukeboxMirorClip: index => ipcRenderer\.invoke\('jukebox-miror-clip', index\)/);
   assert.match(main, /ipcMain\.handle\(`jukebox-\$\{name\}-model`/);
-  assert.match(main, /if \(xdOnly && config\.game !== 'xd'\) return null;/);
+  // XD's Miror B. is the mirrabo model, and Colosseum's boss555
+  assert.match(main, /miror: \(\) => \(config\.game === 'xd' \? 'pkx_mirrabo_0101\.fsys' : 'pkx_boss555_a1\.fsys'\)/);
   assert.match(main, /pkx_mirrabo_0101\.fsys/);
 });
 
@@ -423,4 +424,16 @@ test('closing the player leaves nothing behind for the chamber to trip on: no an
   const page = read('jukebox-page.js');
   assert.match(page, /context = gain = analyser = null;/);
   assert.match(page, /latency: \(\) => context\?\.outputLatency \|\| context\?\.baseLatency \|\| 0/);
+});
+
+test('Colosseum has a hall of its own: Miror B.\'s eight-sided gold platforms on a star floor, in amber', () => {
+  const chamber = read('jukebox-chamber.js'), main = read('main.js'), preload = read('preload.js');
+  assert.match(chamber, /export function createChamber\(canvas, which = 'xd'\)/);
+  assert.match(chamber, /hall = which === 'colosseum' \? 'colosseum' : 'xd'/);
+  assert.match(chamber, /function tintColosseum\(tone, keyShift\)/);
+  assert.match(chamber, /const gold = hall === 'colosseum', sides = gold \? 8 : 96/);
+  assert.match(chamber, /createChamber\(canvas, hallGame\)/);
+  assert.match(main, /ipcMain\.handle\('jukebox-game', \(\) => config\.game\)/);
+  assert.match(preload, /jukeboxGame: \(\) => ipcRenderer\.invoke\('jukebox-game'\)/);
+  assert.doesNotMatch(main, /DEBUG_MIROR/);
 });

@@ -3527,8 +3527,7 @@ function registerHandlers() {
   // The Jukebox's Purification Chamber dances Ludicolo round the edge and Miror B. in the middle, read straight from the disc's own files (the Pokédex's
   // way would read the whole species list first, which takes a fifth of a second, to find the one file). Miror B. is in XD's disc only (null in Colosseum's).
   const dancerPkxs = new Map();
-  const dancerPkx = (file, { xdOnly = false } = {}) => {
-    if (xdOnly && config.game !== 'xd') return null;
+  const dancerPkx = file => {
     const rom = port.validateRom(config.rom, config.game), key = `${rom}|${file}`;
     if (dancerPkxs.has(key)) return dancerPkxs.get(key);
     const disc = new Disc(rom);
@@ -3540,15 +3539,18 @@ function registerHandlers() {
       return pkx;
     } finally { disc.close(); }
   };
-  for (const [name, file, options, what] of [['ludicolo', 'pkx_runpappa.fsys', {}, 'Ludicolo'], ['miror', 'pkx_mirrabo_0101.fsys', { xdOnly: true }, 'Miror B.']]) {
+  // Ludicolo is in both games under one name; Miror B. is a trainer model in each, under another (XD's mirrabo, and Colosseum's boss555, the first of its Cipher bosses)
+  ipcMain.handle('jukebox-game', () => config.game);
+  const dancerFiles = { ludicolo: () => 'pkx_runpappa.fsys', miror: () => (config.game === 'xd' ? 'pkx_mirrabo_0101.fsys' : 'pkx_boss555_a1.fsys') };
+  for (const [name, what] of [['ludicolo', 'Ludicolo'], ['miror', 'Miror B.']]) {
     ipcMain.handle(`jukebox-${name}-model`, () => {
       requireFeature('jukebox', 'The Jukebox');
-      const pkx = dancerPkx(file, options);
+      const pkx = dancerPkx(dancerFiles[name]());
       return pkx ? withHdTextures(hsdModel.parseModel(pkx)) : null;
     });
     ipcMain.handle(`jukebox-${name}-clip`, (_event, index) => {
       requireFeature('jukebox', 'The Jukebox');
-      const pkx = dancerPkx(file, options);
+      const pkx = dancerPkx(dancerFiles[name]());
       if (!pkx) throw new Error(`${what} isn't on this disc.`);
       return hsdModel.parseClip(pkx, Number(index));
     });
