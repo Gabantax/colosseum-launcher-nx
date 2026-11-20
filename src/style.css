@@ -1860,3 +1860,8 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .jukebox-chamber-back { position: absolute; top: 16px; left: 16px; border-color: #ffffff55; background: #0c0610b8; color: #fbeff8; backdrop-filter: blur(4px); pointer-events: auto; }
 .jukebox-chamber-back kbd { padding: 1px 6px; border: 1px solid #ffffff44; border-radius: 4px; background: #ffffff1a; font: inherit; font-size: 11px; font-weight: 600; opacity: .85; }
 @media (max-width: 900px) { .jukebox-page > .modal-head { flex-wrap: wrap; gap: 12px; } .jukebox-viz { margin-left: 0; } }
+
+/* A drop flashes the whole hall, and a break dims it (the chamber's own layer, behind the page's songs) */
+.jukebox-chamber-flash, .jukebox-chamber-dim { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.jukebox-chamber-flash { background: #fff; mix-blend-mode: screen; }
+.jukebox-chamber-dim { background: #02060a; }

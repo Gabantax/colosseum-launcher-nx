@@ -95,8 +95,8 @@ test('Miror B. dances in the middle: the page asks for his model, and only XD\'s
   assert.match(chamber, /setStar\(model, idleClip, stepClips\)/);
   assert.match(preload, /jukeboxMirorModel: \(\) => ipcRenderer\.invoke\('jukebox-miror-model'\)/);
   assert.match(preload, /jukeboxMirorClip: index => ipcRenderer\.invoke\('jukebox-miror-clip', index\)/);
-  assert.match(main, /ipcMain\.handle\('jukebox-miror-model'/);
-  assert.match(main, /if \(config\.game !== 'xd'\) return null;/);
+  assert.match(main, /ipcMain\.handle\(`jukebox-\$\{name\}-model`/);
+  assert.match(main, /if \(xdOnly && config\.game !== 'xd'\) return null;/);
   assert.match(main, /pkx_mirrabo_0101\.fsys/);
 });
 
@@ -113,7 +113,7 @@ test('the chamber draws the sound as ribbons and a starburst, from the analyser\
   const chamber = read('jukebox-chamber.js');
   assert.match(chamber, /function buildVisualizer\(scene\)/);
   assert.match(chamber, /getByteTimeDomainData\(wave\)/);
-  assert.match(chamber, /visualizer\.update\(wave, bins, pulse, seconds, playing, energyS\)/);
+  assert.match(chamber, /visualizer\.update\(wave, bins, pulse, seconds, playing, energyS, palette, buildupS\)/);
   assert.match(chamber, /visualizer\.dispose\(\)/);
 });
 
@@ -203,8 +203,12 @@ test('the hop lands on the beat in the dancer\'s body too: its bounce is zero on
 
 test('the dancers keep to the song\'s own beat grid when it has one, and to the live clock when it has not', () => {
   const chamber = read('jukebox-chamber.js'), page = read('jukebox-page.js'), html = read('index.html');
-  assert.match(page, /refineEvents\(intensity\.events, grid,/);
-  assert.match(page, /window\.coloJukeboxTempo\?\.analyze\(rendered\.left, rendered\.right, rendered\.rate\)/);
+  // the song is studied off the page's thread (jukebox-analysis-worker.js runs study() from jukebox-tempo.js)
+  const tempoSource = read('jukebox-tempo.js'), worker = read('jukebox-analysis-worker.js');
+  assert.match(tempoSource, /refineEvents\(result\.intensity\.events, result\.grid,/);
+  assert.match(worker, /importScripts\('jukebox-tempo\.js'\)/);
+  assert.match(worker, /coloJukeboxTempo\.study\(left, right, rate, visual\)/);
+  assert.match(page, /new Worker\('jukebox-analysis-worker\.js'\)/);
   assert.match(page, /grid: \(\) => \(active \? songs\.get\(active\.id\)\?\.grid \?\? null : null\)/);
   assert.match(chamber, /function beatNow\(seconds\)/);
   assert.match(chamber, /source\.position\(\) - source\.latency\(\) - grid\.offset/);
@@ -284,11 +288,94 @@ test('songs give way to each other with fades: the next is made ahead, crosses i
   assert.match(page, /function watchEnd\(\)/);
   assert.match(page, /setInterval\(watchEnd, 100\)/);
   assert.match(page, /found\.heard\?\.lead \?\? 0, false, \{ fade: /);
-  assert.match(page, /function audible\(left, right, rate\)/);
+  assert.match(read('jukebox-tempo.js'), /function audible\(left, right, rate\)/);
   // picking, Next and Previous leave the song playing until the new one is ready, then crossfade; Stop and closing fade out
   assert.match(page, /await start\(id, found, 0, false, \{ fade: active \? MANUAL : QUICK \}\)/);
   assert.match(page, /silence\(0\.4\)/);
   // the chamber starts a new song's beat clock when one crosses into the next while the sound never stops
   assert.match(page, /id: \(\) => active\?\.id \?\? null,/);
   assert.match(chamber, /songId !== lastSongId/);
+});
+
+test('the visualizer takes its colours from the music\'s tone: dark tones indigo and violet, light tones pale aqua and gold', () => {
+  const chamber = read('jukebox-chamber.js'), page = read('jukebox-page.js');
+  assert.match(chamber, /function tint\(tone, keyShift = 0\)/);
+  assert.match(chamber, /palette\.hue = \(258 - 86 \* t \+ keyShift\) \/ 360/);                      // indigo at the dark end, aqua at the light
+  assert.match(chamber, /function toneNow\(\)/);
+  assert.match(chamber, /toneAt\(profile, source\.position\(\) \+ 0\.15\)/);
+  assert.match(chamber, /line\.material\.color\.setHSL\(colours\.hue - i \* 0\.012/);   // the ribbons
+  assert.match(chamber, /room\.moteMaterial\.color\.copy\(palette\.glow\)/);
+  assert.match(chamber, /toneS \+= \(\(playing && !still \? toneNow\(\) : 0\.4\) - toneS\)/);  // eased, so that the colours drift
+  // the dancers' own lighting is left alone
+  assert.ok(!/lighting\.(ambientLight|lightColor)[^;]*palette/.test(chamber));
+});
+
+test('when one song crosses into the next the dancers drop what they had planned in the old song\'s beats and groove into the new one', () => {
+  const chamber = read('jukebox-chamber.js'), page = read('jukebox-page.js');
+  assert.match(page, /fade: \(\) => active\?\.fadeSeconds \?\? 0,/);
+  assert.match(page, /fadeSeconds: seconds,/);
+  assert.match(chamber, /function resetDancing\(\)/);
+  assert.match(chamber, /const crossed = playing && lastSongId !== null && songId !== null;/);
+  assert.match(chamber, /groovePending = crossed \? source\.fade\?\.\(\) \?\? 0 : 0;/);
+  assert.match(chamber, /grooving = gt >= 0 && Boolean\(star \? flip : dancer\.clips\.hop\)/);
+  // a wave round the ring: each dancer begins a little after the one before
+  assert.match(chamber, /dancer\.index \* 0\.09/);
+  assert.match(chamber, /&& !grooving/);
+});
+
+test('the key tints the visualizer a little: each key has its place on the circle of fifths', () => {
+  const chamber = read('jukebox-chamber.js');
+  assert.match(chamber, /function keyShiftNow\(\)/);
+  assert.match(chamber, /\(key\.tonic \* 7\) % 12 \/ 11 - 0\.5\) \* 36/);
+  assert.match(chamber, /tint\(toneS, keyShiftS\)/);
+  assert.match(chamber, /function tint\(tone, keyShift = 0\)/);
+});
+
+test('the chamber has a stage: ripples from the dancers\' feet on the beat, lamps that sweep and snap, a camera that moves with the music, and the song\'s moments', () => {
+  const chamber = read('jukebox-chamber.js'), html = read('index.html'), css = read('style.css');
+  // ripples and lamps
+  assert.match(chamber, /function buildStage\(scene, spots\)/);
+  assert.match(chamber, /ripple\(x, z, strength, size = 4, warm = false\)/);
+  assert.match(chamber, /coneGeometry\.rotateX\(-Math\.PI \/ 2\)/);
+  assert.match(chamber, /beam\.cone\.lookAt\(beam\.target\)/);
+  assert.match(chamber, /const pattern = energy < 0\.35 \? \(bar % 2 \? 3 : 0\) : hash\(bar\) % 5/);   // a quiet song sweeps; a lively one changes what it aims at each bar
+  // one ripple a beat, round the ring, and from the middle on the first beat of a bar
+  assert.match(chamber, /whole === lastBeat \+ 1/);
+  assert.match(chamber, /slot = \(\(whole % DANCERS\) \+ DANCERS\) % DANCERS/);
+  assert.match(chamber, /if \(inBar === 0\) stage\.ripple\(0, 0,/);
+  // the camera
+  assert.match(chamber, /const orbit = Math\.sin\(seconds \* 0\.11\) \* 0\.28/);
+  assert.match(chamber, /- 0\.12 \* dolly - 0\.05 \* buildupS/);
+  // a drop flashes and pushes in, a break dims and gathers the lamps, and a build-up draws the ribbons in
+  assert.match(chamber, /if \(kind === 'drop'\) \{\s*flash = 1; dolly = 1;/);
+  assert.match(chamber, /else if \(kind === 'break'\) \{\s*dimmer = 1; solo = 1;/);
+  assert.match(chamber, /moment = \{ kind: h\.kind \|\| 'change' \}/);
+  assert.match(chamber, /function buildupNow\(\)/);
+  assert.match(chamber, /\* \(1 - 0\.2 \* buildup\) \+ sample/);
+  assert.match(chamber, /aim\(solo > 0\.5 \? 1 : pattern, i, seconds, beam\.goal\)/);
+  // the flash and the dimming are layers of the chamber, behind the page's songs
+  assert.match(html, /id="jukebox-chamber-flash"[^>]*><\/div><div id="jukebox-chamber-dim"/);
+  assert.match(css, /\.jukebox-chamber-flash, \.jukebox-chamber-dim \{ position: absolute; inset: 0; opacity: 0; pointer-events: none; \}/);
+  // the lamps and ripples add less on light songs, or the hall would wash out
+  assert.match(chamber, /\(1 - 0\.4 \* palette\.tone\)/);
+});
+
+test('the chamber asks less of a weak machine: tiers, a governor that steps down on slow frames, and a glow pass that is hand-written', () => {
+  const chamber = read('jukebox-chamber.js'), post = read('jukebox-post.js');
+  // four tiers, the top one the default, saved so the next open starts where this one settled
+  assert.match(chamber, /export const TIERS = \[/);
+  assert.match(chamber, /name: 'minimal'[^\n]*fps: 30/);
+  assert.match(chamber, /savedTier\(\) \?\? TIERS\.length - 1/);
+  assert.match(chamber, /prefers-reduced-motion: reduce/);
+  assert.match(chamber, /if \(judged\.reduce\(\(a, b\) => a \+ b, 0\) \/ judged\.length > SLOW_MS\) stepDown\(\)|> SLOW_MS\) stepDown\(\)/);
+  assert.match(chamber, /const slower = tier => Math\.max\(0, tier - 1\)/);
+  // the lower tiers draw nothing extra, and the lowest draws every other frame
+  assert.match(chamber, /const glowing = post && quality\(\)\.glow && !still/);
+  assert.match(chamber, /lamps: quality\(\)\.lamps/);
+  // the glow: drawn again small on black, fed back into itself for trails, blurred for bloom, and added over the picture (no three examples in the package)
+  assert.doesNotMatch(post, /examples\/jsm|EffectComposer|UnrealBloomPass/);
+  assert.match(post, /prepare\(scene, camera, mode,/);
+  assert.match(post, /composite\(trailGain, bloomGain\)/);
+  assert.match(post, /colorspace_fragment/);
+  assert.match(chamber, /post\?\.wipe\(\)/);
 });

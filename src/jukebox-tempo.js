@@ -138,6 +138,51 @@
   }
 
 
+  // How light or dark the song sounds at `seconds` into it, 0 (dark) to 1 (light); 0.5 where there is no profile.
+  function toneAt(profile, seconds) {
+    const values = profile?.tone;
+    if (!values?.length) return 0.5;
+    const f = Math.max(0, Math.min(values.length - 1, seconds / profile.step)), i = Math.floor(f), j = Math.min(values.length - 1, i + 1);
+    return values[i] * (1 - (f - i)) + values[j] * (f - i);
+  }
+
+  // The key at `seconds` into the song: { tonic (0 is C, 1 is C sharp...), mode (-1 minor to 1 major) }; null where there is no profile.
+  function keyAt(profile, seconds) {
+    if (!profile?.key?.length) return null;
+    const i = Math.max(0, Math.min(profile.key.length - 1, Math.round(seconds / profile.step)));
+    return { tonic: profile.key[i], mode: profile.mode[i] };
+  }
+
+  // Where a song is really heard: when it first gets loud enough to hear (a second's silence before the music is not worth waiting out) and when it
+  // last is (its end is often a fade-out, or a reverb tail, that the next song should not wait for). Loud enough is a fifth of the song's usual level.
+  function audible(left, right, rate) {
+    const step = Math.max(1, Math.round(rate * 0.05)), windows = Math.floor(left.length / step);
+    if (windows < 40) return { lead: 0, end: left.length / rate };
+    const level = new Float32Array(windows);
+    for (let w = 0; w < windows; w++) {
+      let sum = 0;
+      for (let i = w * step; i < (w + 1) * step; i++) { const x = (left[i] + right[i]) / 2; sum += x * x; }
+      level[w] = Math.sqrt(sum / step);
+    }
+    const usual = Float32Array.from(level).sort()[Math.floor(windows * 0.6)], floor = usual * 0.2;
+    let first = 0, last = windows - 1;
+    while (first < windows - 1 && level[first] < floor) first++;
+    while (last > first && level[last] < floor) last--;
+    return { lead: Math.min(1.5, first * 0.05), end: Math.min(left.length / rate, (last + 1) * 0.05) };
+  }
+
+  // Everything the page wants to know about a song, in one go (this is what the analysis worker runs): where it is heard (always), and, when `visual`, its
+  // beat grid, its intensity, tone and key and its drops, breaks and changes put on the beat.
+  function study(left, right, rate, visual = true) {
+    const result = { heard: audible(left, right, rate), grid: null, intensity: null };
+    if (!visual) return result;
+    const found = analyze(left, right, rate);
+    if (found && found.confidence >= CONFIDENT) result.grid = found;
+    result.intensity = intensity(left, right, rate);
+    if (result.intensity && result.grid) result.intensity.events = refineEvents(result.intensity.events, result.grid, left, right, rate);
+    return result;
+  }
+
   // What an event needs: the loudness cue (the 0..1 change in intensity between the last two seconds and the next two) and the texture cue (the
   // novelty, 0 to 1) are each measured against a typical clear one; an event's score is the larger, with a little more for both, and must reach EVENT_SCORE.
   const EVENT_SOUND = 0.45, EVENT_TEXTURE = 0.22, EVENT_SCORE = 0.9, EVENT_APART = 10;
@@ -156,16 +201,24 @@
     const N = 1024, bands = 40, re = new Float64Array(N), im = new Float64Array(N), window = new Float64Array(N);
     for (let i = 0; i < N; i++) window[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
     const edges = Array.from({ length: bands + 1 }, (_, b) => Math.round(80 * Math.pow(3800 / 80, b / bands) / (sr / N)));
-    const feature = Array.from({ length: count }, () => new Float64Array(bands));
+    const feature = Array.from({ length: count }, () => new Float64Array(bands)), centroid = new Float64Array(count), bass = new Float64Array(count);
+    // each band's middle, in hertz, for where the sound's weight is (its centroid) and how much of it is low
+    const middle = Array.from({ length: bands }, (_, b) => 80 * Math.pow(3800 / 80, (b + 0.5) / bands));
     for (let c = 0; c < count; c++) {
       const start = Math.max(0, Math.min(length - N, Math.round((c + 0.5) * size / decimate - N / 2)));
       for (let i = 0; i < N; i++) { re[i] = (mono[start + i] || 0) * window[i]; im[i] = 0; }
       fft(re, im);
+      let total = 0, weighted = 0, low = 0;
       for (let b = 0; b < bands; b++) {
         let sum = 0, n = 0;
         for (let k = edges[b]; k < Math.max(edges[b] + 1, edges[b + 1]); k++) { sum += Math.hypot(re[k], im[k]); n++; }
-        feature[c][b] = Math.log1p(50 * sum / n);
+        const level = sum / n;
+        feature[c][b] = Math.log1p(50 * level);
+        total += level; weighted += level * middle[b];
+        if (middle[b] < 260) low += level;
       }
+      centroid[c] = total > 1e-9 ? weighted / total : 0;
+      bass[c] = total > 1e-9 ? low / total : 0;
     }
     // the shape of each moment: each band less its average over the song, then the moment less its own average, as a unit vector
     const mean = new Float64Array(bands);
@@ -201,7 +254,78 @@
         novelty[t] += Math.max(0, sum / weight) / 2;
       }
     }
-    return novelty;
+    return { novelty, centroid, bass };
+  }
+
+
+  // The notes of each moment: which of the twelve pitch classes (C, C sharp, D...) are sounding, how high the music sits, and, from the notes of the last and
+  // next few seconds, the key it is in and whether that key is major or minor (the Krumhansl-Schmuckler method: the notes heard are compared with how
+  // often each note of a major or minor key is used, in each of the twelve keys). `size` is the samples in a step.
+  const KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+  const KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+  function correlation(a, b) {
+    let ma = 0, mb = 0;
+    for (let i = 0; i < 12; i++) { ma += a[i] / 12; mb += b[i] / 12; }
+    let ab = 0, aa = 0, bb = 0;
+    for (let i = 0; i < 12; i++) { ab += (a[i] - ma) * (b[i] - mb); aa += (a[i] - ma) ** 2; bb += (b[i] - mb) ** 2; }
+    return aa > 0 && bb > 0 ? ab / Math.sqrt(aa * bb) : 0;
+  }
+  function pitchTrack(left, right, rate, count, size, reach = 24) {
+    const decimate = Math.max(1, Math.floor(rate / 8000)), sr = rate / decimate, length = Math.floor(left.length / decimate), mono = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+      let sum = 0;
+      for (let k = 0; k < decimate; k++) sum += left[i * decimate + k] + right[i * decimate + k];
+      mono[i] = sum / (2 * decimate);
+    }
+    const N = 4096, re = new Float64Array(N), im = new Float64Array(N), window = new Float64Array(N);
+    for (let i = 0; i < N; i++) window[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+    // the bins that sit on a note (within a third of a semitone of one) between about C2 and G6, and the pitch class and pitch of each
+    const bins = [];
+    for (let k = 1; k < N / 2; k++) {
+      const hz = k * sr / N;
+      if (hz < 65 || hz > 1600) continue;
+      const midi = 69 + 12 * Math.log2(hz / 440), near = Math.round(midi);
+      if (Math.abs(midi - near) <= 0.34) bins.push({ k, pc: ((near % 12) + 12) % 12, midi });
+    }
+    const chroma = Array.from({ length: count }, () => new Float64Array(12)), register = new Float64Array(count);
+    for (let c = 0; c < count; c++) {
+      const start = Math.max(0, Math.min(length - N, Math.round((c + 0.5) * size / decimate - N / 2)));
+      for (let i = 0; i < N; i++) { re[i] = (mono[start + i] || 0) * window[i]; im[i] = 0; }
+      fft(re, im);
+      let heard = 0, high = 0, total = 0;
+      for (const { k, pc, midi } of bins) {
+        const mag = Math.hypot(re[k], im[k]);
+        chroma[c][pc] += Math.sqrt(mag);
+        heard += mag; high += mag * midi;
+      }
+      for (let i = 0; i < 12; i++) total += chroma[c][i];
+      if (total > 1e-9) for (let i = 0; i < 12; i++) chroma[c][i] /= total; else chroma[c].fill(1 / 12);
+      // how high the music sits: the loudness-weighted middle pitch, from about E2 (40) to C7 (96) as 0 to 1
+      register[c] = heard > 1e-9 ? Math.max(0, Math.min(1, (high / heard - 40) / 56)) : 0.5;
+    }
+    // the key at each step, from the notes of `reach` steps either side
+    const mode = new Float64Array(count), key = new Uint8Array(count), strength = new Float64Array(count);
+    const prefix = Array.from({ length: 12 }, () => new Float64Array(count + 1));
+    for (let c = 0; c < count; c++) for (let i = 0; i < 12; i++) prefix[i][c + 1] = prefix[i][c] + chroma[c][i];
+    const rotated = (profile, k) => Array.from({ length: 12 }, (_, i) => profile[(i - k + 12) % 12]);
+    const majors = Array.from({ length: 12 }, (_, k) => rotated(KS_MAJOR, k)), minors = Array.from({ length: 12 }, (_, k) => rotated(KS_MINOR, k));
+    const heardNotes = new Float64Array(12);
+    for (let c = 0; c < count; c++) {
+      const from = Math.max(0, c - reach), to = Math.min(count, c + reach + 1);
+      for (let i = 0; i < 12; i++) heardNotes[i] = (prefix[i][to] - prefix[i][from]) / (to - from);
+      let bestMajor = -2, majorKey = 0, bestMinor = -2, minorKey = 0;
+      for (let k = 0; k < 12; k++) {
+        const major = correlation(heardNotes, majors[k]), minor = correlation(heardNotes, minors[k]);
+        if (major > bestMajor) { bestMajor = major; majorKey = k; }
+        if (minor > bestMinor) { bestMinor = minor; minorKey = k; }
+      }
+      // major or minor: how much better the best major key fits than the best minor one, and the key of the better. A minor key fits a major one nearly
+      // as well (its relative major has the same notes), so plain minor music still leans a little to major: that lean is taken off first
+      mode[c] = Math.max(-1, Math.min(1, (bestMajor - bestMinor - 0.05) / 0.12));
+      key[c] = bestMajor >= bestMinor ? majorKey : minorKey;
+      strength[c] = Math.max(bestMajor, bestMinor);
+    }
+    return { register, mode, key, strength };
   }
 
   // How intense each moment of a song is, 0 (calm) to 1 (the song at its most), by quarter second: its loudness and how bright and busy it
@@ -249,7 +373,7 @@
       // (a change in rank alone could be nothing but a flat stretch's noise, so the sound itself must also be a fifth louder or brighter, or less)
       sound[i] = Math.abs(swing[i]) * Math.min(1, Math.max(real(loud, i), real(busy, i)) / 0.2);
     }
-    const texture = textureNovelty(left, right, rate, count, size);
+    const tex = textureNovelty(left, right, rate, count, size), texture = tex.novelty;
     const score = Float64Array.from(sound, (v, i) => {
       const a = v / EVENT_SOUND, b = texture[i] / EVENT_TEXTURE;
       return Math.max(a, b) + 0.25 * Math.min(1, Math.min(a, b));
@@ -264,8 +388,18 @@
     for (const candidate of found.sort((a, b) => b.score - a.score))
       if (events.every(each => Math.abs(each.i - candidate.i) * step >= EVENT_APART)) events.push(candidate);
     events.sort((a, b) => a.i - b.i);
+    // How light or dark each moment sounds, 0 (dark) to 1 (light), from three things: how bright the sound is (where its weight is, and how much of it is
+    // bass), how high the music sits, and whether it is in a major key (light) or a minor one (dark). Half of that is the song's own measure and half
+    // is against the rest of the song (so a dark song is dark all through, and its brightest part still stands out), smoothed over a second or so.
+    const notes = pitchTrack(left, right, rate, count, size);
+    const lightness = Float64Array.from(tex.centroid, (hz, i) => {
+      const bright = Math.max(0, Math.min(1, Math.log2(Math.max(hz, 180) / 180) / Math.log2(1500 / 180)));
+      const timbre = 0.75 * bright + 0.25 * (1 - Math.min(1, tex.bass[i] * 1.6));
+      return 0.4 * timbre + 0.25 * notes.register[i] + 0.35 * (notes.mode[i] + 1) / 2;
+    });
+    const own = smooth(lightness, 2), against = rank(own), tone = Float32Array.from(smooth(own.map((v, i) => 0.5 * v + 0.5 * against[i]), 1));
     // `values` is smoothed over a second or two (for deciding what to do); `fast` follows each quarter second (for what is shown)
-    return { step, values: Float32Array.from(rank(smooth(mixed, 3))), fast: Float32Array.from(rank(smooth(mixed, 0))),
+    return { step, tone, mode: Float32Array.from(notes.mode), key: Uint8Array.from(notes.key), register: Float32Array.from(notes.register), values: Float32Array.from(rank(smooth(mixed, 3))), fast: Float32Array.from(rank(smooth(mixed, 0))),
       events: events.map(each => ({ time: each.i * step, kind: swing[each.i] >= 0.12 ? 'drop' : swing[each.i] <= -0.12 ? 'break' : 'change', strength: each.score })) };
   }
 
@@ -332,7 +466,7 @@
   // What a result's confidence must beat to be trusted: songs with a beat score from about 5 up, and noise about 1.6.
   const CONFIDENT = 3;
 
-  const api = { fft, onsets, analyze, intensity, intensityAt, refineEvents, normalizePeriod, CONFIDENT };
+  const api = { fft, onsets, analyze, audible, study, intensity, intensityAt, toneAt, keyAt, pitchTrack, refineEvents, normalizePeriod, CONFIDENT };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.coloJukeboxTempo = api;
 })(typeof globalThis === 'object' ? globalThis : this);

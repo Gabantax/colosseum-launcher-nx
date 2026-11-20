@@ -57,7 +57,8 @@ const jukeboxSongs = require('./jukebox-songs');
 const jukeboxPlaylists = require('./jukebox-playlists');
 const { Disc } = require('./disc');
 const fsysFile = require('./fsys');
-const { colosseumPkx: xdPkx } = require('./xd-disc');
+const xdDiscModule = require('./xd-disc');
+const xdPkx = xdDiscModule.colosseumPkx;
 const texturePackLookup = require('./texture-pack-lookup');
 const { pathToFileURL } = require('node:url');
 const battleData = require('./battle-data').create();
@@ -3480,30 +3481,35 @@ function registerHandlers() {
     const look = pokedexLook(key, String(form));
     return look.pkx ? hsdModel.parseClip(look.pkx, Number(index)) : pokedexData.clip(port.validateRom(config.rom, config.game), look.national, String(form), Number(index));
   });
-  // The Jukebox's Purification Chamber dances Miror B. in the middle: his battle model, in XD's disc only (null in Colosseum's, which doesn't have him).
-  let miror = null;
-  const mirorPkx = () => {
-    if (config.game !== 'xd') return null;
-    const rom = port.validateRom(config.rom, config.game);
-    if (miror?.rom === rom) return miror.pkx;
+  // The Jukebox's Purification Chamber dances Ludicolo round the edge and Miror B. in the middle, read straight from the disc's own files (the Pokédex's
+  // way would read the whole species list first, which takes a fifth of a second, to find the one file). Miror B. is in XD's disc only (null in Colosseum's).
+  const dancerPkxs = new Map();
+  const dancerPkx = (file, { xdOnly = false } = {}) => {
+    if (xdOnly && config.game !== 'xd') return null;
+    const rom = port.validateRom(config.rom, config.game), key = `${rom}|${file}`;
+    if (dancerPkxs.has(key)) return dancerPkxs.get(key);
     const disc = new Disc(rom);
     try {
-      if (!disc.files.has('pkx_mirrabo_0101.fsys')) return null;
-      miror = { rom, pkx: xdPkx(Buffer.from(fsysFile.entries(disc.file('pkx_mirrabo_0101.fsys'))[0].data())) };
-      return miror.pkx;
+      if (!disc.files.has(file)) return null;
+      const raw = Buffer.from(fsysFile.entries(disc.file(file))[0].data()), pkx = xdDiscModule.isXd(disc) ? xdPkx(raw) : raw;
+      dancerPkxs.set(key, pkx);
+      if (dancerPkxs.size > 4) dancerPkxs.delete(dancerPkxs.keys().next().value);
+      return pkx;
     } finally { disc.close(); }
   };
-  ipcMain.handle('jukebox-miror-model', () => {
-    requireFeature('jukebox', 'The Jukebox');
-    const pkx = mirorPkx();
-    return pkx ? withHdTextures(hsdModel.parseModel(pkx)) : null;
-  });
-  ipcMain.handle('jukebox-miror-clip', (_event, index) => {
-    requireFeature('jukebox', 'The Jukebox');
-    const pkx = mirorPkx();
-    if (!pkx) throw new Error('Miror B. isn\'t on this disc.');
-    return hsdModel.parseClip(pkx, Number(index));
-  });
+  for (const [name, file, options, what] of [['ludicolo', 'pkx_runpappa.fsys', {}, 'Ludicolo'], ['miror', 'pkx_mirrabo_0101.fsys', { xdOnly: true }, 'Miror B.']]) {
+    ipcMain.handle(`jukebox-${name}-model`, () => {
+      requireFeature('jukebox', 'The Jukebox');
+      const pkx = dancerPkx(file, options);
+      return pkx ? withHdTextures(hsdModel.parseModel(pkx)) : null;
+    });
+    ipcMain.handle(`jukebox-${name}-clip`, (_event, index) => {
+      requireFeature('jukebox', 'The Jukebox');
+      const pkx = dancerPkx(file, options);
+      if (!pkx) throw new Error(`${what} isn't on this disc.`);
+      return hsdModel.parseClip(pkx, Number(index));
+    });
+  }
   ipcMain.handle('pokedex-make-pack', (_event, national) => makePokemonPack(Number(national)));
   ipcMain.handle('open-pokemon-packs', () => {
     fs.mkdirSync(pokemonPacksDirectory(), { recursive: true });

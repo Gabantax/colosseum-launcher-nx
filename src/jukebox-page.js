@@ -271,29 +271,42 @@
     state = { ...state, playing: null, paused: false };
   }
 
+  // --- What is worked out about a song, off the page's thread. The sound is copied to a worker (jukebox-analysis-worker.js), which studies it while the song
+  // plays: where it is heard (for the crossfades) and, when the visualizer is on, its beat, intensity, tone and key. The song does not wait for any of it, and
+  // nothing is worked out for the visualizer if the visualizer is off.
+  const visualizerOn = () => { try { return localStorage.getItem('colo.jukebox.chamber') !== 'off'; } catch (_) { return true; } };
+  let analyst = null;
+  const studies = new Map();   // request -> { id, visual }
+  let studyCount = 0;
+  function study(id, visual) {
+    const entry = songs.get(id);
+    if (!entry || entry.studying || entry.studied === 'visual' || (entry.studied && !visual)) return;
+    entry.studying = true;
+    const left = entry.buffer.getChannelData(0).slice(), right = entry.buffer.getChannelData(entry.buffer.numberOfChannels > 1 ? 1 : 0).slice();
+    try {
+      analyst ||= new Worker('jukebox-analysis-worker.js');
+      analyst.onmessage = ({ data }) => {
+        const job = studies.get(data.id);
+        studies.delete(data.id);
+        const found = job && songs.get(job.id);
+        if (!found) return;
+        found.studying = false;
+        if (data.error) return;
+        Object.assign(found, { heard: data.result.heard, grid: data.result.grid, intensity: data.result.intensity, studied: job.visual ? 'visual' : 'heard' });
+        if (active?.id === job.id) active.heardEnd = found.heard.end;
+      };
+      analyst.onerror = () => { for (const { id: each } of studies.values()) { const found = songs.get(each); if (found) found.studying = false; } studies.clear(); };
+      const request = ++studyCount;
+      studies.set(request, { id, visual });
+      analyst.postMessage({ id: request, left, right, rate: entry.buffer.sampleRate, visual }, [left.buffer, right.buffer]);
+    } catch (_) { entry.studying = false; /* the dancers keep their own time, and the songs cross at their ends */ }
+  }
+
   const inFlight = new Map();   // id -> the render under way, so that a song asked for twice (ahead of time, then for real) is made once
   function song(id) {
     if (songs.has(id)) { const found = songs.get(id); songs.delete(id); songs.set(id, found); return Promise.resolve(found); }   // (the most recently used goes last)
     if (!inFlight.has(id)) inFlight.set(id, makeSong(id).finally(() => inFlight.delete(id)));
     return inFlight.get(id);
-  }
-
-  // Where a song is really heard: when it first gets loud enough to hear (a second's silence before the music is not worth waiting out) and when it
-  // last is (its end is often a fade-out, or a reverb tail, that the next song should not wait for). Loud enough is a fifth of the song's usual level.
-  function audible(left, right, rate) {
-    const step = Math.max(1, Math.round(rate * 0.05)), windows = Math.floor(left.length / step);
-    if (windows < 40) return { lead: 0, end: left.length / rate };
-    const level = new Float32Array(windows);
-    for (let w = 0; w < windows; w++) {
-      let sum = 0;
-      for (let i = w * step; i < (w + 1) * step; i++) { const x = (left[i] + right[i]) / 2; sum += x * x; }
-      level[w] = Math.sqrt(sum / step);
-    }
-    const usual = Float32Array.from(level).sort()[Math.floor(windows * 0.6)], floor = usual * 0.2;
-    let first = 0, last = windows - 1;
-    while (first < windows - 1 && level[first] < floor) first++;
-    while (last > first && level[last] < floor) last--;
-    return { lead: Math.min(1.5, first * 0.05), end: Math.min(left.length / rate, (last + 1) * 0.05) };
   }
 
   // The song rendered from the disc (in the main process), as the page keeps it: its sound, loop, beat grid and intensity.
@@ -303,20 +316,11 @@
     const buffer = ctx.createBuffer(2, rendered.left.length, rendered.rate);
     buffer.copyToChannel(rendered.left, 0);
     buffer.copyToChannel(rendered.right, 1);
-    // where the beats fall, for the Purification Chamber's dancers: worked out once, from the sound itself (null where there is no clear beat)
-    let grid = null;
-    try {
-      const found = window.coloJukeboxTempo?.analyze(rendered.left, rendered.right, rendered.rate);
-      if (found && found.confidence >= window.coloJukeboxTempo.CONFIDENT) grid = found;
-    } catch (_) { /* the dancers keep their own time */ }
-    let intensity = null;
-    try {
-      intensity = window.coloJukeboxTempo?.intensity(rendered.left, rendered.right, rendered.rate) ?? null;
-      // the drops and changes of the song, each put on the beat of its grid where the change is
-      if (intensity && grid) intensity.events = window.coloJukeboxTempo.refineEvents(intensity.events, grid, rendered.left, rendered.right, rendered.rate);
-    } catch (_) { /* the dancers go by the live sound */ }
-    songs.set(id, { buffer, loop: rendered.loop, grid, intensity, heard: audible(rendered.left, rendered.right, rendered.rate) });
+    // the song is kept as it is, to be played now; what is worked out about it (where it is heard, and for the visualizer its beat, intensity, tone and key)
+    // comes a little later, from a worker, and is put on it then
+    songs.set(id, { buffer, loop: rendered.loop, grid: null, intensity: null, heard: null, studied: null });
     while (songs.size > KEEP) songs.delete(songs.keys().next().value);
+    study(id, visualizerOn());
     return songs.get(id);
   }
 
@@ -362,7 +366,7 @@
     const known = tracks?.find(each => each.id === id)?.seconds;
     const shown = known > 0 ? Math.min(known, buffer.duration) : buffer.duration;
     const going = active;
-    active = { id, source, fader, loop: Boolean(loop), region: loop, duration: buffer.duration, shown, offset, startedAt: ctx.currentTime, heardEnd: songs.get(id)?.heard?.end ?? buffer.duration };
+    active = { id, source, fader, loop: Boolean(loop), region: loop, duration: buffer.duration, shown, offset, startedAt: ctx.currentTime, fadeSeconds: seconds, heardEnd: songs.get(id)?.heard?.end ?? buffer.duration };
     state = { ...state, playing: id, paused: keepPaused };
     source.start(0, offset);
     fade(fader.gain, true, seconds);
@@ -661,6 +665,9 @@
     clearTimeout(prefetchTimer);
     silence(0.2);
     songs.clear();
+    analyst?.terminate();
+    analyst = null;
+    studies.clear();
     // the sound device is let go of once the fade is over
     const old = context;
     if (old) setTimeout(() => old.close().catch(() => {}), 350);
@@ -676,10 +683,12 @@
 
   window.coloJukebox = {
     show() { load(); render(); window.coloJukeboxChamber?.show(); },
+    // The visualizer was turned on with a song already playing, which was studied only for where it is heard: now it is studied for its beat too.
+    study() { if (active) study(active.id, true); },
     // What the Purification Chamber dances to: the player's analyser, and whether a song is sounding.
     listen() {
       return analyser ? { analyser, playing: () => Boolean(active) && !state.paused, position: () => (active ? position() : 0),
-        id: () => active?.id ?? null, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context.outputLatency || context.baseLatency || 0 } : null;
+        id: () => active?.id ?? null, fade: () => active?.fadeSeconds ?? 0, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context.outputLatency || context.baseLatency || 0 } : null;
     },
     // Another game was chosen: its disc has other songs, so the music ends and the list is read again from it.
     reset() {

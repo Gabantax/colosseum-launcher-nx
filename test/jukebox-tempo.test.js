@@ -143,3 +143,69 @@ test('an event is put on the beat of the song where the change is, not the quart
   assert.deepEqual(tempo.refineEvents([], grid, left, right, rate), []);
   assert.deepEqual(tempo.refineEvents([{ time: 3, kind: 'drop', strength: 1 }], null, left, right, rate).length, 1, 'with no grid the events are left as they are');
 });
+
+test('how light or dark a song sounds is read from where its weight is: low and heavy is dark, high and thin is light', () => {
+  const rate = 16000, seconds = 60, left = new Float32Array(rate * seconds), right = new Float32Array(rate * seconds);
+  for (let i = 0; i < left.length; i++) {
+    const t = i / rate;
+    // 30 s of low tones, then 30 s of high ones, at the same loudness
+    left[i] = right[i] = t < 30 ? 0.3 * (Math.sin(2 * Math.PI * 110 * t) + 0.7 * Math.sin(2 * Math.PI * 165 * t)) : 0.3 * (Math.sin(2 * Math.PI * 1500 * t) + 0.7 * Math.sin(2 * Math.PI * 2300 * t));
+  }
+  const profile = tempo.intensity(left, right, rate);
+  assert.equal(profile.tone.length, profile.values.length);
+  assert.ok(profile.tone.every(v => v >= 0 && v <= 1));
+  const dark = tempo.toneAt(profile, 15), light = tempo.toneAt(profile, 45);
+  assert.ok(dark < 0.38, `the low part's tone ${dark}`);
+  assert.ok(light > 0.62, `the high part's tone ${light}`);
+  assert.ok(light - dark > 0.3);
+  assert.equal(tempo.toneAt(null, 3), 0.5);
+});
+
+// Chord progressions of known key, as sums of a few harmonics of each note (midiHz: the pitch of a MIDI note)
+function chordSong(chords, { seconds = 48, rate = 16000, each = 6 } = {}) {
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12), x = new Float32Array(rate * seconds);
+  for (let i = 0; i < x.length; i++) {
+    const t = i / rate, chord = chords[Math.floor(t / each) % chords.length];
+    let v = 0;
+    for (const m of chord) for (let h = 1; h <= 3; h++) v += Math.sin(2 * Math.PI * hz(m) * h * t) / h;
+    x[i] = 0.36 * v / chord.length;
+  }
+  return x;
+}
+const triad = (root, minor) => [root, root + (minor ? 3 : 4), root + 7];
+const keyOf = (x, rate = 16000) => {
+  const size = rate / 4, count = Math.floor(x.length / size), track = tempo.pitchTrack(x, x, rate, count, size), middle = [...track.mode].slice(20, count - 20);
+  const votes = {};
+  for (let c = 20; c < count - 20; c++) votes[track.key[c]] = (votes[track.key[c]] || 0) + 1;
+  return { mode: middle.reduce((a, b) => a + b, 0) / middle.length, tonic: Number(Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0]), register: track.register[Math.floor(count / 2)] };
+};
+
+test('major music is read as major and minor as minor, and a minor key is found in its own key', () => {
+  for (const [name, chords] of [['C', [triad(48, 0), triad(53, 0), triad(55, 0), triad(48, 0)]], ['G', [triad(55, 0), triad(48, 0), triad(50, 0), triad(55, 0)]], ['D', [triad(50, 0), triad(55, 0), triad(57, 0), triad(50, 0)]]])
+    assert.ok(keyOf(chordSong(chords)).mode > 0.4, `${name} major is major`);
+  const minors = [[9, [triad(57, 1), triad(50, 1), [52, 56, 59], triad(57, 1)]], [4, [triad(52, 1), triad(57, 1), [59, 63, 66], triad(52, 1)]], [2, [triad(50, 1), triad(55, 1), [57, 61, 64], triad(50, 1)]]];
+  for (const [tonic, chords] of minors) {
+    const found = keyOf(chordSong(chords));
+    assert.ok(found.mode < -0.1, `minor with tonic ${tonic} is minor (${found.mode})`);
+    assert.equal(found.tonic, tonic);
+  }
+});
+
+test('the same notes an octave higher sound higher', () => {
+  const low = keyOf(chordSong([triad(40, 0), triad(45, 0)])), high = keyOf(chordSong([triad(76, 0), triad(81, 0)]));
+  assert.ok(high.register - low.register > 0.3, `${low.register} against ${high.register}`);
+});
+
+test('a song in a major key sounds lighter than the same song in a minor one', () => {
+  const rate = 16000, major = chordSong([triad(48, 0), triad(53, 0), triad(55, 0), triad(48, 0)]), minor = chordSong([triad(57, 1), triad(50, 1), [52, 56, 59], triad(57, 1)]);
+  const lightOf = x => { const p = tempo.intensity(x, x, rate), t = Array.from(p.tone); return t.reduce((a, b) => a + b, 0) / t.length; };
+  assert.ok(lightOf(major) > lightOf(minor), `${lightOf(major)} against ${lightOf(minor)}`);
+  assert.equal(tempo.keyAt(null, 3), null);
+  // the key as the song as a whole has it (it shifts a little with each chord)
+  const profile = tempo.intensity(minor, minor, rate), votes = {};
+  for (const tonic of profile.key) votes[tonic] = (votes[tonic] || 0) + 1;
+  assert.equal(Number(Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0]), 9, 'A');
+  assert.ok(profile.mode.reduce((a, c) => a + c, 0) / profile.mode.length < 0, 'minor');
+  const found = tempo.keyAt(profile, 20);
+  assert.ok(found && found.tonic >= 0 && found.tonic < 12 && found.mode >= -1 && found.mode <= 1);
+});
