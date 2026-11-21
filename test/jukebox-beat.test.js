@@ -433,6 +433,7 @@ test('Colosseum has a hall of its own: Miror B.\'s eight-sided gold platforms on
   assert.match(chamber, /function tintColosseum\(tone, keyShift\)/);
   assert.match(chamber, /const gold = hall === 'colosseum', sides = gold \? 8 : 96/);
   assert.match(chamber, /createChamber\(canvas, hallGame\)/);
+  assert.match(chamber, /if \(!\$\('page-jukebox'\)\.hidden\) sync\(\);/);
   assert.match(main, /ipcMain\.handle\('jukebox-game', \(\) => config\.game\)/);
   assert.match(preload, /jukeboxGame: \(\) => ipcRenderer\.invoke\('jukebox-game'\)/);
   assert.doesNotMatch(main, /DEBUG_MIROR/);

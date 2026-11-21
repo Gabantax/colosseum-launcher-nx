@@ -1427,7 +1427,11 @@ window.coloJukeboxChamber = {
   show() { sync(); },
   hide() { close(); },
   // another game's disc: its Ludicolo are read again
-  reset() { close(); hallKnown = window.colo.jukeboxGame().then(game => { hallGame = game; }, () => {}); },
+  reset() {
+    close();
+    hallKnown = window.colo.jukeboxGame().then(game => { hallGame = game; }, () => {});
+    if (!$('page-jukebox').hidden) sync();   // (the game was changed with the Jukebox open: its hall is made again)
+  },
   // music has started: the dancers wake
   wake() { chamber?.wake(); },
 };
