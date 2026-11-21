@@ -21,7 +21,7 @@ const { png } = require('./pokedex');
 const { colosseumPkx } = require('./xd-disc');
 
 // The folders' version: made again when it changes (raise it whenever what's made changes)
-const VERSION = 2;  // 2: the faces' blink frames, and regions sorted by where they're drawn
+const VERSION = 3;  // 2: the faces' blink frames, and regions sorted by where they're drawn; 3: small textures judged at the disc's size
 const KEPT = 4;
 const PKX_HEADER = 0x40;
 
@@ -88,7 +88,7 @@ function heroImages(heroId, models, chosen, index) {
     // with the images its texture animations swap in (a battle model's face as the hero blinks)
     const textures = hsd.parseModel(pkx, { animated: true }).textures, base = colors.prepare(heroId, textures);
     const found = textures.map(texture => (index && texture.disc ? texturePackLookup.findReplacement(index, texture.disc) : null));
-    const large = found.map(readImage), sorted = large.some(Boolean) ? colors.prepare(heroId, large.map((image, i) => image || textures[i])) : null;
+    const large = found.map(readImage), sorted = large.some(Boolean) ? colors.prepare(heroId, large.map((image, i) => image || textures[i]), textures) : null;
     textures.forEach((texture, i) => {
       if (!texture.disc) return;
       const names = texturePackLookup.textureNames(texture.disc);

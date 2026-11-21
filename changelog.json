@@ -26,7 +26,8 @@
       "Jukebox: songs now flow into each other. The next song is made while the current one plays and fades in over the end of it, instead of a pause and a hard cut, and picking a song, Next, Previous, Stop, pausing and seeking all fade instead of clicking.",
       "Jukebox: the first song starts sooner, since a song's beat, tone and key are now worked out in the background while it plays, Ludicolo is read straight from the disc without loading the whole Pokédex, and nothing but the sound is prepared when the Visualizer is off.",
       "Jukebox: press Pop out to open the Jukebox in a window of its own, with the songs, player and Purification Chamber, to leave on another screen. The song carries on in the window from where it was, and when you close the window it carries on in the launcher again. The launcher's Jukebox page says where it went and has a Bring it back here button.",
-      "120 fps: choose it under Settings, Display, Frame rate, for Colosseum and XD."
+      "120 fps: choose it under Settings, Display, Frame rate, for Colosseum and XD.",
+      "Fixed Michael's Hair colour leaving the strands at the back of his head red, and the reflections on Wes's and Michael's gear taking their other colours with HD textures."
     ],
     "game": [
       "120 fps in Colosseum and XD: characters, the camera and fades move twice as smoothly, menu text stays steady, and the game keeps its normal speed.",

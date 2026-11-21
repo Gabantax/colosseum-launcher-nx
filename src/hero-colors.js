@@ -176,18 +176,19 @@
     return out;
   }
 
-  // Textures this small (a lens's gradient) are left as they are
-  const SMALLEST = 48 * 48;
+  // Textures this small (a lens's gradient, 32x32 at most on every hero) are left as they are. It's the disc's size
+  // that counts: an HD image of one is larger, and Michael's hair has a texture of its own of 24x64.
+  const SMALLEST = 32 * 32;
   // A texture mostly skin is the face: only face regions are looked for on it
   const FACE_SHARE = 0.6;
 
   // A region index per texel (into the hero's regions, or 255 to leave as is), and whether it's the face.
   // A texel's colour picks its region, then where it is settles what colour can't: eye colours count as the eyes only
   // where they're ringed by the eye (not skin), and a speck of one region inside another goes with what's around it.
-  function classify(heroId, rgba, width, height, labOf = labCache()) {
+  function classify(heroId, rgba, width, height, labOf = labCache(), disc = { width, height }) {
     const { regions, keep, keepBody = keep } = hero(heroId);
     const mask = new Uint8Array(width * height).fill(255);
-    if (width * height < SMALLEST) return { mask, face: false };
+    if (disc.width * disc.height <= SMALLEST) return { mask, face: false };
     const regionSeeds = regions.map(region => region.seeds.map(lab));
     const nearest = (c, allowed, keepSeeds) => {
       let best = 255, bestDistance = Infinity;
@@ -382,11 +383,12 @@
   }
 
   // Everything the page needs to repaint a hero's textures: for each texture its region per texel, the region it
-  // blends into and how much, and its lightness; and each region's typical colour.
-  function prepare(heroId, textures) {
+  // blends into and how much, and its lightness; and each region's typical colour. `discs` are the disc's textures
+  // when `textures` are HD images of them (or the disc's, where there's none).
+  function prepare(heroId, textures, discs = textures) {
     const labOf = labCache();
-    const sorted = textures.map(({ rgba, width, height }) => {
-      const { mask, face } = classify(heroId, rgba, width, height, labOf);
+    const sorted = textures.map(({ rgba, width, height }, i) => {
+      const { mask, face } = classify(heroId, rgba, width, height, labOf, discs[i]);
       return { rgba, width, height, mask, face, lightness: lightness(rgba, labOf) };
     });
     const refs = references(heroId, sorted);
