@@ -160,7 +160,15 @@
         </div>
       </section>
       <section id="page-jukebox" class="page sheet jukebox-page" aria-labelledby="jukebox-title" hidden>
-        <div class="modal-head"><div><h1 id="jukebox-title">Jukebox</h1><p id="jukebox-summary">The game's music and sound effects, played from your disc. It keeps playing while you use the rest of the launcher.</p></div></div>
+        <div id="jukebox-chamber" class="jukebox-chamber" hidden>
+          <div class="jukebox-chamber-stage"><canvas id="jukebox-chamber-canvas" class="jukebox-chamber-canvas" aria-label="The Purification Chamber, with Ludicolo dancing to the music"></canvas><div id="jukebox-chamber-flash" class="jukebox-chamber-flash" aria-hidden="true"></div><div id="jukebox-chamber-dim" class="jukebox-chamber-dim" aria-hidden="true"></div><p id="jukebox-chamber-status" class="jukebox-chamber-status" role="status" hidden></p><div id="jukebox-chamber-meter" class="jukebox-chamber-meter" aria-hidden="true"><i></i></div></div>
+          <button id="jukebox-chamber-back" type="button" class="jukebox-chamber-back" hidden title="Bring the song list back (Esc)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.4"/></svg><span>Show overlay</span><kbd>Esc</kbd></button>
+        </div>
+        <div class="modal-head"><div><h1 id="jukebox-title">Jukebox</h1><p id="jukebox-summary">The game's music and sound effects, played from your disc. It keeps playing while you use the rest of the launcher.</p></div>
+          <div class="jukebox-viz" role="group" aria-label="Visualizer">
+            <label class="jukebox-viz-switch" title="The Purification Chamber, where Ludicolo and Miror B. dance to the music, behind the songs"><input id="jukebox-chamber-toggle" type="checkbox" role="switch" checked><i aria-hidden="true"></i><span>Visualizer</span></label>
+            <button id="jukebox-chamber-watch" type="button" class="jukebox-viz-hide" title="Clear the song list away to watch the visualizer (Esc brings it back)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.4"/><path d="M3 17 17 3"/></svg><span>Hide overlay</span></button>
+          </div></div>
         <div id="jukebox-tabs" class="jukebox-tabs" role="tablist" aria-label="Kind of sound" hidden>
           <button id="jukebox-tab-music" class="jukebox-tab" role="tab" type="button" aria-selected="true">Music</button>
           <button id="jukebox-tab-sfx" class="jukebox-tab" role="tab" type="button" aria-selected="false">Sound effects</button>
@@ -785,6 +793,9 @@
   <script src="team-builder.js"></script>
   <script src="online-versions.js"></script>
   <script src="online-page.js"></script>
+  <script src="jukebox-beat.js"></script>
+  <script src="jukebox-tempo.js"></script>
+  <script type="module" src="jukebox-chamber.js"></script>
   <script src="jukebox-cover.js"></script>
   <script src="jukebox-playlists.js"></script>
   <script src="jukebox-page.js"></script>
