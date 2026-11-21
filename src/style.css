@@ -1865,3 +1865,13 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .jukebox-chamber-flash, .jukebox-chamber-dim { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .jukebox-chamber-flash { background: #fff; mix-blend-mode: screen; }
 .jukebox-chamber-dim { background: #02060a; }
+
+/* The Jukebox in a window of its own (jukebox-window.js): only the Jukebox is shown, and its pop-out button isn't. In the launcher's window, while it is out, the page says so. */
+.jukebox-window .topbar, .jukebox-window .nav-bar, .jukebox-window .statusbar, .jukebox-window #activity-log, .jukebox-window #jukebox-popout { display: none !important; }
+.jukebox-window #jukebox-close { display: none; }
+.jukebox-popped-note { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 50vh; text-align: center; }
+.jukebox-popped-note[hidden] { display: none; }
+.jukebox-popped-note h1 { margin: 0; font-size: 22px; }
+.jukebox-popped-note p { margin: 0; opacity: 0.75; }
+.jukebox-popped .jukebox-page > :not(.jukebox-popped-note) { display: none !important; }
+.jukebox-popped .jukebox-dock { display: none !important; }

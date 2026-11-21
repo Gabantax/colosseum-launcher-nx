@@ -379,3 +379,48 @@ test('the chamber asks less of a weak machine: tiers, a governor that steps down
   assert.match(post, /colorspace_fragment/);
   assert.match(chamber, /post\?\.wipe\(\)/);
 });
+
+test('the Jukebox can be taken into a window of its own: the same page, with only the Jukebox showing, and the music playing from there', () => {
+  const main = read('main.js'), preload = read('preload.js'), page = read('jukebox-page.js'), html = read('index.html'), css = read('style.css'), flag = read('jukebox-window.js');
+  assert.match(main, /opened\.loadFile\(path\.join\(__dirname, 'index\.html'\), \{ query: \{ window: 'jukebox' \} \}\)/);
+  assert.match(main, /ipcMain\.handle\('jukebox-window-open'/);
+  assert.match(main, /ipcMain\.handle\('jukebox-window-close'/);
+  assert.match(main, /window\.on\('closed', closeJukeboxWindow\)/);
+  // starting the game ends the music in either window
+  assert.match(main, /if \(jukeboxWindowOpen\(\)\) jukeboxWindow\.webContents\.send\('jukebox-stop'\)/);
+  assert.match(preload, /jukeboxWindowOpen: snapshot => ipcRenderer\.invoke\('jukebox-window-open', snapshot\)/);
+  assert.match(preload, /onJukeboxWindow: callback =>/);
+  // (the tests' stand-in for ipcMain only has handle, so everything goes through it)
+  assert.doesNotMatch(main, /ipcMain\.on\(/);
+  // the window is marked before anything is drawn, and the launcher's frame is hidden by it
+  assert.match(html, /<script src="jukebox-window\.js"><\/script>/);
+  assert.match(flag, /classList\.add\('jukebox-window'\)/);
+  assert.match(css, /\.jukebox-window \.topbar, \.jukebox-window \.nav-bar, \.jukebox-window \.statusbar/);
+  // the launcher's own page stops its music while the window is out, says so, and can bring it back
+  assert.match(page, /if \(open\) \{ close\(\); window\.coloJukeboxChamber\?\.hide\(\); return; \}/);
+  // the song goes across with its place, and comes back the same way
+  assert.match(page, /function snapshot\(\)/);
+  assert.match(page, /async function restore\(handoff\)/);
+  assert.match(page, /jukeboxWindowOpen\(snapshot\(\)\)/);
+  assert.match(page, /jukeboxWindowTake\(\)\.then\(restore\)/);
+  assert.match(main, /const aged = report =>/);
+  assert.match(main, /broadcast\('jukebox-window', \{ open: false, handoff: aged\(jukeboxReport\) \}\)/);
+  assert.match(preload, /jukeboxWindowTake: \(\) => ipcRenderer\.invoke\('jukebox-window-take'\)/);
+  // another game's disc: the old songs are not brought back
+  assert.match(page, /discard = popped;/);
+  assert.match(page, /show\(\) \{ if \(popped\) return;/);
+  assert.match(html, /id="jukebox-popout"/);
+  assert.match(html, /id="jukebox-bring-back"/);
+});
+
+test('a song picked from the list grooves in as slowly as one that follows on: the dancers never take less than GROOVE_MIN over it', () => {
+  const chamber = read('jukebox-chamber.js');
+  assert.match(chamber, /const GROOVE_MIN = 2\.6;/);
+  assert.match(chamber, /duration: Math\.max\(GROOVE_MIN, Math\.min\(3\.2, groovePending\)\)/);
+});
+
+test('closing the player leaves nothing behind for the chamber to trip on: no analyser, and a latency that copes without a context', () => {
+  const page = read('jukebox-page.js');
+  assert.match(page, /context = gain = analyser = null;/);
+  assert.match(page, /latency: \(\) => context\?\.outputLatency \|\| context\?\.baseLatency \|\| 0/);
+});

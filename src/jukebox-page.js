@@ -671,7 +671,7 @@
     // the sound device is let go of once the fade is over
     const old = context;
     if (old) setTimeout(() => old.close().catch(() => {}), 350);
-    context = gain = null;
+    context = gain = analyser = null;   // (the chamber is told there is nothing to hear: it was reading the old one's latency)
     current = null;
     notice = '';
     window.colo.jukeboxClose().catch(() => {});
@@ -681,17 +681,77 @@
   $('jukebox-close').addEventListener('click', close);
   window.colo.onJukeboxStop(close);
 
+  // The Jukebox can be taken out into a window of its own. That window is this page again (jukebox-window.js), with only the Jukebox showing; the music
+  // plays from there while it is open, so the launcher's own page hands its song over and says where it went. A song goes across with its place, whether
+  // paused, the volume and the playlist it was playing from, and comes back the same way when the window is closed.
+  const alone = document.documentElement.classList.contains('jukebox-window');
+  let popped = false, discard = false;
+  function snapshot() {
+    if (!active) return null;
+    return { id: active.id, position: position(), paused: state.paused, volume: state.volume, loop: $('jukebox-loop').checked, queue: queue ? { ...queue } : null };
+  }
+  // Carries on with a song handed over by the other window, from where it was.
+  async function restore(handoff) {
+    if (!handoff?.id) return;
+    state = { ...state, volume: Number.isFinite(handoff.volume) ? handoff.volume : state.volume };
+    $('jukebox-loop').checked = Boolean(handoff.loop);
+    queue = handoff.queue || null;
+    load();
+    const mine = ++token;
+    current = handoff.id;
+    notice = '';
+    busy = true;
+    render();
+    try {
+      const found = await song(handoff.id);
+      if (mine !== token) return;
+      const ctx = output();
+      gain.gain.value = state.volume / 100;
+      if (handoff.paused) await ctx.suspend();   // (so that it begins silent, and Play starts it)
+      await start(handoff.id, found, Math.max(0, Math.min(found.buffer.duration - 0.05, Number(handoff.position) || 0)), Boolean(handoff.paused), { fade: 0.4 });
+    } catch (error) {
+      if (mine === token) notice = message(error);
+    }
+    if (mine === token) { busy = false; render(); }
+  }
+  const setPopped = (open, handoff = null) => {
+    if (alone || open === popped) return;
+    popped = open;
+    document.documentElement.classList.toggle('jukebox-popped', open);
+    $('jukebox-popped').hidden = !open;
+    if (open) { close(); window.coloJukeboxChamber?.hide(); return; }
+    const skip = discard;
+    discard = false;
+    if (!$('page-jukebox').hidden) { load(); window.coloJukeboxChamber?.show(); }
+    if (!skip) restore(handoff);
+  };
+  $('jukebox-popout').addEventListener('click', () => { window.colo.jukeboxWindowOpen(snapshot()).catch(() => {}); });
+  $('jukebox-bring-back').addEventListener('click', () => { window.colo.jukeboxWindowClose().catch(() => {}); });
+  if (!alone) {
+    window.colo.onJukeboxWindow(setPopped);
+    window.colo.jukeboxWindowState().then(setPopped).catch(() => {});
+  } else {
+    // the window opens on the Jukebox, and the launcher's other pages stay out of it
+    const open = () => (typeof showPage === 'function' ? showPage('jukebox') : $('nav-jukebox').click());
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open); else open();
+    setTimeout(open, 300);
+    // the song that was playing in the launcher carries on here, and where it is goes back to the main process for when this window is closed
+    window.colo.jukeboxWindowTake().then(restore).catch(() => {});
+    setInterval(() => window.colo.jukeboxWindowReport(snapshot()).catch(() => {}), 500);
+  }
+
   window.coloJukebox = {
-    show() { load(); render(); window.coloJukeboxChamber?.show(); },
+    show() { if (popped) return; load(); render(); window.coloJukeboxChamber?.show(); },
     // The visualizer was turned on with a song already playing, which was studied only for where it is heard: now it is studied for its beat too.
     study() { if (active) study(active.id, true); },
     // What the Purification Chamber dances to: the player's analyser, and whether a song is sounding.
     listen() {
       return analyser ? { analyser, playing: () => Boolean(active) && !state.paused, position: () => (active ? position() : 0),
-        id: () => active?.id ?? null, fade: () => active?.fadeSeconds ?? 0, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context.outputLatency || context.baseLatency || 0 } : null;
+        id: () => active?.id ?? null, fade: () => active?.fadeSeconds ?? 0, grid: () => (active ? songs.get(active.id)?.grid ?? null : null), intensity: () => (active ? songs.get(active.id)?.intensity ?? null : null), latency: () => context?.outputLatency || context?.baseLatency || 0 } : null;
     },
     // Another game was chosen: its disc has other songs, so the music ends and the list is read again from it.
     reset() {
+      if (!alone) { discard = popped; window.colo.jukeboxWindowClose().catch(() => {}); }   // another game's disc: the window out of the launcher has the old one's songs, which don't come back
       close();
       window.coloJukeboxChamber?.reset();
       tracks = null;

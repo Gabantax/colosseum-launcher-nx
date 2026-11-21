@@ -146,6 +146,43 @@ function broadcast(channel, data) {
   if (window && !window.isDestroyed()) window.webContents.send(channel, data);
 }
 
+// The Jukebox can be taken out of the launcher into a window of its own (the music, the song list and the Purification Chamber, to leave on another
+// screen). The music plays from that window while it is open; the launcher's window says so, and closing the window ends the music.
+// What was playing is handed over when the window opens (from the launcher's page) and when it closes (back to it): the window reports its song and place
+// twice a second, and the place is taken on by the time that has passed since.
+let jukeboxWindow = null, jukeboxReport = null, jukeboxHandoff = null;
+const jukeboxWindowOpen = () => Boolean(jukeboxWindow && !jukeboxWindow.isDestroyed());
+const aged = report => (report?.snapshot?.id ? { ...report.snapshot, position: report.snapshot.position + (report.snapshot.paused ? 0 : (Date.now() - report.at) / 1000) } : null);
+function openJukeboxWindow(snapshot = null) {
+  if (jukeboxWindowOpen()) {
+    if (jukeboxWindow.isMinimized()) jukeboxWindow.restore();
+    jukeboxWindow.show();
+    jukeboxWindow.focus();
+    return true;
+  }
+  jukeboxHandoff = snapshot?.id ? { snapshot, at: Date.now() } : null;
+  jukeboxReport = null;
+  const opened = new BrowserWindow({
+    width: 1100, height: 760, minWidth: 640, minHeight: 480, backgroundColor: '#1a1420', title: 'Orre Launcher: Jukebox',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  jukeboxWindow = opened;
+  opened.setMenuBarVisibility(false);
+  opened.loadFile(path.join(__dirname, 'index.html'), { query: { window: 'jukebox' } });
+  opened.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  opened.on('closed', () => {
+    if (jukeboxWindow === opened) jukeboxWindow = null;
+    broadcast('jukebox-window', { open: false, handoff: aged(jukeboxReport) });
+    jukeboxReport = null;
+  });
+  broadcast('jukebox-window', { open: true });
+  return true;
+}
+function closeJukeboxWindow() {
+  if (jukeboxWindowOpen()) jukeboxWindow.close();
+  return true;
+}
+
 function activityState() {
   const task = active || operation;
   return task ? { label: task.label, detail: task.detail, percent: task.percent,
@@ -1722,6 +1759,7 @@ function jukeboxRender(id) {
 
 async function play(installation = null, battle = null) {
   broadcast('jukebox-stop');  // the Jukebox's music and the game would share the sound device
+  if (jukeboxWindowOpen()) jukeboxWindow.webContents.send('jukebox-stop');
   const root = installation?.repo || requireRepo();
   const chosen = activeGame();
   if (battle && !supports('online')) throw new Error('Online battles are for Pokémon Colosseum for now.');
@@ -3475,6 +3513,11 @@ function registerHandlers() {
   ipcMain.handle('game-logos', () => gameLogos());
   ipcMain.handle('jukebox-render', (_event, id) => jukeboxRender(String(id)));
   ipcMain.handle('jukebox-close', () => jukeboxStopWorker());
+  ipcMain.handle('jukebox-window-open', (_event, snapshot) => openJukeboxWindow(snapshot));
+  ipcMain.handle('jukebox-window-take', () => { const taken = aged(jukeboxHandoff); jukeboxHandoff = null; return taken; });
+  ipcMain.handle('jukebox-window-report', (event, snapshot) => { if (jukeboxWindowOpen() && event.sender === jukeboxWindow.webContents) jukeboxReport = { snapshot, at: Date.now() }; });
+  ipcMain.handle('jukebox-window-close', () => closeJukeboxWindow());
+  ipcMain.handle('jukebox-window-state', () => jukeboxWindowOpen());
   ipcMain.handle('jukebox-playlists', () => { requireFeature('jukebox', 'The Jukebox'); return readJukeboxPlaylists()[config.game] ?? []; });
   ipcMain.handle('jukebox-playlists-save', (_event, list) => saveJukeboxPlaylists(list));
   ipcMain.handle('pokedex-clip', (_event, key, form, index) => {
@@ -3831,6 +3874,7 @@ function createWindow() {
   });
   if (windowsScaling) displayScale.followDisplayScale(window, screen, WINDOW_SIZE, zoom);
   window.setMenuBarVisibility(false);
+  window.on('closed', closeJukeboxWindow);
   if (config?.launcherWindow === 'fullscreen') window.setFullScreen(true);
   else if (config?.launcherWindow === 'maximized') window.maximize();
   // The event says which way full screen went: on Linux, isFullScreen() can lag the window manager.
