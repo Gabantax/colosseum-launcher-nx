@@ -19,7 +19,7 @@ const { decodePng } = require('./pokemon-packs');
 const { png } = require('./pokedex');
 const { colosseumPkx } = require('./xd-disc');
 
-const VERSION = 2;          // of what bake makes: a new one makes every look again (2: the faces' blink frames, and regions sorted by where they're drawn)
+const VERSION = 3;          // of what bake makes: a new one makes every look again (2: the faces' blink frames, and regions sorted by where they're drawn; 3: small textures judged at the disc's size)
 const PKX_HEADER = 0x40;
 const RGBA8 = 6;
 const KEPT = 8;             // looks kept made, the newest
@@ -124,7 +124,7 @@ function bake(pkx, look, index = null, { xd = false } = {}) {
     } catch (_) { return null; }
   });
   if (found.some(Boolean)) {
-    const large = found.map((image, i) => image || textures[i]), sorted = colors.prepare(heroId, large);
+    const large = found.map((image, i) => image || textures[i]), sorted = colors.prepare(heroId, large, textures);
     for (const { i, data, width, height } of made) {
       if (!found[i]) continue;
       const { rgba, width: w, height: h } = found[i];

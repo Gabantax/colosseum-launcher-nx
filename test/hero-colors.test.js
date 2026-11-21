@@ -114,6 +114,21 @@ test('a dark colour\'s lighter shades get lighter as gently as its darker ones g
   assert.ok(L(255) > 90, 'the lightest highlight still reaches white');
 });
 
+test('a lens\'s gradient is left as it is, an HD image of one too, and a small texture of hair is repainted', () => {
+  // A texture of one colour: Michael's hair, at a size
+  const flat = (width, height) => {
+    const rgba = new Uint8Array(width * height * 4);
+    for (let i = 0; i < width * height; i++) rgba.set([0x95, 0x41, 0x2c, 255], i * 4);
+    return { rgba, width, height };
+  };
+  const hair = colors.HEROES.find(hero => hero.id === 'michael').regions.findIndex(region => region.id === 'hair');
+  const lens = flat(32, 32), lensHd = flat(128, 128), strands = flat(24, 64);
+  const [disc, hd, own] = colors.prepare('michael', [lens, lensHd, strands], [lens, lens, strands]).textures;
+  assert.ok(disc.mask.every(region => region === 255));
+  assert.ok(hd.mask.every(region => region === 255), 'the HD image goes by the disc\'s size');
+  assert.ok(own.mask.every(region => region === hair));
+});
+
 test('a hero\'s idle motion is the one the model names, else its first', () => {
   assert.equal(heroLook.idleOf({ motions: [{ index: 2, kind: 'special' }, { index: 1, kind: 'idle' }], animations: [10, 30, 30] }), 1);
   assert.equal(heroLook.idleOf({ motions: [], animations: [10] }), 0);
