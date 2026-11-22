@@ -124,6 +124,12 @@ function numberSetting(value, fallback, lo, hi) {
   return Number.isFinite(number) ? Math.min(hi, Math.max(lo, Math.round(number))) : fallback;
 }
 function choiceSetting(value, choices, fallback) { return choices.includes(value) ? value : fallback; }
+// Exp All's share: what each party Pokémon that didn't battle gets, of what one that battled gets, from 0.05 to 1 in
+// steps of 0.05; half unless set.
+function expAllShareSetting(value) {
+  const share = value === null || value === '' ? NaN : Number(value);
+  return Number.isFinite(share) ? Math.min(1, Math.max(0.05, Math.round(share * 20) / 20)) : 0.5;
+}
 
 // How many times faster a battle's animations play, to a tenth. Launchers before the slider saved
 // 'normal', '2', '4' or 'skip' (Beta also '8'): each keeps its speed, or the fastest left.
@@ -181,9 +187,10 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     tmNames: input.tmNames !== false,
     // Teaching a TM leaves it in the bag, as in later games. Off unless turned on: it changes what TMs are worth.
     infiniteTms: Boolean(input.infiniteTms),
-    // Exp All: every party Pokémon gets EXP from a knockout, as the Exp. Share does from X and Y on (the ones that battled
-    // the full amount, the rest half), with a held EXP. SHARE still adding its own share. Off unless turned on.
+    // Exp All: the Pokémon that battled get the game's own EXP from a knockout, and the rest of the party expAllShare of
+    // what one of them gets, with a held EXP. SHARE still adding its own share. Off unless turned on.
     expAll: Boolean(input.expAll),
+    expAllShare: expAllShareSetting(input.expAllShare),
     // Colosseum: the C-Stick walks and moves menu cursors like the Control Stick, as in XD. Off unless turned on.
     cstickMove: Boolean(input.cstickMove),
     // Colosseum: Wes walks through Rui in the field instead of pushing her back. On unless turned off.
@@ -429,7 +436,7 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.infiniteTms) env.COLO_INFINITE_TMS = '1';
-  if (settings.expAll) env.COLO_EXP_ALL = '1';
+  if (settings.expAll) env.COLO_EXP_ALL = settings.expAllShare.toFixed(2);
   if (settings.cstickMove) env.COLO_CSTICK_MOVE = '1';
   if (settings.partnerPass === false) env.COLO_PARTNER_PASS = '0';
   if (settings.pokeSpotPool === false) env.COLO_POKESPOT_POOL = '0';
