@@ -303,18 +303,31 @@ test('Choose your hero is on unless turned off, in both games', () => {
 });
 
 test('Infinite TMs, Exp All and the C-Stick as the stick are off unless turned on; XD has the first two', () => {
-  const keys = { infiniteTms: 'COLO_INFINITE_TMS', expAll: 'COLO_EXP_ALL', cstickMove: 'COLO_CSTICK_MOVE' };
-  const saved = Object.fromEntries(Object.values(keys).map(key => [key, process.env[key]]));
-  for (const key of Object.values(keys)) delete process.env[key];
+  const keys = { infiniteTms: 'COLO_INFINITE_TMS', cstickMove: 'COLO_CSTICK_MOVE' };
+  const saved = Object.fromEntries([...Object.values(keys), 'COLO_EXP_ALL'].map(key => [key, process.env[key]]));
+  for (const key of [...Object.values(keys), 'COLO_EXP_ALL']) delete process.env[key];
+  const env = (settings, game) => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port', game ? { game } : undefined);
   try {
     for (const [setting, key] of Object.entries(keys)) {
       assert.equal(port.normalizeSettings({})[setting], false, setting);
-      assert.equal(port.buildEnvironment(port.normalizeSettings({}), 'disc', '/port')[key], undefined, setting);
-      assert.equal(port.buildEnvironment(port.normalizeSettings({ [setting]: false }), 'disc', '/port')[key], undefined, setting);
-      assert.equal(port.buildEnvironment(port.normalizeSettings({ [setting]: true }), 'disc', '/port')[key], '1', setting);
-      assert.equal(port.buildEnvironment(port.normalizeSettings({ [setting]: true }), 'disc', '/port', { game: 'xd' })[key],
-        setting === 'cstickMove' ? undefined : '1', `XD and ${setting}`);
+      assert.equal(env({})[key], undefined, setting);
+      assert.equal(env({ [setting]: false })[key], undefined, setting);
+      assert.equal(env({ [setting]: true })[key], '1', setting);
+      assert.equal(env({ [setting]: true }, 'xd')[key], setting === 'cstickMove' ? undefined : '1', `XD and ${setting}`);
     }
+    // Exp All: off unless turned on, and then the rest of the party's share, half unless set
+    assert.equal(port.normalizeSettings({}).expAll, false);
+    assert.equal(port.normalizeSettings({}).expAllShare, 0.5);
+    assert.equal(env({}).COLO_EXP_ALL, undefined);
+    assert.equal(env({ expAll: false, expAllShare: 1 }).COLO_EXP_ALL, undefined);
+    assert.equal(env({ expAll: true }).COLO_EXP_ALL, '0.50');
+    assert.equal(env({ expAll: true }, 'xd').COLO_EXP_ALL, '0.50', 'XD too');
+    assert.equal(env({ expAll: true, expAllShare: '0.25' }).COLO_EXP_ALL, '0.25');
+    assert.equal(env({ expAll: true, expAllShare: 1 }).COLO_EXP_ALL, '1.00');
+    assert.equal(port.normalizeSettings({ expAllShare: 0.33 }).expAllShare, 0.35, 'to a twentieth');
+    assert.equal(port.normalizeSettings({ expAllShare: 3 }).expAllShare, 1);
+    assert.equal(port.normalizeSettings({ expAllShare: 0 }).expAllShare, 0.05);
+    assert.equal(port.normalizeSettings({ expAllShare: 'most' }).expAllShare, 0.5);
   } finally {
     for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value;
   }
