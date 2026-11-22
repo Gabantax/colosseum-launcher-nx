@@ -25,11 +25,15 @@ const xdSave = require('./xd-save');
 const entries = require('./shadow-entries');
 const { colosseumFlag, setColosseumFlag } = entries;
 
+// Bit 7 of flagAmari (0xCE in Colosseum, 0x1A in XD): marks a Pokémon modified by the launcher's save editor.
+// Unused by Colosseum, XD, GBA (flags >> 3 <= 0x1F) and DS saves, and preserved across Colosseum <-> XD trades.
+const EDITED_FLAG = 0x80;
+
 const COLOSSEUM = {
   file: 'pokemon_colosseum.dat', size: 0x138, trainerName: 0x78, trainerId: 0xa4, party: 0xa8, boxes: 0xb90, boxSize: 0x24a4,
   retailBoxes: 3, extraBoxes: 7, boxName: 0x14, perBox: 30,
   at: { species: 0x00, rnd: 0x04, ball: 0x0f, trainer: 0x14, nickname: 0x2e, level: 0x60, moves: 0x78, item: 0x88, hp: 0x8a,
-    maxHp: 0x8c, friendship: 0xb0, egg: 0xcb, shadow: 0xd8, heart: 0xdc }
+    maxHp: 0x8c, friendship: 0xb0, egg: 0xcb, edited: 0xce, shadow: 0xd8, heart: 0xdc }
 };
 // The day care's Pokémon (save kind 11, proven against the game in a run).
 const COLOSSEUM_DAYCARE_POKEMON = 0x8178;
@@ -40,7 +44,7 @@ const COLOSSEUM_STORY_IDS = [...Array.from({ length: 44 }, (_, i) => i + 1), 0x3
 const XD = {
   file: 'PokemonXD.dat', size: 0xc4, boxes: 8, boxSize: 0x170c, boxName: 0x14, perBox: 30, partyAt: 0x30, heroId: 0x2c,
   meetCount: 0x938, recordSize: 0x48, records: 128,
-  at: { species: 0x00, item: 0x02, hp: 0x04, friendship: 0x06, ball: 0x0f, level: 0x11, flags: 0x1d, trainer: 0x24, rnd: 0x28, nickname: 0x4e,
+  at: { species: 0x00, item: 0x02, hp: 0x04, friendship: 0x06, ball: 0x0f, level: 0x11, edited: 0x1a, flags: 0x1d, trainer: 0x24, rnd: 0x28, nickname: 0x4e,
     moves: 0x80, maxHp: 0x90, shadow: 0xba },
   // where each section is in the game's memory (the live picture), as the pack's table gives it for a card copy
   ram: { hero: 0x140, pcBox: 0xad0, dayCare: 0xc790, darkPokemon: 0xe380, chamber: 0x1d690 }
@@ -81,7 +85,7 @@ function colosseumPokemon(bytes, extra = {}) {
     nickname: units(bytes, at.nickname), level: bytes[at.level], item: bytes.readUInt16BE(at.item),
     hp: bytes.readUInt16BE(at.hp), maxHp: bytes.readUInt16BE(at.maxHp), friendship: bytes.readUInt16BE(at.friendship), ball: bytes[at.ball],
     moves: Array.from({ length: 4 }, (_, i) => bytes.readUInt16BE(at.moves + i * 4)).filter(Boolean),
-    egg: bytes[at.egg] !== 0, shiny: isShiny(trainer, rnd),
+    egg: bytes[at.egg] !== 0, shiny: isShiny(trainer, rnd), edited: Boolean(bytes[at.edited] & EDITED_FLAG),
     shadowId, shadow: shadowId !== 0 && heart >= 0, heart: shadowId !== 0 && heart >= 0 ? heart : null, ...extra
   };
 }
@@ -153,7 +157,7 @@ function xdPokemon(ctx, bytes, extra = {}) {
     nickname: units(bytes, at.nickname), level: bytes[at.level], item: bytes.readUInt16BE(at.item),
     hp: bytes.readUInt16BE(at.hp), maxHp: bytes.readUInt16BE(at.maxHp), friendship: bytes.readUInt16BE(at.friendship), ball: bytes[at.ball],
     moves: Array.from({ length: 4 }, (_, i) => bytes.readUInt16BE(at.moves + i * 4)).filter(Boolean),
-    egg: Boolean(bytes[at.flags] & 0x80), shiny: isShiny(trainer, rnd),
+    egg: Boolean(bytes[at.flags] & 0x80), shiny: isShiny(trainer, rnd), edited: Boolean(bytes[at.edited] & EDITED_FLAG),
     shadowId, shadow, heart: shadow ? record.readInt32BE(0x24) : null, ...extra
   };
 }
@@ -321,6 +325,7 @@ function offerProblem(saveModel, pokemon) {
   if (!pokemon) return 'There is no Pokémon there.';
   if (pokemon.egg) return 'Eggs can\'t be traded.';
   if (!pokemon.shadow) return 'Only Shadow Pokémon can go to Shadowtrade.';
+  if (pokemon.edited) return 'Edited Pokémon can\'t go to Shadowtrade.';
   if (!shadowtradeKind(saveModel.game, pokemon.species)) return 'Pokémon pack Shadow Pokémon can\'t go to Shadowtrade: each launcher numbers them its own way.';
   if (saveModel.game === 'xd') {
     if (pokemon.shadowId === XD_LUGIA) return 'XD-001 can\'t be traded: the Purify Chamber needs it.';
@@ -529,5 +534,13 @@ function editCard(saveDir, gameId, change) {
   return result;
 }
 
-module.exports = { COLOSSEUM, XD, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, liveFrom, parseLive, cardCopies,
-  colosseumFlag, offerProblem, shadowtradeKind, tradeProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, allPokemon, keyOf, xdElsewhere };
+function slotAt(ctx, place) {
+  if (!place) return null;
+  const slots = ctx.game === 'xd' ? xdSlots(ctx) : colosseumSlots(ctx);
+  const size = ctx.game === 'xd' ? XD.size : COLOSSEUM.size;
+  const found = slots.find(item => item.area === place.area && item.box === place.box && item.slot === place.slot);
+  return found ? { ...found, size, bytes: found.buffer.subarray(found.at, found.at + size) } : null;
+}
+
+module.exports = { COLOSSEUM, XD, EDITED_FLAG, COLOSSEUM_STORY_IDS, XD_STATUS, XD_WHERE, PARTY_SIZE, model, readCard, readLive, liveFrom, parseLive, cardCopies,
+  colosseumFlag, offerProblem, shadowtradeKind, tradeProblem, shadowAccepts, acceptsAfterTaking, outgoing, allPlaces, restoreTo, mergeXdRecord, takeFrom, giveTo, editCard, findPokemon, slotAt, xdRecord, allPokemon, keyOf, xdElsewhere };

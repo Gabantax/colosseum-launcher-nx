@@ -69,8 +69,9 @@ function renderGrid() {
     const isSelected = selected && selected.area === pokemon.area && selected.box === pokemon.box && selected.slot === pokemon.slot;
     button.classList.toggle('selected', Boolean(isSelected));
     button.classList.toggle('shadow', pokemon.shadow);
+    button.classList.toggle('edited', Boolean(pokemon.edited));
     button.setAttribute('aria-selected', String(Boolean(isSelected)));
-    button.title = `${shown(pokemon)}, level ${pokemon.level}${pokemon.shadow ? ', Shadow Pokémon' : ''}${pokemon.traded ? ', from Shadowtrade' : ''}`;
+    button.title = `${shown(pokemon)}, level ${pokemon.level}${pokemon.shadow ? ', Shadow Pokémon' : ''}${pokemon.edited ? ', Edited' : ''}${pokemon.traded ? ', from Shadowtrade' : ''}`;
     button.append(sprite(pokemon, tab === 'party' ? 56 : 44));
     const label = document.createElement('span');
     label.className = 'pokemon-slot-label';
@@ -78,8 +79,10 @@ function renderGrid() {
       Object.assign(document.createElement('small'), { textContent: pokemon.egg ? 'Egg' : `Lv. ${pokemon.level}` }));
     button.append(label);
     if (pokemon.shadow) button.append(Object.assign(document.createElement('span'), { className: 'pokemon-shadow-mark', textContent: 'Shadow' }));
+    if (pokemon.edited) button.append(Object.assign(document.createElement('span'), { className: `pokemon-edited-mark${pokemon.shadow ? ' with-shadow' : ''}`, textContent: 'Edited', title: 'Modified with the save editor' }));
     if (pokemon.shiny) button.append(Object.assign(document.createElement('span'), { className: 'pokemon-shiny-mark', textContent: '★', title: 'Shiny' }));
     button.addEventListener('click', () => { selected = { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }; renderGrid(); renderDetail(); });
+    button.addEventListener('dblclick', () => { selected = { area: pokemon.area, box: pokemon.box, slot: pokemon.slot }; renderGrid(); renderDetail(); if (!editProblem(pokemon)) editPokemon(); });
     grid.append(button);
   });
   const count = list.filter(Boolean).length;
@@ -93,6 +96,14 @@ function current() {
   return list?.[selected.slot] || null;
 }
 
+function editProblem(pokemon) {
+  if (!pokemon || !data?.model) return 'No Pokémon selected.';
+  if (data.gameRunning || !data.canEdit) return 'Close the game to edit Pokémon in your save.';
+  if (pokemon.egg) return 'Eggs can\'t be edited.';
+  if (data.trades?.busy || tradeView?.room?.trade || localView?.trade) return 'Wait for the trade in progress to finish first.';
+  return null;
+}
+
 function renderDetail() {
   const pokemon = current();
   $('pokemon-detail').hidden = !pokemon;
@@ -104,6 +115,7 @@ function renderDetail() {
   const badges = $('pokemon-detail-badges');
   badges.replaceChildren();
   if (pokemon.shadow) badges.append(Object.assign(document.createElement('span'), { className: 'badge shadow-badge', textContent: 'Shadow Pokémon' }));
+  if (pokemon.edited) badges.append(Object.assign(document.createElement('span'), { className: 'badge edited-badge', textContent: 'Edited', title: 'Modified with the save editor: can\'t go to Shadowtrade and shows a warning in Online Trades' }));
   if (pokemon.shiny) badges.append(Object.assign(document.createElement('span'), { className: 'badge warn', textContent: 'Shiny' }));
   if (pokemon.traded) badges.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: 'From Shadowtrade', title: 'It has a Shadow of its own in your save, apart from the story\'s' }));
   if (pokemon.egg) badges.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: 'Egg' }));
@@ -122,12 +134,34 @@ function renderDetail() {
     $('pokemon-friendship-fill').style.width = `${Math.round((value / 255) * 100)}%`;
     $('pokemon-friendship-text').textContent = `Friendship ${value}/255`;
   }
+  const cantEdit = editProblem(pokemon);
+  $('pokemon-edit').disabled = Boolean(cantEdit);
+  $('pokemon-edit').title = cantEdit || 'Edit this Pokémon in your save file';
+  $('pokemon-edit-note').hidden = !cantEdit;
+  $('pokemon-edit-note').textContent = cantEdit || '';
   const problem = pokemon.tradeProblem || (!data.canTrade ? data.notice || 'Trading isn\'t possible right now.' : null);
   $('pokemon-trade').hidden = !pokemon.shadow;
   $('pokemon-trade').disabled = Boolean(problem) || Boolean(data.trades?.busy);
   const note = pokemon.tradeLater ? 'It leaves your save, and a Shadow Pokémon another player sent comes back. As a Generation 4 Pokémon, it goes only to a player whose game has Generation 4 Pokémon turned on.'
     : 'It leaves your save, and a Shadow Pokémon another player sent comes back.';
   $('pokemon-trade-note').textContent = pokemon.shadow ? (problem || note) : 'Only Shadow Pokémon can go to Shadowtrade.';
+}
+
+async function editPokemon() {
+  const pokemon = current();
+  if (!pokemon) return;
+  const problem = editProblem(pokemon);
+  if (problem) { setStatus(problem); return; }
+  setStatus('');
+  try {
+    await window.coloPokemonEditor.open({ area: pokemon.area, box: pokemon.box, slot: pokemon.slot }, {
+      onSaved: async ({ result, backup }) => {
+        selected = { area: result.area, box: result.box, slot: result.slot };
+        await refresh();
+        setStatus(`Saved changes to ${result.nickname} in your save file.${backup ? ' Your previous save was backed up.' : ''}`);
+      }
+    });
+  } catch (error) { setStatus(message(error)); }
 }
 
 function describeTrade(trade) {
@@ -210,6 +244,7 @@ async function refresh() {
       await species(next.game);
       if (next.game !== data?.game) { selected = null; box = 0; }
       data = next;
+      window.coloPokemonEditor?.setGameRunning(Boolean(data?.gameRunning));
       render();
     } catch (error) { setStatus(message(error)); } finally { loading = null; }
   })();
@@ -292,6 +327,7 @@ function statSheet(summary, heading, { problems = [], evolvesInto = 0, from = nu
       el('small', { textContent: `${speciesName(summary)} · Lv. ${summary.level}${entry?.types?.length ? ` · ${entry.types.join('/')}` : ''}` }),
       el('small', { textContent: `From ${from || (summary.game === 'xd' ? 'XD' : 'Colosseum')}${summary.shiny ? ' · Shiny' : ''}` })));
   sheet.append(head);
+  if (summary.edited) sheet.append(editedBanner({ online: false }));
   // the six stats: value, base, IV, EV, and the nature's tenth up or down
   const base = entry?.stats || [];
   const table = el('table', { className: 'trade-sheet-stats' });
@@ -425,7 +461,7 @@ function offerSide(side, room) {
   const problems = mine ? (you?.refusedBecause ? [`${peer?.name || 'Their'}'s game can't take it: ${you.refusedBecause}`] : [])
     : (offer?.problems || []).map(problem => problem.text || problem);
   const node = $(mine ? 'tw-mine' : 'tw-theirs');
-  node.className = `tw-offer ${side}${ready && summary ? ' ready' : ''}${problems.length ? ' refused' : ''}`;
+  node.className = `tw-offer ${side}${ready && summary ? ' ready' : ''}${problems.length ? ' refused' : ''}${summary?.edited ? ' edited' : ''}`;
   // who
   const dot = mine ? 'here' : !peer?.here ? '' : peer.present ? 'here' : 'away';
   const who = el('div', { className: 'tw-who' }, el('i', { className: `tw-dot ${dot}` }),
@@ -452,15 +488,29 @@ function offerSide(side, room) {
     return;
   }
   const evolves = !mine && offer.evolvesInto ? evolvePill(offer.evolvesInto, `Evolves into ${pokeName(offer.evolvesInto)} on arrival`) : null;
-  children.push(...offerBody(summary, problems, evolves));
+  children.push(...offerBody(summary, problems, evolves, { mine, online: true }));
   node.replaceChildren(...children);
 }
 
 const evolvePill = (into, text) => el('span', { className: 'tw-evolve-pill', title: 'A trade evolution: it evolves as it arrives in the game' }, sprite({ species: into }, 24), text);
 
+function editedBanner({ mine = false, online = true } = {}) {
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = '<path d="M12 3 2.5 20h19L12 3zm0 6v5.5m0 3h.01"/>';
+  const detail = online && mine
+    ? 'Modified with the save editor. The other player sees this warning too.'
+    : 'This Pokémon was modified with the save editor.';
+  return el('div', { className: 'tw-edited-banner', role: 'alert' },
+    icon,
+    el('div', {}, el('strong', { textContent: 'EDITED POKÉMON' }), el('span', { textContent: detail })));
+}
+
 // An offer's Pokémon at a glance: who it is, its facts, stats and moves (problems: what keeps it from the other game).
-function offerBody(summary, problems, evolves) {
+function offerBody(summary, problems, evolves, { mine = false, online = false } = {}) {
   const children = [];
+  if (summary.edited) children.push(editedBanner({ mine, online }));
   const ts = TS(), species = names?.species?.[summary.species], entry = dex?.get(summary.species);
   const scale = offerScale;
   // the Pokémon
@@ -725,7 +775,7 @@ const otherOf = game => (game === 'xd' ? 'colosseum' : 'xd');
 function localCard(game, view) {
   const viewer = view.viewer, node = $(game === viewer ? 'tw-mine' : 'tw-theirs');
   const save = view.saves[game], pick = view.picks[game], summary = pick?.summary || null, trade = view.trade;
-  node.className = `tw-offer ${game === viewer ? 'mine' : 'theirs'}${pick?.problems.length ? ' refused' : ''}${localSide === game && !trade ? ' choosing' : ''}`;
+  node.className = `tw-offer ${game === viewer ? 'mine' : 'theirs'}${pick?.problems.length ? ' refused' : ''}${summary?.edited ? ' edited' : ''}${localSide === game && !trade ? ' choosing' : ''}`;
   const who = el('div', { className: 'tw-who' }, el('i', { className: `tw-dot ${save.source === 'live' ? 'here' : save.ready ? 'away' : ''}` }),
     el('span', { textContent: `${gameLabel(game)}${save.trainer ? ` · ${save.trainer}` : ''}`, title: `Your ${gameLabel(game)} save` }),
     el('small', { className: 'tw-game', textContent: save.source === 'live' ? 'Running' : 'Save' }));
@@ -947,6 +997,7 @@ $('pokemon-box').addEventListener('change', event => { box = Number(event.target
 $('pokemon-box-prev').addEventListener('click', () => { const n = data?.model?.boxes.length || 1; box = (box + n - 1) % n; render(); });
 $('pokemon-box-next').addEventListener('click', () => { const n = data?.model?.boxes.length || 1; box = (box + 1) % n; render(); });
 $('pokemon-refresh').addEventListener('click', () => { setStatus(''); refresh(); window.colo.shadowtradeSync().then(refresh).catch(error => setStatus(message(error))); });
+$('pokemon-edit').addEventListener('click', editPokemon);
 $('pokemon-trade').addEventListener('click', trade);
 $('shadowtrade-confirm-send').addEventListener('click', confirmTrade);
 window.colo.onPokemonChanged(() => {

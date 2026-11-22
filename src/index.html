@@ -328,7 +328,8 @@
               <div class="pokemon-detail-head"><div id="pokemon-detail-sprite" class="pokemon-detail-sprite"></div><div><h2 id="pokemon-detail-name"></h2><p id="pokemon-detail-meta" class="helper"></p><div id="pokemon-detail-badges" class="pokemon-detail-badges"></div></div></div>
               <div id="pokemon-heart" class="pokemon-heart" hidden><div class="pokemon-heart-bar"><i id="pokemon-heart-fill"></i></div><small id="pokemon-heart-text"></small></div>
               <div id="pokemon-friendship" class="pokemon-heart pokemon-friendship" hidden><div class="pokemon-heart-bar"><i id="pokemon-friendship-fill"></i></div><small id="pokemon-friendship-text"></small></div>
-              <button id="pokemon-trade" class="solid pokemon-trade" type="button" hidden>Send to Shadowtrade</button>
+              <div class="pokemon-detail-actions"><button id="pokemon-edit" class="solid pokemon-edit" type="button">Edit Pokémon</button><button id="pokemon-trade" class="solid pokemon-trade" type="button" hidden>Send to Shadowtrade</button></div>
+              <p id="pokemon-edit-note" class="helper" hidden></p>
               <p id="pokemon-trade-note" class="helper"></p>
             </section>
             <section class="trade-start" aria-labelledby="trade-title">
@@ -789,6 +790,38 @@
       </div>
     </dialog>
 
+    <dialog id="pokemon-editor" class="launcher-modal party-editor pokemon-editor" aria-labelledby="pokemon-editor-title">
+      <div class="modal-head tb-head">
+        <div class="tb-title">
+          <p class="eyebrow">EDIT SAVE POKÉMON</p>
+          <h1 id="pokemon-editor-title">Pokémon</h1>
+          <p id="pe-subtitle" class="helper"></p>
+        </div>
+        <div class="tb-head-actions">
+          <button id="pe-close" class="modal-close" aria-label="Close">×</button>
+        </div>
+      </div>
+      <div class="tb-body pe-body">
+        <section id="pe-main" class="tb-main" aria-live="polite">
+          <div id="pe-picker" class="tb-picker" hidden>
+            <div class="tb-picker-head">
+              <input id="pe-search" class="pokedex-search" type="search" placeholder="Search by name, number or type" aria-label="Search Pokémon by name, number or type" spellcheck="false" autocomplete="off">
+              <button id="pe-picker-cancel" class="subtle" type="button">Back to Pokémon</button>
+            </div>
+            <div class="tb-dex-head" aria-hidden="true"><span></span><span>Pokémon</span><span>Types</span><span>Abilities</span><span>HP</span><span>Atk</span><span>Def</span><span>SpA</span><span>SpD</span><span>Spe</span><span>BST</span></div>
+            <div id="pe-dex" class="tb-dex" role="listbox" aria-label="Pokédex"></div>
+          </div>
+          <div id="pe-set" class="tb-set" hidden></div>
+          <div id="pe-list" class="tb-list" role="listbox" hidden></div>
+        </section>
+      </div>
+      <div class="tb-foot">
+        <p id="pe-note" class="helper">Your save is backed up before any change is written.</p>
+        <span class="nav-spacer" aria-hidden="true"></span>
+        <button id="pe-cancel" class="subtle" type="button">Cancel</button>
+        <button id="pe-save" class="solid" type="button">Save to save file</button>
+      </div>
+    </dialog>
     <dialog id="party-editor"class="launcher-modal party-editor" aria-labelledby="party-editor-title">
       <div class="modal-head tb-head">
         <div class="tb-title">
@@ -870,6 +903,7 @@
   <script src="gen4-learnsets.js"></script>
   <script src="formats.js"></script>
   <script src="team-builder.js"></script>
+  <script src="pokemon-editor.js"></script>
   <script src="online-versions.js"></script>
   <script src="online-page.js"></script>
   <script src="jukebox-beat.js"></script>

@@ -590,7 +590,7 @@ function backupReason(reason) {
   return ({ manual: 'Manual backup', 'before-play': 'Before playing', 'after-play': 'After playing',
     'before-restore': 'Before restoring', 'before-dolphin-import': 'Before importing', 'before-cleanup': 'Before cleanup',
     'before-port-update': 'Before update', 'before-tools-change': 'Before changing build tools',
-    'before-moving-xd-save': 'Before moving the XD save' })[reason] || 'Backup';
+    'before-moving-xd-save': 'Before moving the XD save', 'before-edit': 'Before editing a Pokémon' })[reason] || 'Backup';
 }
 
 function needsTextureDownload(data) {

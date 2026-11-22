@@ -1574,6 +1574,8 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .pokemon-grid.party .pokemon-slot-label strong { font-size: 13.5px; }
 .pokemon-slot-label small { color: var(--dex-muted); font-size: 10px; font-weight: 700; }
 .pokemon-shadow-mark { position: absolute; top: 4px; right: 5px; padding: 1px 5px; border-radius: 999px; background: var(--shadow-ink); color: #fff; font-size: 9px; font-weight: 750; letter-spacing: .04em; }
+.pokemon-edited-mark { position: absolute; top: 4px; right: 5px; padding: 1px 5px; border-radius: 999px; background: #d97706; color: #fff; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.pokemon-edited-mark.with-shadow { top: auto; bottom: 4px; }
 .pokemon-shiny-mark { position: absolute; top: 3px; left: 6px; color: #d39b1a; font-size: 12px; }
 .pokemon-side { min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; overflow-y: auto; background: var(--dex-panel); }
 .pokemon-detail { display: grid; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--dex-line); }
@@ -1581,12 +1583,36 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .pokemon-detail-sprite { flex: none; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 14px; background: var(--dex-stage); }
 .pokemon-detail-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .badge.shadow-badge { background: var(--shadow-ink); color: #fff; }
+.badge.edited-badge { background: #d97706; color: #fff; }
+.dark .badge.edited-badge { background: #b45309; color: #fef3c7; }
 .pokemon-heart { display: grid; gap: 4px; }
 .pokemon-heart-bar { height: 8px; border-radius: 999px; background: var(--dex-hover); overflow: hidden; }
 .pokemon-heart-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6d3aa8, #b07cf0); }
 .pokemon-heart small { color: var(--dex-muted); font-size: 11px; }
 .pokemon-friendship .pokemon-heart-bar i { background: linear-gradient(90deg, #d8508a, #f08bb6); }
-.pokemon-trade { justify-self: start; }
+.pokemon-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pokemon-trade, .pokemon-edit { justify-self: start; }
+/* Save Pokémon editor: mirrors the online team builder without the 6-slot team rail */
+.pokemon-editor { --shadow-ink: #5b2c83; width: min(1020px, calc(100% - 32px)); height: min(760px, calc(100% - 32px)); }
+.dark .pokemon-editor { --shadow-ink: #7d42b8; }
+.pokemon-editor .tb-title h1 { margin: 0; font-size: 21px; letter-spacing: -.03em; }
+.pokemon-editor .tb-title .helper { margin: 0; color: var(--tb-muted); font-size: 12px; }
+.pe-body { grid-template-columns: minmax(0, 1fr); }
+.pe-row-identity { grid-template-columns: minmax(115px, 1.3fr) 74px minmax(105px, .95fr) minmax(115px, 1.05fr) 82px auto; align-items: end; }
+.pe-level-pill { padding: 3px 10px; border: 1px solid var(--tb-line); border-radius: 8px; background: var(--tb-selected); font-size: 11px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.pe-move-controls { display: flex; align-items: center; gap: 6px; }
+.pe-move-input-wrap { flex: 1; min-width: 0; }
+.pe-move-input-wrap .online-input { width: 100%; }
+.pe-pp-ups { flex: none; width: auto; min-width: 88px; padding: 6px 8px; border: 1px solid var(--tb-line); border-radius: 8px; background: var(--tb-panel); color: inherit; font: inherit; font-size: 11px; font-weight: 650; }
+.dark .pe-pp-ups { background: var(--tb-panel); color: #f1e4ed; }
+.pe-item-clear { opacity: 1; }
+.tb-move.pe-shadow-move input:disabled { opacity: .85; font-weight: 700; cursor: default; }
+.pokemon-editor .tb-foot .helper { color: var(--tb-muted); }
+.pokemon-editor .tb-foot .pe-error { color: #b63226; font-weight: 650; }
+.dark .pokemon-editor .tb-foot .pe-error { color: #ffb3a8; }
+@media (max-width: 1060px) {
+  .pe-row-identity { grid-template-columns: 1fr 1fr 1fr; }
+}
 /* Online Trade (src/pokemon-page.js): the start card beside the grid, and the trade window that takes the page over
    while a room is open: the picker on the left, the two offers facing each other, Ready below. */
 .trade-start { display: grid; gap: 10px; align-content: start; padding-bottom: 14px; border-bottom: 1px solid var(--dex-line); }
@@ -1685,7 +1711,16 @@ pre { height: 120px; margin: 0; padding: 12px; overflow: auto; border-radius: 8p
 .tw-swap { align-self: center; display: grid; place-items: center; width: 38px; height: 38px; margin: 0 auto; border-radius: 50%; background: var(--dex-panel); border: 1px solid var(--dex-line); color: var(--dex-accent); box-shadow: 0 2px 8px #3b193014; }
 .tw-offer { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1.5px solid var(--dex-line); border-radius: 16px; background: var(--dex-panel); transition: border-color .2s, box-shadow .2s; }
 .tw-offer.ready { border-color: #3fb984; box-shadow: 0 0 0 3px #3fb98430, 0 8px 22px #18765718; }
+.tw-offer.edited:not(.ready):not(.refused) { border-color: #d97706; box-shadow: 0 0 0 2px #d9770628; }
 .tw-offer.refused { border-color: #d0574b; }
+.tw-edited-banner { display: flex; align-items: center; gap: 11px; padding: 10px 13px; border: 2px solid #d97706; border-radius: 12px; background: linear-gradient(135deg, #fff4d6, #fde3a7); color: #7c2d12; box-shadow: 0 4px 14px #d9770622; }
+.tw-edited-banner svg { flex: none; width: 26px; height: 26px; fill: none; stroke: #b45309; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+.tw-edited-banner div { display: grid; gap: 2px; min-width: 0; }
+.tw-edited-banner strong { font-size: 13px; font-weight: 900; letter-spacing: .07em; color: #9a3412; }
+.tw-edited-banner span { font-size: 12px; font-weight: 650; line-height: 1.35; }
+.dark .tw-edited-banner { border-color: #f59e0b; background: linear-gradient(135deg, #5c2808, #451a05); color: #fde68a; box-shadow: 0 4px 16px #00000044; }
+.dark .tw-edited-banner svg { stroke: #fbbf24; }
+.dark .tw-edited-banner strong { color: #fcd34d; }
 .tw-offer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tw-who { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 800; }
 .tw-who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

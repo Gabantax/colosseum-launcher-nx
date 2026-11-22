@@ -53,6 +53,7 @@ function summary(game, bytes, viewerGame = game) {
     friendship: p.friendship, otName: text(p.otName), otId: p.otId & 0xffff, otGender: p.otGender,
     ribbons: p.ribbons, contest: p.contest, contestRanks: p.ranks, sheen: p.sheen, pokerus: p.pokerus, markings: p.markings,
     metLevel: p.metLevel, origin: p.attest[0], language: p.attest[3], event: p.event,
+    edited: Boolean(p.flagAmari & savePokemon.EDITED_FLAG),
     evolvesInto: viewerGame === game ? tradeEvolution(game, bytes) : 0 };
 }
 

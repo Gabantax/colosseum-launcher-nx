@@ -74,6 +74,7 @@ const languagePacks = require('./language-packs');
 const titleLogo = require('./title-logo');
 const { retrying, httpError } = require('./retry');
 const savePokemon = require('./save-pokemon');
+const savePokemonEdit = require('./save-pokemon-edit');
 const shadowtrade = require('./shadowtrade');
 const { GameLink } = require('./game-link');
 const { OnlineTrades, summary: tradeSummary } = require('./online-trades');
@@ -2284,8 +2285,9 @@ function pokemonPage() {
       tradeLater: pokemon.shadow && savePokemon.shadowtradeKind(game, pokemon.species) === 'later' };
     model = { ...model, party: model.party.map(each), boxes: model.boxes.map(box => ({ ...box, pokemon: box.pokemon.map(each) })) };
   }
-  return { game, source, model, notice, canTrade: canTrade && Boolean(model), pool: shadowtrade.poolFor(game, saveRandomized(game)),
-    trades: trades().view(), live: live?.head || null };
+  const gameRunning = storyGame === game || heldGame()?.game === game;
+  return { game, source, model, notice, canTrade: canTrade && Boolean(model), canEdit: Boolean(model) && !gameRunning, gameRunning,
+    pool: shadowtrade.poolFor(game, saveRandomized(game)), trades: trades().view(), live: live?.head || null };
 }
 
 function syncTrades() {
@@ -2479,6 +2481,147 @@ async function importPokemon(places) {
   }
   broadcast('pokemon-changed');
   return { view: importView(), results };
+}
+
+// --- Edit a Pokémon in the save (src/save-pokemon-edit.js): only while that game is closed. Reads the Pokémon and the
+// disc's moves/items/species/pack data for the editor, validates and backs up the save before writing changes back.
+function saveEditCatalog(game) {
+  const receiver = tradeReceiver(game), battleRules = Number(config.settings?.battleRules) || 3;
+  let battle = null;
+  if (teamDiscReady()) {
+    try {
+      const rom = teamDisc(), raw = battleData(rom);
+      const later = Object.fromEntries(Object.entries(raw.generations || {}).map(([gen, each]) => {
+        let dex = [];
+        try { dex = generationDex(rom, Number(gen)); } catch (_) { /* without sprites */ }
+        return [gen, { ...each, dex }];
+      }));
+      battle = { ...raw, generations: later,
+        categories: Object.fromEntries(generations.available().filter(each => each.generation > generations.COLOSSEUM_RULES)
+          .map(each => [each.generation, generations.moveCategories(each.generation)])) };
+    } catch (_) { /* fallback below */ }
+  }
+  battle ||= savePokemonEdit.fallbackBattleData();
+
+  // Sprites, stats and pack species (all keyed by Colosseum species ID so the editor handles Colosseum and XD alike).
+  const dexByColosseum = new Map();
+  let packSpecies = [];
+  try {
+    const rom = port.validateRom(config.rom, game), list = pokedexList(rom);
+    for (const entry of list.species) {
+      const id = tradeConvert.speciesToColosseum(game, entry.id);
+      dexByColosseum.set(id, { id, national: entry.national, name: entry.name, types: entry.types, abilities: entry.abilities, stats: entry.stats, sprite: entry.sprite });
+    }
+    const packSprite = new Map((list.packs || []).map(entry => [entry.pack?.key, entry]));
+    if (game === games.DEFAULT || teamDiscReady()) {
+      const loaded = readPokemonPacks(packsDisc(rom, 'Pokémon packs are read'));
+      const ownAbilities = new Map();
+      for (const entry of Object.values(battle.species || {})) for (const a of entry.abilities || []) ownAbilities.set(a.id, a);
+      for (const each of loaded.pokemon) {
+        const listed = packSprite.get(each.key);
+        const rawAbs = [each.row[0x32], each.row[0x33]].map((aid, slot) => aid && {
+          slot, id: aid, name: ownAbilities.get(aid)?.name || listed?.abilities?.[slot] || `Ability #${aid}`, doc: ownAbilities.get(aid)?.doc || ''
+        }).filter(Boolean).filter((a, i, arr) => !i || a.id !== arr[0].id);
+        const packEntry = {
+          id: each.id,
+          national: each.base.national,
+          name: listed?.name || pokedexNames.displayName(each.name),
+          types: listed?.types || [],
+          stats: Array.from({ length: 6 }, (_, i) => each.row.readUInt16BE(0x84 + i * 2)),
+          gender: each.row[0x02],
+          growthRate: savePokemonEdit.GROWTH[each.row[0x00]] || 'mediumFast',
+          abilities: rawAbs.length ? rawAbs : [{ slot: 0, id: 0, name: listed?.abilities?.[0] || '—', doc: '' }],
+          sprite: listed?.sprite || null,
+          pack: true
+        };
+        packSpecies.push(packEntry);
+        dexByColosseum.set(each.id, { id: each.id, national: packEntry.national, name: packEntry.name, types: packEntry.types,
+          abilities: packEntry.abilities.map(a => a.name), stats: packEntry.stats, sprite: packEntry.sprite, pack: true });
+      }
+    }
+  } catch (_) { /* without disc sprites/packs */ }
+
+  // Merge sprites into fallback dex entries if needed.
+  if (battle.dex) {
+    for (const entry of battle.dex) {
+      const found = dexByColosseum.get(entry.id);
+      if (found) entry.sprite = found.sprite;
+      else dexByColosseum.set(entry.id, entry);
+    }
+  }
+  const gen4Dex = battle.generations?.[4]?.dex || [];
+  for (const entry of gen4Dex) {
+    if (!dexByColosseum.has(entry.id)) dexByColosseum.set(entry.id, entry);
+    else if (!entry.sprite && dexByColosseum.get(entry.id)?.sprite) entry.sprite = dexByColosseum.get(entry.id).sprite;
+  }
+
+  return { game, receiver, battleRules, battle, dex: [...dexByColosseum.values()], packSpecies };
+}
+
+function editOptionsFor(catalog) {
+  const packMap = new Map(catalog.packSpecies.map(p => [p.id, p]));
+  const battle = catalog.battle, rules = catalog.battleRules;
+  const moveList = rules >= 4 ? (battle.generations?.[4]?.moves || battle.moves || []) : (battle.moves || []);
+  const ppByMove = new Map(moveList.map(m => [m.id, m.pp]));
+  // Include Gen 4 move PPs even when battleRules < 4 if Gen 4 Pokémon/moves are enabled.
+  for (const m of battle.generations?.[4]?.moves || []) if (!ppByMove.has(m.id)) ppByMove.set(m.id, m.pp);
+  const speciesInfo = id => {
+    const pack = packMap.get(id);
+    if (pack) return { id: pack.id, name: pack.name, stats: pack.stats, growthRate: pack.growthRate, gender: pack.gender, abilityCount: Math.max(1, pack.abilities.length) };
+    const base = savePokemonEdit.defaultSpeciesInfo(id);
+    if (!base) return null;
+    const discRow = (rules >= 4 ? battle.generations?.[4]?.species?.[id] : null) || battle.species?.[id];
+    return discRow ? { ...base, gender: discRow.gender ?? base.gender, abilityCount: Math.max(1, discRow.abilities?.length || base.abilityCount) } : base;
+  };
+  return { receiver: catalog.receiver, speciesInfo, movePp: id => ppByMove.get(id) || savePokemonEdit.defaultMovePp(id), allowedPackSpecies: new Set(packMap.keys()) };
+}
+
+function assertCanEditSave(game) {
+  if (storyGame === game || heldGame()?.game === game) throw new Error(`Close ${shortGameName(game)} before editing a Pokémon in your save.`);
+  if (shadowtradeTrades?.busy || onlineTradesInstance?.server?.trade || localTradesInstance?.trade)
+    throw new Error('Wait for the trade in progress to finish before editing a Pokémon.');
+}
+
+function pokemonEditOpen(place) {
+  const game = config.game;
+  assertCanEditSave(game);
+  const where = { area: place?.area === 'box' ? 'box' : 'party', box: Number(place?.box) || 0, slot: Number(place?.slot) || 0 };
+  const { copies } = savePokemon.cardCopies(saveDirectoryOf(game), game);
+  if (!copies.length) throw new Error(`There is no ${shortGameName(game)} save yet: play and save once first.`);
+  const catalog = saveEditCatalog(game);
+  const read = savePokemonEdit.readSlot(copies[0].ctx, where, editOptionsFor(catalog));
+  if (read.pokemon.egg) throw new Error('Eggs can\'t be edited.');
+  const model = savePokemon.model(copies[0].ctx);
+  const boxName = where.area === 'box' ? (model.boxes[where.box]?.name || `BOX ${where.box + 1}`) : null;
+  return { game, boxName, ...read, catalog };
+}
+
+function pokemonEditSave(payload) {
+  const game = config.game;
+  assertCanEditSave(game);
+  const saveDir = saveDirectoryOf(game);
+  const where = { area: payload?.place?.area === 'box' ? 'box' : 'party', box: Number(payload?.place?.box) || 0, slot: Number(payload?.place?.slot) || 0 };
+  const identity = { species: Number(payload?.identity?.species) || 0, rnd: Number(payload?.identity?.rnd) >>> 0, trainer: Number(payload?.identity?.trainer) >>> 0 };
+  const changes = payload?.changes && typeof payload.changes === 'object' ? payload.changes : {};
+  const { copies } = savePokemon.cardCopies(saveDir, game);
+  if (!copies.length) throw new Error(`There is no ${shortGameName(game)} save yet: play and save once first.`);
+  const catalog = saveEditCatalog(game), opts = editOptionsFor(catalog);
+  // Dry-run validation on the read copy before creating a backup or touching disk.
+  savePokemonEdit.applyEdit(copies[0].ctx, where, identity, changes, opts);
+  assertCanEditSave(game);
+  const backup = saves.backupSaves(saveDir, saves.backupRoot(), 'before-edit');
+  if (!backup.empty) log(`Saved ${backup.count} memory card file(s) to ${backup.directory}`);
+  let applied = false;
+  const result = savePokemon.editCard(saveDir, game, ctx => {
+    if (applied) return null;
+    applied = true;
+    return savePokemonEdit.applyEdit(ctx, where, identity, changes, opts);
+  });
+  storyCache = null;
+  broadcast('pokemon-changed', game);
+  const location = where.area === 'party' ? `party slot ${where.slot + 1}` : `box ${where.box + 1}, slot ${where.slot + 1}`;
+  log(`Pokémon editor: saved changes to ${result.nickname} (${location}) in your ${shortGameName(game)} save.`);
+  return { ok: true, result, backup: backup.directory || null };
 }
 
 // --- Discord activity (src/discord.js, src/presence.js): only while the game runs, and only with the setting on.
@@ -3755,6 +3898,8 @@ function registerHandlers() {
     }
     throw new Error('No such import action.');
   });
+  ipcMain.handle('pokemon-edit-open', (_event, place) => pokemonEditOpen(place));
+  ipcMain.handle('pokemon-edit-save', (_event, payload) => pokemonEditSave(payload));
   ipcMain.handle('online-save', (_event, value) => {
     config.online = parties.normalize(value);
     saveConfig();

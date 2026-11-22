@@ -87,6 +87,8 @@ contextBridge.exposeInMainWorld('colo', {
   onlineTrade: (action, value) => ipcRenderer.invoke('online-trade', action, value),
   localTrade: (action, value) => ipcRenderer.invoke('local-trade', action, value),
   saveImport: (action, value) => ipcRenderer.invoke('save-import', action, value),
+  pokemonEditOpen: place => ipcRenderer.invoke('pokemon-edit-open', place),
+  pokemonEditSave: payload => ipcRenderer.invoke('pokemon-edit-save', payload),
   onPokemonChanged: callback => ipcRenderer.on('pokemon-changed', (_event, game) => callback(game)),
   onShadowtrade: callback => ipcRenderer.on('shadowtrade', (_event, view) => callback(view)),
   onOnlineTrades: callback => ipcRenderer.on('online-trades', (_event, view) => callback(view)),
