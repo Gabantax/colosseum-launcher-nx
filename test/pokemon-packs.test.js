@@ -155,6 +155,11 @@ test('the game\'s own Pokémon\'s rows and the relearner go in a chunk of their 
   assert.ok(file.subarray(36, 66).equals(evolutions));
   assert.ok(file.subarray(68, 148).equals(moves));
   assert.equal(packs.compile({ pokemon: [] }).readUInt32BE(8), 0, 'nothing without them');
+  // the relearner alone, with no later generation's rows: an empty ROWS chunk with its flag
+  const alone = packs.compile({ pokemon: [], relearner: true });
+  assert.equal(alone.readUInt32BE(8), 1);
+  assert.equal(alone.toString('latin1', 16, 20), 'ROWS');
+  assert.deepEqual([alone.readUInt32BE(20), alone.readUInt32BE(24), alone.readUInt32BE(28)], [8, 0, 1]);
 });
 
 test('a Pokémon keeps its row, and new ones take the first that none has had', () => {

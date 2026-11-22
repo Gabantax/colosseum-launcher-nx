@@ -195,6 +195,9 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     cstickMove: Boolean(input.cstickMove),
     // Colosseum: Wes walks through Rui in the field instead of pushing her back. On unless turned off.
     partnerPass: input.partnerPass !== false,
+    // Colosseum: the Move Deleter at Mt. Battle also makes a Pokémon remember a move (main.js preparePokemonPacks). On
+    // unless turned off.
+    moveRelearner: input.moveRelearner !== false,
     // Split-screen co-op: a second controller's START in the field brings in player 2, with their own camera and half of
     // the screen. On unless turned off. Player 2's hero (auto: Red, or Wes when player 1 plays as another hero; in XD
     // Wes, or Michael; Michael is XD's only), the

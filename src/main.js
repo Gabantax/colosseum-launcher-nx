@@ -1313,10 +1313,12 @@ function preparePokemonPacks(rom, folder) {
   for (const problem of loaded.problems) log(`Pokémon pack ${packLabel(problem)}: ${problem.message}`);
   for (const name of loaded.missing) log(`Pokémon pack ${name} isn't in the packs folder: Pokémon of it in your saves stay hidden until it's back.`);
   const pokemon = [...loaded.pokemon, ...loaded.generationPokemon], { moves, rules } = loaded.built, { ownRows } = loaded;
-  // With a later generation's Pokémon, the Move Deleter also makes a Pokémon remember a move, as that generation's games do
-  const relearner = loaded.generationPokemon.length > 0;
+  // Colosseum's Move Deleter at Mt. Battle also makes a Pokémon remember a move, as later games' Move Relearner does (on
+  // unless turned off; XD's Move Teacher there is one of its own). It reminds a Pokémon of its own level-up moves, or a
+  // later generation's when that's on.
+  const relearner = supports('moveRelearner') && config.settings.moveRelearner !== false;
   const looks = pbrOwnModels(loaded.tables);
-  if (!pokemon.length && !moves.length && !rules && !ownRows.length && !looks.length) return { file: null, own: 0 };
+  if (!pokemon.length && !moves.length && !rules && !ownRows.length && !looks.length && !relearner) return { file: null, own: 0 };
   if (loaded.registryChanged) pokemonPacks.writeRegistry(currentSaveDirectory(), loaded.registry);
   const file = path.join(folder, 'pokemon-packs.bin');
   fs.writeFileSync(file, pokemonPacks.compile({ pokemon, moves, rules, ownRows, relearner, looks }));
