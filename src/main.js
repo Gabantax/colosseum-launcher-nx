@@ -2578,7 +2578,7 @@ function editOptionsFor(catalog) {
 
 function assertCanEditSave(game) {
   if (storyGame === game || heldGame()?.game === game) throw new Error(`Close ${shortGameName(game)} before editing a Pokémon in your save.`);
-  if (shadowtradeTrades?.busy || onlineTradesInstance?.server?.trade || localTradesInstance?.trade)
+  if (shadowtradeTrades?.busy || onlineTradesInstance?.server?.trade || localTradesInstance?.state?.journal?.length)
     throw new Error('Wait for the trade in progress to finish before editing a Pokémon.');
 }
 

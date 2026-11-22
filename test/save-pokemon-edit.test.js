@@ -549,3 +549,51 @@ test('edited flag: marks modified Pokémon in Colosseum and XD, blocks Shadowtra
   assert.equal(xdModel.party[1].edited, true);
   assert.equal(sp.offerProblem(xdModel, xdModel.party[1]), 'Edited Pokémon can\'t go to Shadowtrade.');
 });
+
+test('assertCanEditSave allows editing when trade managers are idle and blocks active trades', t => {
+  const vm = require('node:vm');
+  const { createRequire } = require('node:module');
+  const root = folder(t);
+  const filename = path.resolve(__dirname, '../src/main.js');
+  const localRequire = createRequire(filename);
+  const electron = {
+    ipcMain: { handle() {} },
+    app: { requestSingleInstanceLock: () => true, commandLine: { appendSwitch() {} }, on() {},
+      whenReady: () => ({ then() {} }), getPath: () => root, getVersion: () => '0.1.3', isPackaged: false },
+    BrowserWindow: class {}, dialog: {}, shell: {}, clipboard: {}, net: {}, screen: {},
+    protocol: { registerSchemesAsPrivileged() {}, handle() {} }
+  };
+  const context = {
+    require: id => id === 'electron' ? electron : localRequire(id),
+    __dirname: path.dirname(filename), process, setTimeout, setInterval, clearInterval, module: { exports: {} }
+  };
+  vm.runInNewContext(`${fs.readFileSync(filename, 'utf8')}
+    module.exports = { assertCanEditSave, trades, onlineTrades, localTrades };`, context, { filename });
+  const main = context.module.exports;
+
+  // Instantiate all three trade managers (as opening the Pokémon tab does): idle managers must not block editing.
+  const st = main.trades();
+  const ot = main.onlineTrades();
+  const lt = main.localTrades();
+  assert.equal(typeof lt.trade, 'function');
+  assert.doesNotThrow(() => main.assertCanEditSave('colosseum'));
+  assert.doesNotThrow(() => main.assertCanEditSave('xd'));
+
+  // Active local trade blocks editing, and clears once finished.
+  lt.state.journal.push({ tradeId: 'local-1', stage: 'trading', sides: [] });
+  assert.throws(() => main.assertCanEditSave('colosseum'), /trade in progress/);
+  lt.state.journal.length = 0;
+  assert.doesNotThrow(() => main.assertCanEditSave('colosseum'));
+
+  // Active online trade blocks editing, and clears once finished.
+  ot.server = { trade: { tradeId: 'online-1', stage: 'committed' } };
+  assert.throws(() => main.assertCanEditSave('colosseum'), /trade in progress/);
+  ot.server = null;
+  assert.doesNotThrow(() => main.assertCanEditSave('colosseum'));
+
+  // Busy Shadowtrade blocks editing, and clears once idle.
+  st.busy = Promise.resolve();
+  assert.throws(() => main.assertCanEditSave('colosseum'), /trade in progress/);
+  st.busy = null;
+  assert.doesNotThrow(() => main.assertCanEditSave('colosseum'));
+});
