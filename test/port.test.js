@@ -242,6 +242,12 @@ test('choosing starters is on unless turned off, and on leaves it to the game', 
   }
 });
 
+test('the Move Relearner is on unless turned off', () => {
+  assert.equal(port.normalizeSettings({}).moveRelearner, true);
+  assert.equal(port.normalizeSettings({ moveRelearner: true }).moveRelearner, true);
+  assert.equal(port.normalizeSettings({ moveRelearner: false }).moveRelearner, false);
+});
+
 test('Walk through Rui is on unless turned off, and is Colosseum only', () => {
   const env = (settings, options) => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port', options);
   const saved = process.env.COLO_PARTNER_PASS;
