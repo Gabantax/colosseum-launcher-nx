@@ -1757,9 +1757,18 @@ function jukeboxRender(id) {
   });
 }
 
+// A story's Play: no game left running is adopted while it starts and runs (the link file names this run's link), and
+// the launcher listens for one again once it ends, however it ends
+let storyStarting = 0;
 async function play(installation = null, battle = null) {
   broadcast('jukebox-stop');  // the Jukebox's music and the game would share the sound device
   if (jukeboxWindowOpen()) jukeboxWindow.webContents.send('jukebox-stop');
+  if (battle) return playGame(installation, battle);
+  storyStarting++;
+  try { return await playGame(installation, battle); } finally { if (!--storyStarting) openAdoptLink(); }
+}
+
+async function playGame(installation = null, battle = null) {
   const root = installation?.repo || requireRepo();
   const chosen = activeGame();
   if (battle && !supports('online')) throw new Error('Online battles are for Pokémon Colosseum for now.');
@@ -1790,6 +1799,9 @@ async function play(installation = null, battle = null) {
   // The launcher link (src/game-link.js): the game shows its save to the Pokémon page over it and takes Shadowtrade's
   // commands (host/launcherlink.c, host/shadowtrade.c)
   if (!battle && trades().busy) throw new Error('Shadowtrade is changing your save. Play again in a moment.');
+  const before = adopted ? { game: storyGame } : heldGame();
+  if (before) throw new Error(`${shortGameName(before.game)} is still running from before (it was open when the launcher closed). Close it first, then play.`);
+  if (!battle) closeAdoptLink();
   const storyLink = !battle ? await openStoryLink(chosen.id) : null;
   const playEnv = { ...port.buildEnvironment(settings, rom, root, { customTextures: customTextureDirectory(), pbrTextures: pbrTextureFolder(settings), laterGenerations: onlineFeatures(root).randomizerGenerations,
     // a new randomized run can have packs' own Pokémon: there are some, and the game can choose them
@@ -1808,7 +1820,7 @@ async function play(installation = null, battle = null) {
     SMS_GX_SHADER_CACHE: path.join(cacheFolder, chosen.id === games.DEFAULT ? 'gx-programs.bin' : `gx-programs-${chosen.id}.bin`),
     SMS_TEXTURE_PACK_CACHE: path.join(cacheFolder, 'texture-mips'),
     COLO_SETTINGS_SAVE: gameSettingsFile,
-    ...(storyLink ? storyLink.environment() : {}),
+    ...(storyLink ? { ...storyLink.environment(), COLO_LINK_FILE: gameLinkFile() } : {}),
     ...(battle ? { COLO_ONLINE: String(battle.port), COLO_SKIP_MOVIES: '1', COLO_NOCARD: '1' } : {}),
     ...(config.settings.discordPresence && supports('discordPresence') ? { COLO_PRESENCE: '1' } : {}),
     ...(packsFile ? { COLO_POKEMON_PACKS: packsFile } : {}) };
@@ -1825,7 +1837,10 @@ async function play(installation = null, battle = null) {
   const settingsWatch = setInterval(() => keepGameSettings(gameSettingsFile), GAME_SETTINGS_POLL_MS);
   if (!battle) storyGame = chosen.id;
   try {
-    return await launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, playLabel(), true);
+    const running = launch(cmd.command, cmd.args, { cwd: cmd.cwd, env: cmd.env }, playLabel(), true);
+    // (launch has started it by now: its pid, kept while it runs, for a launcher opened after this one closes)
+    if (!battle && active?.label === playLabel() && active.child?.pid) noteGameRunning(chosen.id, active.child.pid, cmd.command);
+    return await running;
   } catch (error) {
     // Stop game ends it on purpose: that is no failure to report.
     if (!wasStopped(startedAt)) {
@@ -1841,6 +1856,7 @@ async function play(installation = null, battle = null) {
     if (!battle) {
       storyGame = null;
       closeStoryLink(storyLink);
+      forgetGameRunning(process.pid);
       broadcast('pokemon-changed', chosen.id);
       // trades waiting for the save can go to the card now
       setTimeout(() => { syncTrades(); if (onlineTradesInstance?.state.journal.length) syncOnlineTrades(); if (localTradesInstance?.state.journal.length) syncLocalTrades(); }, 0);
@@ -1884,6 +1900,15 @@ async function openStoryLink(game) {
   closeStoryLink(storyLive?.link);
   const link = new GameLink({ log });
   await link.listen();
+  writeGameLink(link);
+  wireStoryLive(link, game);
+  link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
+  return link;
+}
+
+// The running story's live picture over `link`: the Pokémon page follows it, and trades and arrivals waiting for the save
+// go to the game once its save is in
+function wireStoryLive(link, game) {
   let refresh = null, synced = false, onlineSynced = false, localSynced = false;
   storyLive = new shadowtrade.LiveGame(link, { onChange: ({ whole, closed }) => {
     if (!refresh) refresh = setTimeout(() => { refresh = null; broadcast('pokemon-changed', game); }, LIVE_REFRESH_MS);
@@ -1897,8 +1922,130 @@ async function openStoryLink(game) {
     if (localWaiting && storyLive?.current()?.head.loaded && storyLive.current().head.safe && !localSynced) { localSynced = true; syncLocalTrades(); }
     if (storyLive?.current()?.head.loaded && storyLive.current().head.safe) deliverArrivals();
   } });
-  link.on('hello', hello => log(`The game is linked to the launcher (${[...hello.caps].join(', ') || 'no features'}).`));
-  return link;
+}
+
+// --- A game left running. The launcher closing while its game plays leaves the game running (before-quit), and its link
+// goes with the launcher. The game links again to the launcher opened next (host/launcherlink.c, COLO_LINK_FILE): the
+// launcher keeps the port:token it listens on in the game-link file, and a game that links to it while nothing plays is
+// taken as the running story (adopted), so trades go through the game, which saves them itself, and not round it into
+// the card (which the game would save over). The game's pid is kept in game-running.json while it plays, so a game that
+// can't link again (a build from before) still keeps the card from being changed under it until it closes.
+const gameLinkFile = () => path.join(app.getPath('userData'), 'game-link');
+const gameRunningFile = () => path.join(app.getPath('userData'), 'game-running.json');
+const RUNNING_KEPT_MS = 3 * 864e5;   // a pid noted longer ago than this is taken as another program's by now
+let adoptLink = null, adopted = false, heldCache = null, adoptEpoch = 0;
+
+function writeAtomicText(file, text) {
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, text, { mode: 0o600 });
+  try { fs.renameSync(temporary, file); } catch (error) {
+    if (process.platform !== 'win32') throw error;
+    fs.rmSync(file, { force: true });
+    fs.renameSync(temporary, file);
+  }
+}
+function writeGameLink(link) {
+  try { writeAtomicText(gameLinkFile(), `${link.port}:${link.token}\n`); } catch (error) { log(`Launcher link: couldn't write the link file (${error.message}).`); }
+}
+function noteGameRunning(game, pid, command) {
+  heldCache = null;
+  try { writeAtomicText(gameRunningFile(), JSON.stringify({ game, pid, exe: path.basename(command), launcher: process.pid, at: Date.now() })); }
+  catch (error) { log(`Couldn't note the running game (${error.message}).`); }
+}
+// the note gone: the game closed (launcher: only the note this launcher wrote)
+function forgetGameRunning(launcher = null) {
+  heldCache = null;
+  try {
+    if (launcher !== null && JSON.parse(fs.readFileSync(gameRunningFile(), 'utf8')).launcher !== launcher) return;
+  } catch (_) { /* none, or unreadable: gone either way */ }
+  fs.rmSync(gameRunningFile(), { force: true });
+}
+// Whether pid is the game: it is running, and (where that can be read) it is the game's program, not another that has
+// its pid since
+const gameProcessNames = new Map();   // pid -> whether it is the game's program (Windows: tasklist's answer)
+function gameProcessAlive(running) {
+  try { process.kill(running.pid, 0); } catch (error) { if (error.code !== 'EPERM') return false; }
+  if (process.platform === 'linux') {
+    try { return path.basename(fs.readlinkSync(`/proc/${running.pid}/exe`)) === running.exe; } catch (_) { return true; }
+  }
+  if (process.platform === 'win32' && running.exe) {
+    // Windows soon gives a pid to another program: its image name says (until it answers, taken as the game)
+    const key = `${running.pid}:${running.exe}`;
+    if (!gameProcessNames.has(key)) {
+      gameProcessNames.set(key, true);
+      execFile('tasklist', ['/FI', `PID eq ${running.pid}`, '/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 8000 }, (error, stdout) => {
+        if (error) return;
+        const name = String(stdout).split(/\r?\n/).map(line => line.split('","')[0].replace(/^"/, '')).find(Boolean) || '';
+        const same = name.toLowerCase() === running.exe.toLowerCase();
+        gameProcessNames.set(key, same);
+        if (!same) { heldCache = null; broadcast('pokemon-changed', running.game); }
+      });
+    }
+    return gameProcessNames.get(key);
+  }
+  return true;
+}
+// A game this launcher didn't start that is still running and isn't linked to it: { game, pid } or null. Its save is
+// left alone while it runs (Online Trades, Shadowtrade, trades between your games and Import wait), since the game
+// would save over a change made to the card.
+function heldGame() {
+  if (adopted || (active?.child && isPlayLabel(active.label))) return null;
+  if (heldCache && Date.now() - heldCache.at < 2000) return heldCache.value;
+  let value = null;
+  try {
+    const running = JSON.parse(fs.readFileSync(gameRunningFile(), 'utf8'));
+    const stale = !Number.isInteger(running?.pid) || running.launcher === process.pid || Date.now() - running.at > RUNNING_KEPT_MS || !gameProcessAlive(running);
+    if (stale) forgetGameRunning();
+    else value = { game: running.game, pid: running.pid };
+  } catch (_) { /* no game noted */ }
+  heldCache = { at: Date.now(), value };
+  return value;
+}
+const heldMessage = game => `${shortGameName(game)} is still running from before (it was open when the launcher closed). Your Pokémon wait until it links to the launcher or closes.`;
+
+// Listening for a game left running, while nothing plays: the link file names this link
+const adoptable = () => !adoptLink && !storyGame && !storyLive && !storyStarting && app.isReady();
+async function openAdoptLink() {
+  if (!adoptable()) return;
+  const epoch = adoptEpoch;
+  const link = new GameLink({ log });
+  try { await link.listen(); } catch (error) { log(`Launcher link: ${error.message}`); return; }
+  if (!adoptable() || epoch !== adoptEpoch) { link.close(); return; }
+  adoptLink = link;
+  writeGameLink(link);
+  link.on('hello', hello => {
+    const game = games.ids().includes(hello.game) ? hello.game : null;
+    if (!game || storyGame || adoptLink !== link) { log('Launcher link: a game linked while another plays: let go.'); closeAdoptLink(); openAdoptLink(); return; }
+    adopted = true;
+    storyGame = game;
+    heldCache = null;
+    wireStoryLive(link, game);
+    log(`${shortGameName(game)} was already running (it was open when the launcher closed): it's linked to the launcher again, and trades go through the game (${[...hello.caps].join(', ') || 'no features'}).`);
+    broadcast('pokemon-changed', game);
+  });
+  link.on('close', () => {
+    if (adoptLink !== link || !adopted) return;
+    // the game closed, or let the link go
+    const game = storyGame;
+    adopted = false;
+    storyGame = null;
+    adoptLink = null;
+    closeStoryLink(link);
+    forgetGameRunning();
+    log(`${shortGameName(game)} closed (the game that was running from before).`);
+    broadcast('pokemon-changed', game);
+    setTimeout(() => { syncTrades(); if (onlineTradesInstance?.state.journal.length) syncOnlineTrades(); if (localTradesInstance?.state.journal.length) syncLocalTrades(); }, 0);
+    try { makeSaveBackup('after-play'); } catch (error) { log(`Save backup failed: ${error.message}`); }
+    openAdoptLink();
+  });
+}
+function closeAdoptLink() {
+  adoptEpoch++;
+  const link = adoptLink;
+  if (!link) return;
+  adoptLink = null;
+  if (adopted) { adopted = false; storyGame = null; }
+  closeStoryLink(link);
 }
 
 function closeStoryLink(link) {
@@ -1921,6 +2068,8 @@ function arrivals() {
   if (!arrivalsInstance) arrivalsInstance = new Arrivals({ folder: path.join(app.getPath('userData'), 'arrivals'), log,
     onChange: () => { arrivalRetryAt = 0; setTimeout(deliverArrivals, 0); },
     describe: describeArrival,
+    trainerOf: game => (storyGame === game ? storyLive?.current()?.model?.trainerId : null) ?? savePokemon.readCard(saveDirectoryOf(game), game)?.trainerId ?? null,
+    onRestored: entry => broadcast('pokemon-changed', entry.game),
     onDone: (entry, result) => {
       log(`Trades: the game showed ${entry.kind === 'shadowtrade' ? 'the Shadow Pokémon' : 'the Pokémon'} from ${entry.from || 'the trade'}${result.evolved ? `, which evolved` : ''}.`);
       if (entry.kind === 'trade' && entry.tradeId) onlineTrades().arrived(entry.tradeId, result);
@@ -2012,6 +2161,7 @@ function saveRandomized(game) { try { return Boolean(saveRun(saveDirectoryOf(gam
 // How a game's save can be reached now: the running game's (once it has a save loaded and sends its live picture), the card
 // while that game isn't running, or null.
 function tradeAccess(game) {
+  if (storyGame !== game && heldGame()?.game === game) return null;
   const randomized = saveRandomized(game);
   if (!shadowtradeReady(game) && storyGame !== game) return null;
   if (storyGame === game) {
@@ -2043,6 +2193,9 @@ function pokemonPage() {
       canTrade = false;
       notice = live ? 'Continue your save in the game to see its Pokémon as they are now and trade.'
         : 'This is your last save. This version of the game can\'t trade while it runs: update the game, or trade once it closes.';
+    } else if (heldGame()?.game === game) {
+      canTrade = false;
+      notice = `This is your last save. ${heldMessage(game)}`;
     }
   }
   if (canTrade && model && !(source === 'live' ? live.head.entries >= 2 : shadowtradeReady(game))) {
@@ -2090,11 +2243,13 @@ function onlineTrades() {
   if (!onlineTradesInstance) onlineTradesInstance = new OnlineTrades({ folder: path.join(app.getPath('userData'), 'online-trades'),
     url: shadowtrade.serverUrl(), fetch: (...args) => net.fetch(...args), log, onChange: view => broadcast('online-trades', view),
     accessFor: onlineTradeAccess, receiverFor: tradeReceiver, launcher: app.getVersion(), arrivals: arrivals(),
+    unavailable: game => (storyGame !== game && heldGame()?.game === game ? heldMessage(game) : null),
     name: game => { try { return (storyGame === game ? storyLive?.current()?.model?.trainer : null) || savePokemon.readCard(saveDirectoryOf(game), game)?.trainer || 'Trainer'; } catch (_) { return 'Trainer'; } } });
   return onlineTradesInstance;
 }
 
 function onlineTradeAccess(game) {
+  if (storyGame !== game && heldGame()?.game === game) return null;
   if (storyGame === game) {
     const live = storyLive?.current();
     if (!live?.head.loaded || !storyLive.link.has('trade.1')) return null;
@@ -2140,6 +2295,7 @@ function localTradeAccess(game) {
 }
 function localTradeUnavailable(game) {
   const name = shortGameName(game);
+  if (storyGame !== game && heldGame()?.game === game) return heldMessage(game);
   if (storyGame === game) {
     if (!storyLive?.current()?.head.loaded) return `${name} is running: continue your save in it, and its Pokémon show here.`;
     if (!storyLive.link.has('trade.1')) return `This version of ${name} can't trade while it runs: update it, or close it and trade.`;
@@ -2214,6 +2370,7 @@ async function importPokemon(places) {
   const game = config.game, problem = importProblem(importing.read.kind);
   if (problem) throw new Error(problem);
   if (storyGame === game && !storyLive?.current()?.head.loaded) throw new Error(`${shortGameName(game)} is running: continue your save in it first, or close it.`);
+  if (storyGame !== game && heldGame()?.game === game) throw new Error(heldMessage(game));
   // the card is backed up once, before the first Pokémon goes in
   let backedUp = false;
   const access = storyGame === game ? onlineTradeAccess(game) : shadowtrade.cardAccess({ game, saveDir: saveDirectoryOf(game), backup: () => {
@@ -3911,6 +4068,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   setupAppUpdater();
   setupTelemetry();
   startShadowtrade();
+  openAdoptLink();
   removeOldVersionsInBackground();
   // The bundled manifest is the update check. Source downloads and builds
   // start with Update & play, so opening the launcher never changes a game.
