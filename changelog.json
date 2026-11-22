@@ -30,7 +30,8 @@
       "Fixed Michael's Hair colour leaving the strands at the back of his head red, and the reflections on Wes's and Michael's gear taking their other colours with HD textures.",
       "Pokédex: glowing parts of Battle Revolution models, such as Manaphy's discs, no longer have a dark ring around them.",
       "Fixed a traded Pokémon going missing when the game was left running after the launcher closed: the game kept its old party and saved over the trade. Now the launcher links up again with a game still running from before, and the trade happens in the game, which saves it. Until it links, your save is left alone.",
-      "If a Pokémon you traded for isn't in your save when your game shows it, the launcher puts it back in that save and then shows it. Before, it was lost."
+      "If a Pokémon you traded for isn't in your save when your game shows it, the launcher puts it back in that save and then shows it. Before, it was lost.",
+      "Frame rate changes made in the in-game Settings screen are saved to the launcher."
     ],
     "game": [
       "120 fps in Colosseum and XD: characters, the camera and fades move twice as smoothly, menu text stays steady, Snag Balls play out in full, and the game keeps its normal speed.",
@@ -60,7 +61,8 @@
       "Battle Revolution models: Dusknoir, Infernape, Electivire, Heatran, Cresselia, Kyogre and about 20 others are shaded instead of flat, with only their glowing parts lit, such as Dusknoir's yellow stripes and Luxray's eyes. Flygon's red lenses, Cresselia's rings, Manaphy's glowing discs, Venomoth's eyes and other see-through parts now show in battles, and Manaphy's discs and Chinchou's lights glow as they do in Battle Revolution. Make assets offers to make them again.",
       "Battle Revolution models: Jumpluff's cotton puffs are round from every side instead of flat cards with white balls behind them, and Sceptile's and Breloom's seeds, Grumpig's pearls, Gastly's gas, Spiritomb's souls and Chinchou's lights face you as they do in Battle Revolution. Make assets offers to make these 17 Pokémon again.",
       "Fixed Sableye's Battle Revolution model having a black mask over its face: the glow round its eyes shows instead. Make assets offers to make it again.",
-      "Colosseum and XD link up with the launcher again when it's closed and opened while the game runs, so trades and the Pokémon tab keep working with the game."
+      "Colosseum and XD link up with the launcher again when it's closed and opened while the game runs, so trades and the Pokémon tab keep working with the game.",
+      "In-game Settings: choose 30, 60 or 120 fps under Display, Frame rate while playing Colosseum or XD."
     ]
   },
   "releases": [
