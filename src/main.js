@@ -1761,14 +1761,14 @@ function jukeboxRender(id) {
 // the launcher listens for one again once it ends, however it ends
 let storyStarting = 0;
 async function play(installation = null, battle = null) {
+  broadcast('jukebox-stop');  // the Jukebox's music and the game would share the sound device
+  if (jukeboxWindowOpen()) jukeboxWindow.webContents.send('jukebox-stop');
   if (battle) return playGame(installation, battle);
   storyStarting++;
   try { return await playGame(installation, battle); } finally { if (!--storyStarting) openAdoptLink(); }
 }
 
 async function playGame(installation = null, battle = null) {
-  broadcast('jukebox-stop');  // the Jukebox's music and the game would share the sound device
-  if (jukeboxWindowOpen()) jukeboxWindow.webContents.send('jukebox-stop');
   const root = installation?.repo || requireRepo();
   const chosen = activeGame();
   if (battle && !supports('online')) throw new Error('Online battles are for Pokémon Colosseum for now.');
