@@ -328,6 +328,16 @@ test('Infinite TMs, Exp All and the C-Stick as the stick are off unless turned o
     assert.equal(port.normalizeSettings({ expAllShare: 3 }).expAllShare, 1);
     assert.equal(port.normalizeSettings({ expAllShare: 0 }).expAllShare, 0.05);
     assert.equal(port.normalizeSettings({ expAllShare: 'most' }).expAllShare, 0.5);
+    // a player who turned Exp All on before the slider has only expAll: true saved: it stays on, at 0.5
+    const before = port.normalizeSettings(JSON.parse(JSON.stringify({ expAll: true, infiniteTms: true })));
+    assert.equal(before.expAll, true, 'stays on');
+    assert.equal(before.expAllShare, 0.5, 'at the default share');
+    assert.equal(env({ expAll: true, infiniteTms: true }).COLO_EXP_ALL, '0.50');
+    assert.deepEqual(port.normalizeSettings(before), before, 'and saving it again keeps both');
+    assert.equal(port.normalizeSettings({ ...before, expAllShare: '0.5' }).expAllShare, 0.5, 'the slider saves a string');
+    // one who had it off keeps it off, the slider at 0.5 for when they turn it on
+    assert.equal(port.normalizeSettings({ expAll: false }).expAll, false);
+    assert.equal(port.normalizeSettings({ expAll: false }).expAllShare, 0.5);
   } finally {
     for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value;
   }
