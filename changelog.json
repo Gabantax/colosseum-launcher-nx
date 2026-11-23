@@ -79,7 +79,8 @@
       "Fixed XD crashing when you opened the Strategy Memo once it held more than 400 Pokémon, which later generations' Pokémon and the randomizer make possible.",
       "Fixed Colosseum and XD saying there was no room in the bag when you took a Generation 4 held item, such as a Toxic Orb, from a Pokémon or swapped it for another.",
       "Fixed Pokémon from More Poké Spot Pokémon being invisible at the Poké Spots, such as a wild Growlithe by an empty snack: the visitor now shows at the snack, shiny if it's shiny.",
-      "Shiny odds: choose how likely Pokémon are to be shiny, from 1 in 8192 as in the original games up to 1 in 32. It counts for your starters, Shadow Pokémon and XD's Poké Spot Pokémon. Find it under Gameplay."
+      "Shiny odds: choose how likely Pokémon are to be shiny, from 1 in 8192 as in the original games up to 1 in 32. It counts for your starters, Shadow Pokémon and XD's Poké Spot Pokémon. Find it under Gameplay.",
+      "Fixed the sunlight flashing on and off in Colosseum at 120 fps when the sunlight is strong, such as after Sunny Day or Drought: it now glows steadily."
     ]
   },
   "releases": [
