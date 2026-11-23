@@ -120,7 +120,7 @@ test("each game's artwork comes from SteamGridDB as PNGs, with the suffixes Stea
   assert.equal(steam.artworkFor('colosseum'), steam.ARTWORK);
   for (const id of ['colosseum', 'xd']) {
     const pieces = steam.artworkFor(id);
-    assert.ok(pieces.some(piece => piece.suffix === 'p.png'), `${id} has a library capsule`);
+    assert.deepEqual(pieces.map(piece => piece.suffix), ['p.png', '.png', '_hero.png', '_logo.png', '_icon.png'], `${id} has every piece Steam shows`);
     for (const piece of pieces) {
       assert.match(piece.url, /^https:\/\/cdn2\.steamgriddb\.com\/[a-z]+\/[0-9a-f]{32}\.png$/);
       assert.ok(['p.png', '.png', '_hero.png', '_logo.png', '_icon.png'].includes(piece.suffix));

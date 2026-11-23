@@ -28,10 +28,13 @@ const SHORTCUTS = {
     { suffix: '_logo.png', url: 'https://cdn2.steamgriddb.com/logo/6f79287fb6ba44555025707f936f52d9.png' }, // logo over the header
     { suffix: '_icon.png', url: 'https://cdn2.steamgriddb.com/icon/972c16f442eba60469680bf869dd6a89.png' } // icon, 256x256
   ] },
-  // SteamGridDB game 35162. Only its capsules for now: Steam shows its own header, logo and icon until some are chosen.
+  // SteamGridDB game 35162.
   xd: { appName: 'Pokémon XD: Gale of Darkness', artwork: [
-    { suffix: 'p.png', url: 'https://cdn2.steamgriddb.com/grid/eadbbf17b9a31e7eea1b30ba163856df.png' }, // library capsule, 600x900
-    { suffix: '.png', url: 'https://cdn2.steamgriddb.com/grid/1105b034d58ea8f7a4dea7d595e82607.png' } // wide capsule, 460x215
+    { suffix: 'p.png', url: 'https://cdn2.steamgriddb.com/grid/1f7e1150692e876c7418f2e7183b69b5.png' }, // library capsule, 600x900
+    { suffix: '.png', url: 'https://cdn2.steamgriddb.com/grid/1105b034d58ea8f7a4dea7d595e82607.png' }, // wide capsule, 460x215
+    { suffix: '_hero.png', url: 'https://cdn2.steamgriddb.com/hero/1b8df7db8a335c9096e43973615601d8.png' }, // library header, 3840x1240
+    { suffix: '_logo.png', url: 'https://cdn2.steamgriddb.com/logo/0da54aa0b1ee702d0c45af548b1a54c7.png' }, // logo over the header
+    { suffix: '_icon.png', url: 'https://cdn2.steamgriddb.com/icon/902447c6ce9d4f39e12a463b4d4ff759.png' } // icon, 256x256
   ] }
 };
 const shortcutOf = game => SHORTCUTS[game] || SHORTCUTS[DEFAULT_GAME];
