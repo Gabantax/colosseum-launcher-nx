@@ -176,6 +176,23 @@ test('the shiny settings are on unless turned off, and on leaves them to the gam
   }
 });
 
+test('shiny odds are the games\' own 1 in 8192 unless chosen, in both games', () => {
+  const env = (settings, options) => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port', options);
+  const saved = process.env.COLO_SHINY_ODDS;
+  delete process.env.COLO_SHINY_ODDS;
+  try {
+    assert.equal(port.normalizeSettings({}).shinyOdds, 8192);
+    assert.equal(env({}).COLO_SHINY_ODDS, undefined, '1 in 8192 leaves it to the game');
+    assert.equal(env({ shinyOdds: 8192 }).COLO_SHINY_ODDS, undefined);
+    assert.equal(env({ shinyOdds: '4096' }).COLO_SHINY_ODDS, '4096', 'the list saves a string');
+    assert.equal(env({ shinyOdds: 512 }, { game: 'xd' }).COLO_SHINY_ODDS, '512');
+    assert.equal(port.normalizeSettings({ shinyOdds: '1365' }).shinyOdds, 1365);
+    for (const odd of [1000, 0, -1, 'often', null]) assert.equal(port.normalizeSettings({ shinyOdds: odd }).shinyOdds, 8192, String(odd));
+  } finally {
+    if (saved !== undefined) process.env.COLO_SHINY_ODDS = saved;
+  }
+});
+
 test('quick moves and quick status effects are on unless turned off, and off leaves them to the game', () => {
   const env = settings => port.buildEnvironment(port.normalizeSettings(settings), 'disc', '/port');
   const saved = [process.env.COLO_QUICK_MOVES, process.env.COLO_FAST_STATUS];

@@ -10,7 +10,7 @@ const path = require('node:path');
 const FEATURES = ['online', 'generations', 'randomizer', 'widescreen', 'hdText', 'hdModels', 'hdTextures', 'languagePacks',
   'discordPresence', 'storyParty', 'pcBoxes', 'gbaLink', 'quickMoves', 'battleSpeed', 'fastForward', 'skipMovies', 'starters',
   'shiny', 'shinyStarters', 'pokemonPacks', 'pbrAssets', 'pokedex', 'jukebox', 'teamBuilder', 'gciSaves', 'tmNames', 'playAs', 'customize',
-  'partnerPass', 'moveRelearner', 'pokeSpots', 'infiniteTms', 'expAll', 'cstickMove', 'coop'];
+  'partnerPass', 'moveRelearner', 'pokeSpots', 'infiniteTms', 'expAll', 'cstickMove', 'coop', 'shinyOdds'];
 
 const GAMES = {
   colosseum: {
@@ -62,10 +62,10 @@ const GAMES = {
     // packs in their own folder (language-packs.js): none official yet, fan translations from the extras tool's template.
     // More Poké Spot Pokémon is XD's own (host/xd/pokespot.c). Infinite TMs and Exp All are
     // host/gameplay.c's, with XD's own TM and EXP calls; the C-Stick already moves like the Control Stick in XD.
-    // Split-screen co-op is host/xd/coop.c
+    // Split-screen co-op is host/xd/coop.c. Shiny odds are host/shiny.c's, for Eevee, the Poké Spots and Shadow Pokémon
     features: ['online', 'teamBuilder', 'generations', 'widescreen', 'hdText', 'hdTextures', 'fastForward', 'skipMovies', 'gciSaves', 'discordPresence',
       'battleSpeed', 'quickMoves', 'shiny', 'starters', 'pokemonPacks', 'pbrAssets', 'gbaLink', 'randomizer', 'storyParty', 'pokedex', 'jukebox', 'tmNames', 'playAs', 'customize',
-      'languagePacks', 'pokeSpots', 'infiniteTms', 'expAll', 'coop']
+      'languagePacks', 'pokeSpots', 'infiniteTms', 'expAll', 'coop', 'shinyOdds']
   }
 };
 
