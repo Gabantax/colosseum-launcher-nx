@@ -830,14 +830,17 @@ const XD_RANDOMIZER_TEXT = {
   'randomizer-gifts-note': 'The Pokémon traded to you in the story, and Mt. Battle\'s Chikorita, Cyndaquil and Totodile. Poké Spot Pokémon stay as they are.'
 };
 function renderPokemonText(chosen) {
-  for (const id of ['shiny-shadow-note', 'choose-starters-title', 'choose-starters-note', ...Object.keys(XD_RANDOMIZER_TEXT)]) POKEMON_TEXT[id] ??= $(id).textContent;
+  for (const id of ['shiny-shadow-note', 'shiny-odds-note', 'choose-starters-title', 'choose-starters-note', ...Object.keys(XD_RANDOMIZER_TEXT)]) POKEMON_TEXT[id] ??= $(id).textContent;
   const xd = chosen.id === 'xd';
   for (const [id, text] of Object.entries(XD_RANDOMIZER_TEXT)) $(id).textContent = xd ? text : POKEMON_TEXT[id];
   // XD's game has no Pokémon packs' own Pokémon to choose (host/randomizer.c ignores the option there)
   $('randomizer-packs-row').hidden = xd;
   $('shiny-shadow-note').textContent = xd
-    ? 'A Shadow Pokémon can be shiny, at 1 in 8192 as other Pokémon are, and looks it in battle before you snag it. The original XD never makes them shiny. Each one\'s chance is decided when you first meet it in battle.'
+    ? 'A Shadow Pokémon can be shiny, at the Shiny odds below, and looks it in battle before you snag it. The original XD never makes them shiny. Each one\'s chance is decided when you first meet it in battle.'
     : POKEMON_TEXT['shiny-shadow-note'];
+  $('shiny-odds-note').textContent = xd
+    ? 'How likely a Pokémon you can get is to be shiny; 1 in 8192 is the original game\'s odds. It counts for your starter, Poké Spot Pokémon (decided as one arrives at the spot) and, with Show shiny Shadow Pokémon on, Shadow Pokémon (decided when you first meet one in battle). Munchlax, Bonsly and the Pokémon you\'re given that are never shiny stay that way.'
+    : POKEMON_TEXT['shiny-odds-note'];
   $('choose-starters-title').textContent = xd ? 'Choose starter' : POKEMON_TEXT['choose-starters-title'];
   $('choose-starters-note').textContent = xd
     ? 'After you enter your name for a New Game, the game asks whether to begin with Eevee. Say No to pick any Pokémon instead, at level 10. A randomized game that randomizes the starter doesn\'t ask.'
@@ -1142,7 +1145,7 @@ function refresh(data) {
 }
 
 // The settings that are a list or a range, and the ones that are a switch: each saves under its element's id.
-const SELECTS = ['buttonPrompts', 'promptPad', 'battleRules', 'widescreen', 'resolution', 'frameRate', 'vsync', 'fullscreenMode', 'exclusiveResolution', 'display', 'msaa', 'anisotropic', 'sharpen', 'brightness', 'aspect', 'presentFilter', 'fsrMode', 'textureLoading', 'renderer', 'hdText', 'expAllShare', 'language', 'battleSpeed', 'fastForward', 'fastForwardSpeed', 'coopHero', 'coopSplit', 'coopPads', 'padMode', 'updateChannel', 'randomizerSeed'];
+const SELECTS = ['buttonPrompts', 'promptPad', 'battleRules', 'widescreen', 'resolution', 'frameRate', 'vsync', 'fullscreenMode', 'exclusiveResolution', 'display', 'msaa', 'anisotropic', 'sharpen', 'brightness', 'aspect', 'presentFilter', 'fsrMode', 'textureLoading', 'renderer', 'hdText', 'expAllShare', 'shinyOdds', 'language', 'battleSpeed', 'fastForward', 'fastForwardSpeed', 'coopHero', 'coopSplit', 'coopPads', 'padMode', 'updateChannel', 'randomizerSeed'];
 const SWITCHES = ['randomizer', 'randomizerStarters', 'randomizerShadow', 'randomizerTrainers', 'randomizerGifts', 'randomizerGen1', 'randomizerGen2', 'randomizerGen3', 'randomizerGen4', 'randomizerPacks', 'randomizerSimilar', 'randomizerNoLegendaries', 'randomizerNoRepeats', 'randomizerBaseForms', 'generation4Pokemon', 'pbrReplaceAll', 'pbrTextures', 'fullscreen', 'hudEdges', 'skipMovies', 'skipBattleAnimations', 'quickMoves', 'quickStatus', 'shinyShadow', 'shinyStarters', 'chooseHero', 'chooseStarters', 'tmNames', 'infiniteTms', 'expAll', 'cstickMove', 'partnerPass', 'moveRelearner', 'coop', 'pokeSpotPool', 'overlay', 'backgroundInput', 'gbaAutoPower', 'fxaa', 'textures', 'hdModels', 'shaderWarmup', 'autoUpdate', 'autoBackups', 'shareUsage', 'discordPresence', 'darkMode'];
 
 // The languages: English, the launcher's packs and any found in the languages folder. One chosen and then

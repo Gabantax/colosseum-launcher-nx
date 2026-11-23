@@ -77,7 +77,8 @@
       "Battle Revolution models take Battle Revolution's own colours: Natu's eyes, Nincada's eyes and face and Whismur's mouth no longer sit on brighter patches, Whismur's mouth opens and closes as it breathes instead of sliding across its face, and shiny Whismur, Golem, Arbok, Dewgong and about 100 others have their Battle Revolution tint. Make assets offers to make them all again.",
       "Fixed XD crashing when you opened the Strategy Memo once it held more than 400 Pokémon, which later generations' Pokémon and the randomizer make possible.",
       "Fixed Colosseum and XD saying there was no room in the bag when you took a Generation 4 held item, such as a Toxic Orb, from a Pokémon or swapped it for another.",
-      "Fixed Pokémon from More Poké Spot Pokémon being invisible at the Poké Spots, such as a wild Growlithe by an empty snack: the visitor now shows at the snack, shiny if it's shiny."
+      "Fixed Pokémon from More Poké Spot Pokémon being invisible at the Poké Spots, such as a wild Growlithe by an empty snack: the visitor now shows at the snack, shiny if it's shiny.",
+      "Shiny odds: choose how likely Pokémon are to be shiny, from 1 in 8192 as in the original games up to 1 in 32. It counts for your starters, Shadow Pokémon and XD's Poké Spot Pokémon. Find it under Gameplay."
     ]
   },
   "releases": [

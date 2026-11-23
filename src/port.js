@@ -124,6 +124,8 @@ function numberSetting(value, fallback, lo, hi) {
   return Number.isFinite(number) ? Math.min(hi, Math.max(lo, Math.round(number))) : fallback;
 }
 function choiceSetting(value, choices, fallback) { return choices.includes(value) ? value : fallback; }
+// The shiny odds the Gameplay list offers, 1 in each: the games' own first.
+const SHINY_ODDS = [8192, 4096, 1365, 512, 128, 32];
 // Exp All's share: what each party Pokémon that didn't battle gets, of what one that battled gets, from 0.05 to 1 in
 // steps of 0.05; half unless set.
 function expAllShareSetting(value) {
@@ -181,6 +183,8 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     // A Shadow Pokémon looks in battle as it will once snagged; Espeon and Umbreon can be shiny. Both on unless turned off.
     shinyShadow: input.shinyShadow !== false,
     shinyStarters: input.shinyStarters !== false,
+    // 1 in how many Pokémon that can be shiny are (host/shiny.c): 1 in 8192, the games' own, unless chosen.
+    shinyOdds: SHINY_ODDS.includes(Number(input.shinyOdds)) ? Number(input.shinyOdds) : 8192,
     // A New Game asks whether to begin with Espeon and Umbreon, or two Pokémon the player picks. On unless turned off.
     chooseStarters: input.chooseStarters !== false,
     // The bag and shops list a TM by its move (Thunderbolt), its number in a tab over the description. On unless turned off.
@@ -379,6 +383,7 @@ const FEATURE_ENVIRONMENT = {
   hdModels: ['COLO_HD_MODELS'],
   shiny: ['COLO_SHINY_SHADOW'],
   shinyStarters: ['COLO_SHINY_STARTERS'],
+  shinyOdds: ['COLO_SHINY_ODDS'],
   starters: ['COLO_CHOOSE_STARTERS'],
   tmNames: ['COLO_TM_NAMES'],
   infiniteTms: ['COLO_INFINITE_TMS'],
@@ -445,6 +450,8 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   // Unset is on in the game, as it is in a game built before these settings.
   if (settings.shinyShadow === false) env.COLO_SHINY_SHADOW = '0';
   if (settings.shinyStarters === false) env.COLO_SHINY_STARTERS = '0';
+  // Unset is 1 in 8192 in the game, as on the disc.
+  if (settings.shinyOdds && settings.shinyOdds !== 8192) env.COLO_SHINY_ODDS = String(settings.shinyOdds);
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.infiniteTms) env.COLO_INFINITE_TMS = '1';
