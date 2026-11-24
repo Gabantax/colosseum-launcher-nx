@@ -128,6 +128,8 @@ function choiceSetting(value, choices, fallback) { return choices.includes(value
 const SHINY_ODDS = [8192, 4096, 1365, 512, 128, 32];
 // Difficulty (host/randomizer.c): how much higher the story's trainers' levels are, and the fewest Pokémon a trainer has.
 const DIFFICULTY_LEVELS = [0, 10, 20, 30, 50];
+// What the levels are higher than: the game's own for each trainer, or your strongest Pokémon (the game follows your party).
+const DIFFICULTY_LEVELS_FROM = ['game', 'party'];
 const DIFFICULTY_TEAMS = [0, 3, 4, 5, 6];
 // More Shadow Pokémon: how many more, at most (the game has room for 48 in Colosseum and 44 in XD).
 const DIFFICULTY_SHADOWS = [0, 12, 24, 48];
@@ -195,6 +197,7 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     // Difficulty, for the story's trainers: higher levels, evolved to fit their level, more Pokémon on small teams. All
     // off unless chosen, so the game plays as it always has.
     difficultyLevels: DIFFICULTY_LEVELS.includes(Number(input.difficultyLevels)) ? Number(input.difficultyLevels) : 0,
+    difficultyLevelsFrom: DIFFICULTY_LEVELS_FROM.includes(input.difficultyLevelsFrom) ? input.difficultyLevelsFrom : 'game',
     difficultyEvolve: Boolean(input.difficultyEvolve),
     difficultyTeam: DIFFICULTY_TEAMS.includes(Number(input.difficultyTeam)) ? Number(input.difficultyTeam) : 0,
     difficultyShadows: DIFFICULTY_SHADOWS.includes(Number(input.difficultyShadows)) ? Number(input.difficultyShadows) : 0,
@@ -469,9 +472,9 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   if (settings.shinyStarters === false) env.COLO_SHINY_STARTERS = '0';
   // Unset is 1 in 8192 in the game, as on the disc.
   if (settings.shinyOdds && settings.shinyOdds !== 8192) env.COLO_SHINY_ODDS = String(settings.shinyOdds);
-  // LEVELS:EVOLVE:TEAM:SHADOWS, unset when all are off (the game as on the disc)
+  // LEVELS:EVOLVE:TEAM:SHADOWS:PARTY, unset when all are off (the game as on the disc)
   if (settings.difficultyLevels || settings.difficultyEvolve || settings.difficultyTeam || settings.difficultyShadows)
-    env.COLO_DIFFICULTY = `${settings.difficultyLevels || 0}:${settings.difficultyEvolve ? DIFFICULTY_EVOLVE_LEVEL : 0}:${settings.difficultyTeam || 0}:${settings.difficultyShadows || 0}`;
+    env.COLO_DIFFICULTY = `${settings.difficultyLevels || 0}:${settings.difficultyEvolve ? DIFFICULTY_EVOLVE_LEVEL : 0}:${settings.difficultyTeam || 0}:${settings.difficultyShadows || 0}:${settings.difficultyLevelsFrom === 'party' ? 1 : 0}`;
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.infiniteTms) env.COLO_INFINITE_TMS = '1';
