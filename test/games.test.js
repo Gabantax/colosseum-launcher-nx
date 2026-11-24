@@ -422,4 +422,22 @@ test('each game has its own HD texture pack: Colosseum its pinned one, XD its ow
   assert.deepEqual(port.dropLeftOutTextures(root, 'xd'), [], 'once removed, nothing to do');
   assert.equal(port.textureCommand(root, 'linux', {}).args[2], require('../src/texture-pack.json').url);
   assert.equal(port.textureCommand(root, 'linux', {}).args.length, 6, 'Colosseum\'s pack is one zip');
+
+  // Battle Revolution HD texture pack leaveOut (Skarmory's reflection map)
+  const pbr = require('../src/pbr-texture-pack.json');
+  assert.ok(pbr.leaveOut.length > 0);
+  for (const name of pbr.leaveOut) assert.match(name, /^tex1_\w+\.png$/);
+  const pbrWork = path.join(root, 'pbr');
+  assert.deepEqual(port.dropLeftOutPbrTextures(pbrWork), [], 'nothing to drop before the PBR pack is installed');
+  const pbrFolder = port.pbrTextureFolder(pbrWork);
+  fs.mkdirSync(pbrFolder, { recursive: true });
+  fs.writeFileSync(path.join(pbrFolder, '.release'), JSON.stringify({ sha256: pbr.sha256 }));
+  for (const name of pbr.leaveOut) fs.writeFileSync(path.join(pbrFolder, name), 'png');
+  const pbrKept = path.join(pbrFolder, 'tex1_32x32_1e8293fc8118d29a_14.png');
+  fs.writeFileSync(pbrKept, 'png');
+  assert.deepEqual(port.dropLeftOutPbrTextures(pbrWork), pbr.leaveOut);
+  for (const name of pbr.leaveOut) assert.equal(fs.existsSync(path.join(pbrFolder, name)), false);
+  assert.equal(fs.existsSync(pbrKept), true, 'the rest of the PBR pack stays');
+  assert.equal(port.pbrTexturesInstalled(pbrWork), true, 'and still counts as installed');
+  assert.deepEqual(port.dropLeftOutPbrTextures(pbrWork), [], 'once removed, nothing to do');
 });
