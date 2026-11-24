@@ -184,11 +184,14 @@ test('shiny odds are the games\' own 1 in 8192 unless chosen, in both games', ()
     assert.equal(env({}).COLO_DIFFICULTY, undefined, 'Difficulty is off unless chosen');
     const off = port.normalizeSettings({});
     assert.deepEqual([off.difficultyLevels, off.difficultyEvolve, off.difficultyTeam, off.difficultyShadows], [0, false, 0, 0]);
-    assert.equal(env({ difficultyLevels: '20' }).COLO_DIFFICULTY, '20:0:0:0', 'the list saves a string');
-    assert.equal(env({ difficultyEvolve: true, difficultyTeam: 4 }).COLO_DIFFICULTY, '0:35:4:0');
-    assert.equal(env({ difficultyShadows: '24' }).COLO_DIFFICULTY, '0:0:0:24');
-    assert.equal(env({ difficultyLevels: 30, difficultyEvolve: true, difficultyTeam: 6, difficultyShadows: 48 }, { game: 'xd' }).COLO_DIFFICULTY, '30:35:6:48');
+    assert.equal(env({ difficultyLevels: '20' }).COLO_DIFFICULTY, '20:0:0:0:0', 'the list saves a string');
+    assert.equal(env({ difficultyEvolve: true, difficultyTeam: 4 }).COLO_DIFFICULTY, '0:35:4:0:0');
+    assert.equal(env({ difficultyShadows: '24' }).COLO_DIFFICULTY, '0:0:0:24:0');
+    assert.equal(env({ difficultyLevels: 30, difficultyEvolve: true, difficultyTeam: 6, difficultyShadows: 48 }, { game: 'xd' }).COLO_DIFFICULTY, '30:35:6:48:0');
     assert.equal(port.normalizeSettings({ difficultyShadows: 30 }).difficultyShadows, 0);
+    assert.equal(off.difficultyLevelsFrom, 'game');
+    assert.equal(env({ difficultyLevels: 20, difficultyLevelsFrom: 'party' }).COLO_DIFFICULTY, '20:0:0:0:1', 'levels over your strongest Pokémon');
+    assert.equal(port.normalizeSettings({ difficultyLevelsFrom: 'average' }).difficultyLevelsFrom, 'game');
     assert.equal(port.normalizeSettings({ difficultyLevels: 25, difficultyTeam: 7 }).difficultyLevels, 0, 'only the listed choices');
     assert.equal(port.normalizeSettings({ difficultyTeam: 7 }).difficultyTeam, 0);
     assert.equal(port.normalizeSettings({}).gbaTradeAnytime, true, 'GBA trades from the start unless turned off');
