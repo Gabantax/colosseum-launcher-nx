@@ -98,7 +98,8 @@
       "Fixed Difficulty leaving Willie at the Outskirt Stand, the first trainer you battle in Colosseum, at the original game's levels and team: he now gets the higher levels, evolutions and bigger team too.",
       "Fixed XD getting stuck at your first battle with Naps when Bigger teams was on: he had extra Pokémon that can't be snagged, in the one battle where you can only throw balls, so it never ended. He has just his Teddiursa there again.",
       "Fixed battles freezing when a Pokémon with a Battle Revolution model used a move it has its own animation for, such as Pichu's Tail Whip: the battle now goes on.",
-      "Fixed Skarmory's Battle Revolution model looking dark and banded with harsh black and white stripes: the game skips the broken reflection image from the Battle Revolution HD texture pack, and Battle Revolution models with reflective bodies, such as Skarmory, Forretress, Ditto and Dialga, now add their shine as Battle Revolution does instead of darkening. Make assets offers to make them again."
+      "Fixed Skarmory's Battle Revolution model looking dark and banded with harsh black and white stripes: the game skips the broken reflection image from the Battle Revolution HD texture pack, and Battle Revolution models with reflective bodies, such as Skarmory, Forretress, Ditto and Dialga, now add their shine as Battle Revolution does instead of darkening. Make assets offers to make them again.",
+      "Fixed XD cutscenes, such as Zook sending out his Shadow Zangoose in Gateon Port, snapping back to the previous camera angle and spinning around at higher frame rates."
     ]
   },
   "releases": [
