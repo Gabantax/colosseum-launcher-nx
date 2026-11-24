@@ -3,6 +3,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, net, screen, protocol, nativeImage } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { Worker } = require('node:worker_threads');
@@ -984,6 +985,12 @@ async function build(forceFresh = false) {
       catch (error) { log(`Could not copy main.dol from your disc for the game's icon: ${error.message}`); }
     }
     const env = await withBuildCaches(toolEnv({ ...process.env, NINJA_STATUS: '[%f/%t] ' }), root);
+    // Fewer jobs than cores when memory is short (port.buildJobs); JOBS set by the player is kept.
+    if (!env.JOBS) {
+      const cores = os.cpus().length, jobs = port.buildJobs(cores, os.totalmem());
+      env.JOBS = String(jobs);
+      if (jobs < cores) log(`Building with ${jobs} jobs at once instead of ${cores}, as this computer has ${(os.totalmem() / 1024 ** 3).toFixed(1)} GB of memory.`);
+    }
     const compile = buildEnv => {
       const cmd = port.buildCommand(root, process.platform, buildEnv, chosen.id);
       return game.buildSafely(root, saveDirectory,

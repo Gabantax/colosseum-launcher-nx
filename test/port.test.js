@@ -637,3 +637,12 @@ test('the game starts without Steam\'s on-screen keyboard, unless the player ask
     if (saved === undefined) delete process.env.SDL_ENABLE_SCREEN_KEYBOARD; else process.env.SDL_ENABLE_SCREEN_KEYBOARD = saved;
   }
 });
+
+test('the build runs a job a core, but no more than about 1.5 GB of memory each, and never fewer than two', () => {
+  const GB = 1024 ** 3;
+  assert.equal(port.buildJobs(8, 32 * GB), 8);
+  assert.equal(port.buildJobs(16, 8 * GB), 5);
+  assert.equal(port.buildJobs(4, 2 * GB), 2);
+  assert.equal(port.buildJobs(1, 16 * GB), 2);
+  assert.equal(port.buildJobs(0, 0), 2);
+});
