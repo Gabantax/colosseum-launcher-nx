@@ -89,7 +89,7 @@
       "Shiny odds: choose how likely Pokémon are to be shiny, from 1 in 8192 as in the original games up to 1 in 32. It counts for your starters, Shadow Pokémon and XD's Poké Spot Pokémon. Find it under Gameplay.",
       "Fixed the sunlight flashing on and off in Colosseum at 120 fps when the sunlight is strong, such as after Sunny Day or Drought: it now glows steadily.",
       "The in-game Settings' Fullscreen resolution list no longer offers sizes smaller than the game's own 640×480, such as 320×240.",
-      "Difficulty in Colosseum and XD: story trainers can have higher levels, evolved Pokémon, bigger teams up to 6, and extra Shadow Pokémon of their own that don't count toward the story's, when you turn them on under Gameplay in the launcher."
+      "Difficulty in Colosseum and XD: story trainers can have higher levels, evolved Pokémon, bigger teams up to 6, and more Shadow Pokémon, when you turn them on under Gameplay in the launcher. Every extra Shadow Pokémon you meet counts like the story's own, so Ho-Oh in Colosseum needs those purified too."
     ]
   },
   "releases": [
