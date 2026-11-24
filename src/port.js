@@ -626,6 +626,15 @@ function buildCommand(root, platform = process.platform, base = process.env, gam
     cwd: root, env: msysEnvironment(msys, environment) };
 }
 
+// How many build jobs run at once: one a core, but no more than the memory holds, about 1.5 GB each, as compiling
+// the game takes that much a job and a PC with many cores and little memory otherwise runs out, which fails the
+// build on Windows and freezes the whole computer on Linux. Never fewer than two.
+const BUILD_JOB_MEMORY = 1.5 * 1024 ** 3;
+function buildJobs(cores, totalMemory) {
+  const byMemory = Math.floor(totalMemory / BUILD_JOB_MEMORY);
+  return Math.max(2, Math.min(Math.max(1, cores || 1), byMemory || 2));
+}
+
 // install-textures.py: downloads the pinned pack, checks it and unpacks it, reporting as it goes. A pack too big for
 // one release file (XD's, xd-texture-pack.json) lists its zips in parts; the first part's SHA-256 is the pack's.
 function textureCommand(root, platform = process.platform, environment = process.env, game = games.DEFAULT) {
@@ -746,4 +755,4 @@ module.exports = { PORT_URL, TEXTURE_PACK, PBR_TEXTURE_PACK, texturePack, gameAr
   texturePackDirectory, texturePackInstalled, hdVisualsInstalled, dropLeftOutTextures, customTextureDirectory, customTexturesPresent, texturePackFolders,
   pbrTextureDirectory, pbrTexturesInstalled, pbrTextureFolder, pbrTextureCommand,
   buildEnvironment, binaryPath, longPathProblem, pathCharacterProblem, nonAsciiPathProblem, playableInstall, useLauncherScripts, launcherScript,
-  gameBuildEnvironment, buildCommand, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsOwnModels, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };
+  gameBuildEnvironment, buildCommand, buildJobs, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsOwnModels, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };
