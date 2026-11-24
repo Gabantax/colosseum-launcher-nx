@@ -182,10 +182,13 @@ test('shiny odds are the games\' own 1 in 8192 unless chosen, in both games', ()
   delete process.env.COLO_SHINY_ODDS;
   try {
     assert.equal(env({}).COLO_DIFFICULTY, undefined, 'Difficulty is off unless chosen');
-    assert.deepEqual([port.normalizeSettings({}).difficultyLevels, port.normalizeSettings({}).difficultyEvolve, port.normalizeSettings({}).difficultyTeam], [0, false, 0]);
-    assert.equal(env({ difficultyLevels: '20' }).COLO_DIFFICULTY, '20:0:0', 'the list saves a string');
-    assert.equal(env({ difficultyEvolve: true, difficultyTeam: 4 }).COLO_DIFFICULTY, '0:35:4');
-    assert.equal(env({ difficultyLevels: 30, difficultyEvolve: true, difficultyTeam: 6 }, { game: 'xd' }).COLO_DIFFICULTY, '30:35:6');
+    const off = port.normalizeSettings({});
+    assert.deepEqual([off.difficultyLevels, off.difficultyEvolve, off.difficultyTeam, off.difficultyShadows], [0, false, 0, 0]);
+    assert.equal(env({ difficultyLevels: '20' }).COLO_DIFFICULTY, '20:0:0:0', 'the list saves a string');
+    assert.equal(env({ difficultyEvolve: true, difficultyTeam: 4 }).COLO_DIFFICULTY, '0:35:4:0');
+    assert.equal(env({ difficultyShadows: '24' }).COLO_DIFFICULTY, '0:0:0:24');
+    assert.equal(env({ difficultyLevels: 30, difficultyEvolve: true, difficultyTeam: 6, difficultyShadows: 48 }, { game: 'xd' }).COLO_DIFFICULTY, '30:35:6:48');
+    assert.equal(port.normalizeSettings({ difficultyShadows: 30 }).difficultyShadows, 0);
     assert.equal(port.normalizeSettings({ difficultyLevels: 25, difficultyTeam: 7 }).difficultyLevels, 0, 'only the listed choices');
     assert.equal(port.normalizeSettings({ difficultyTeam: 7 }).difficultyTeam, 0);
     assert.equal(port.normalizeSettings({}).shinyOdds, 8192);
