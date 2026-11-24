@@ -1104,6 +1104,9 @@ function refresh(data) {
   // Portable launchers update by downloading a new .exe, so channels do not apply.
   $('update-channel-field').hidden = data.portable;
   $('update-channel-note').hidden = data.portable;
+  // ...and say so, pointing to the installer, which has Beta and installs its own updates.
+  $('portable-update-field').hidden = !data.portable;
+  $('portable-update-actions').hidden = !data.portable;
   renderGameSource(data);
   renderLanguages(data.languages, config.settings.language, data.currentGame?.shortName);
   renderLanguageHelp(data.languageCatalog !== false, data.currentGame?.shortName || 'this game');
@@ -1947,6 +1950,7 @@ $('copy-crash-report').addEventListener('click', async () => {
   catch (error) { showError(error); }
 });
 $('open-crash-reports').addEventListener('click', () => window.colo.openCrashReports().catch(showError));
+$('get-installer').addEventListener('click', () => window.colo.openReleasesPage().catch(showError));
 
 // Steam, the banner on Play: Add to Steam while the launcher can add
 // itself and is not in the library yet, then a tick once it is there. Selecting
