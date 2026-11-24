@@ -301,6 +301,10 @@ async function tradeNames() {
 
 // ---- every stat: the two offers side by side (the trade window's Compare every stat) ----
 const TS = () => window.coloTeamSets;
+// the battle data (names) is by Colosseum's numbers: a summary's own numbers are its viewer's game's (online-trades.js summary)
+const dataSpecies = summary => names?.species?.[summary.dataSpecies ?? summary.species] || null;
+const dataItem = summary => summary.dataItem ?? summary.item;
+const dataMove = move => names?.moveData.get(move.dataId ?? move.id);
 const BALLS = ['', 'Master Ball', 'Ultra Ball', 'Great Ball', 'Poké Ball', 'Safari Ball', 'Net Ball', 'Dive Ball', 'Nest Ball', 'Repeat Ball', 'Timer Ball', 'Luxury Ball', 'Premier Ball'];
 const RIBBONS = ['Champion', 'Winning', 'Victory', 'Artist', 'Effort', 'Marine', 'Land', 'Sky', 'Country', 'National', 'Earth', 'World'];
 const CONTEST = ['Cool', 'Beauty', 'Cute', 'Smart', 'Tough'];
@@ -317,7 +321,7 @@ function el(tag, props = {}, ...children) {
 function statSheet(summary, heading, { problems = [], evolvesInto = 0, from = null } = {}) {
   const sheet = el('section', { className: 'trade-sheet' }, el('h2', { textContent: heading }));
   if (!summary) { sheet.append(el('p', { className: 'helper', textContent: 'No Pokémon offered yet.' })); return sheet; }
-  const ts = TS(), species = names?.species?.[summary.species] || null, entry = dex?.get(summary.species);
+  const ts = TS(), species = dataSpecies(summary), entry = dex?.get(summary.species);
   const gender = ts && species ? ts.genderOf(summary.personality >>> 0, species.gender) : '';
   const abilities = species?.abilities || [];
   const ability = abilities.find(a => a.slot === summary.abilitySlot) || abilities[0] || null;
@@ -349,7 +353,7 @@ function statSheet(summary, heading, { problems = [], evolvesInto = 0, from = nu
   moves.append(el('thead', {}, el('tr', {}, ...['Move', 'Type', 'Kind', 'Power', 'Acc.', 'PP', 'PP Ups'].map(text => el('th', { textContent: text })))));
   const moveBody = el('tbody');
   for (const move of summary.moves) {
-    const data = names?.moveData.get(move.id);
+    const data = dataMove(move);
     const most = data?.pp ? Math.floor(data.pp * (5 + move.ppUps) / 5) : null;
     moveBody.append(el('tr', {}, el('th', { textContent: data?.name || `Move #${move.id}` }), el('td', { textContent: data?.type || '?' }),
       el('td', { textContent: data?.category || '' }), el('td', { textContent: data?.power ? String(data.power) : '—' }),
@@ -360,13 +364,13 @@ function statSheet(summary, heading, { problems = [], evolvesInto = 0, from = nu
   sheet.append(moves);
   // everything else it has
   const hidden = ts?.hiddenPower(summary.ivs);
-  const item = summary.heldKeyItem ? 'A key item (it can\'t travel)' : summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
+  const item = summary.heldKeyItem ? 'A key item (it can\'t travel)' : summary.item ? (names?.items.get(dataItem(summary)) || `Item #${summary.item}`) : 'Nothing';
   const pokerus = !summary.pokerus ? 'Never had it' : summary.pokerus & 0xf ? 'Has Pokérus' : 'Cured of Pokérus';
   const marks = ['●', '■', '▲', '♥'].filter((_, i) => summary.markings & (1 << i)).join(' ') || 'None';
   const facts = [
     ['Nature', ts ? ts.natureLabel(summary.nature) : String(summary.nature)],
     ['Ability', ability ? ability.name : '?', ability?.doc],
-    ['Held item', item, summary.item ? names?.itemData.get(summary.item)?.doc : null],
+    ['Held item', item, summary.item ? names?.itemData.get(dataItem(summary))?.doc : null],
     ['Hidden Power', hidden ? `${hidden.type}, power ${hidden.power}` : '?'],
     ['Friendship', `${summary.friendship}/255`],
     ['Experience', `${summary.exp.toLocaleString()} points`],
@@ -438,7 +442,7 @@ function stage(summary, size = 96) {
 }
 
 function genderMark(summary) {
-  const ts = TS(), species = names?.species?.[summary.species];
+  const ts = TS(), species = dataSpecies(summary);
   const gender = ts && species ? ts.genderOf(summary.personality >>> 0, species.gender) : '';
   return gender === 'M' ? el('span', { className: 'm', textContent: ' ♂' }) : gender === 'F' ? el('span', { className: 'f', textContent: ' ♀' }) : null;
 }
@@ -511,7 +515,7 @@ function editedBanner({ mine = false, online = true } = {}) {
 function offerBody(summary, problems, evolves, { mine = false, online = false } = {}) {
   const children = [];
   if (summary.edited) children.push(editedBanner({ mine, online }));
-  const ts = TS(), species = names?.species?.[summary.species], entry = dex?.get(summary.species);
+  const ts = TS(), species = dataSpecies(summary), entry = dex?.get(summary.species);
   const scale = offerScale;
   // the Pokémon
   const title = el('strong', {}, shown(summary), genderMark(summary));
@@ -528,13 +532,13 @@ function offerBody(summary, problems, evolves, { mine = false, online = false } 
     nature.append(' ', el('span', { className: 'up', textContent: `+${SHORT[effect.up]}` }), ' ', el('span', { className: 'down', textContent: `−${SHORT[effect.down]}` }));
   }
   const abilities = species?.abilities || [], ability = abilities.find(a => a.slot === summary.abilitySlot) || abilities[0];
-  const itemName = summary.heldKeyItem ? 'A key item' : summary.item ? (names?.items.get(summary.item) || `Item #${summary.item}`) : 'Nothing';
+  const itemName = summary.heldKeyItem ? 'A key item' : summary.item ? (names?.items.get(dataItem(summary)) || `Item #${summary.item}`) : 'Nothing';
   const hidden = ts?.hiddenPower(summary.ivs);
   const fact = (term, value, title = '') => el('div', { title: [typeof value === 'string' ? value : value.textContent, title].filter(Boolean).join('\n') }, el('dt', { textContent: term }), typeof value === 'string' ? el('dd', { textContent: value }) : value);
   children.push(el('dl', { className: 'tw-facts' },
     fact('Nature', nature, ts ? ts.natureLabel(summary.nature) : ''),
     fact('Ability', ability?.name || '?', ability?.doc || ''),
-    fact('Held item', itemName, summary.item ? names?.itemData.get(summary.item)?.doc || '' : ''),
+    fact('Held item', itemName, summary.item ? names?.itemData.get(dataItem(summary))?.doc || '' : ''),
     fact('Hidden Power', hidden ? `${hidden.type} ${hidden.power}` : '?'),
     fact('Trainer', `${summary.otName || '?'}${summary.otGender === 1 ? ' ♀' : summary.otGender === 0 ? ' ♂' : ''} · ${String(summary.otId).padStart(5, '0')}`),
     fact('Ball', BALLS[summary.ball] || 'Poké Ball')));
@@ -558,7 +562,7 @@ function offerBody(summary, problems, evolves, { mine = false, online = false } 
   for (let i = 0; i < 4; i++) {
     const move = summary.moves[i];
     if (!move) { moves.append(el('div', { className: 'tw-move none' }, el('strong', { textContent: '—' }), el('small', { textContent: ' ' }))); continue; }
-    const info = names?.moveData.get(move.id);
+    const info = dataMove(move);
     const most = info?.pp ? Math.floor(info.pp * (5 + move.ppUps) / 5) : null;
     const tile = el('div', { className: 'tw-move', title: info?.doc || '' }, el('strong', { textContent: info?.name || `Move #${move.id}` }),
       el('small', {}, el('span', { textContent: `${info?.type || '?'}${info?.power ? ` · ${info.power}` : ''}` }), el('span', { textContent: `PP ${most !== null ? `${move.pp}/${most}` : move.pp}` })));
