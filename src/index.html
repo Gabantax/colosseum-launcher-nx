@@ -659,6 +659,8 @@
             <div class="settings-group">
               <label class="switch"><span><strong>Update automatically</strong><small>On: launcher updates download by themselves and install when you quit, and Play installs a waiting game update first. Off: the launcher still checks, shows Update ready in the top bar and asks before Play; nothing downloads until you say so.</small></span><input id="autoUpdate" type="checkbox"><i></i></label>
               <label class="field" id="update-channel-field"><span>Launcher updates<small id="update-channel-note">Beta and pull request previews are for testing and may break. Switch back to Stable any time.</small></span><select id="updateChannel"><option value="stable">Stable</option></select></label>
+              <div class="field" id="portable-update-field" hidden><span><strong>Launcher updates</strong><small>The portable launcher can't update itself or switch to Beta: Update ready opens the releases page for the new version. For Beta and updates that install themselves, use the installer (the Setup .exe) from the releases page.</small></span></div>
+              <div class="actions" id="portable-update-actions" hidden><button class="subtle" id="get-installer">Get the installer</button></div>
             </div>
             <h2 class="group-title">Crash reports</h2>
             <div class="settings-group">
