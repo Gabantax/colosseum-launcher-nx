@@ -74,6 +74,10 @@ test('a Story party in a room for both games: those outside the set stay home, w
   assert.deepEqual(kept.map(each => each.species), [143, 196]);
   assert.deepEqual(leftOut.map(each => each.why[0]), ['Gengar holds item #592, which the other game doesn\'t have as a held item.',
     'Alakazam knows a Shadow move (move #356): rooms for both games have none.', 'Umbreon is a Shadow Pokémon: it stays home until it\'s purified.']);
+  // a Generation 4 Pokémon stays home but under Platinum's rules, which pass on to storyMembers
+  const gen4 = [member(143), member(444)];
+  assert.deepEqual(crossplay.storyMembers(gen4, storyParty.wireMember).kept.map(each => each.species), [143]);
+  assert.deepEqual(crossplay.storyMembers(gen4, storyParty.wireMember, {}, { later: true }).kept.map(each => each.species), [143, 444]);
 });
 
 test('under Platinum\'s rules a room for both games takes the fourth generation\'s', () => {

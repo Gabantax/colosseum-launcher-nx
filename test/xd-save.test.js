@@ -8,6 +8,7 @@ const path = require('node:path');
 const xdSave = require('../src/xd-save');
 const randomizer = require('../src/randomizer');
 const story = require('../src/story-party');
+const formats = require('../src/formats');
 
 const CARD = 43 * 0x2000;
 const utf16 = (bytes, offset, value) => Buffer.from(value, 'utf16le').swap16().copy(bytes, offset);
@@ -128,14 +129,15 @@ test('XD\'s Story party: each Pokémon whole, in Colosseum\'s numbers, Shadow Po
     { species: 175, nickname: 'TOGEPI', shadowId: 81 },               // purified
     { species: 25, nickname: 'EGG', egg: true },
     { species: 160, nickname: 'FERALIGATR', ability: 1, moves: [[57, 0], [375 + 17, 2], [356, 0]] },   // a later generation's move, a Shadow move
-    { species: 417, nickname: 'BUIZEL' }                              // a later generation's Pokémon
+    { species: 446, nickname: 'BUIZEL' }                              // a later generation's Pokémon, 2 past Colosseum's
   ];
   const dir = saveFolder(t, card({ count: 1, plain: pack({ party, darkStatus: { 1: 2, 81: 4 } }) }));
   const read = story.readStoryParty(dir, 'xd');
   assert.equal(read.trainer, 'MICHAEL');
   assert.equal(read.leftOut, 1);
-  assert.equal(read.packsLeftOut, 1);
-  assert.deepEqual(read.members.map(member => member.nickname), ['EEVEE', 'TOGEPI', 'FERALIGATR']);
+  assert.equal(read.packsLeftOut, 0);
+  assert.deepEqual(read.members.map(member => member.nickname), ['EEVEE', 'TOGEPI', 'FERALIGATR', 'BUIZEL']);
+  assert.deepEqual(read.members.map(member => member.species), [133, 175, 160, 444]);
   assert.deepEqual(story.wireMember(read.members[0]), [133, 0xa7c39f64, 0xd183a6d5, 4, 0, 0x8b, 215, 33, 3, 39, 0, 44, 1, 28, 0,
     14, 8, 3, 18, 6, 17, 4, 0, 252, 0, 0, 252, '00450045005600450045']);
   assert.equal(read.members[0].level, 24);
@@ -145,6 +147,25 @@ test('XD\'s Story party: each Pokémon whole, in Colosseum\'s numbers, Shadow Po
   assert.equal(story.readStoryParty(saveFolder(t, null), 'xd'), null);
   assert.equal(story.readStoryParty(saveFolder(t, Buffer.alloc(CARD)), 'xd'), null);
   assert.throws(() => story.readStoryParty(saveFolder(t, card({ count: 1, plain: pack(), broken: true })), 'xd'), /damaged/);
+});
+
+test('XD\'s Story party keeps its Generation 4 Pokémon, in Colosseum\'s numbers, and leaves out pack Pokémon', t => {
+  const party = [
+    { species: 122, nickname: 'MR. MIME' },
+    { species: 415, nickname: 'TURTWIG' },     // the first of the fourth generation's, Colosseum's 413
+    { species: 521, nickname: 'ARCEUS' },      // the last, Colosseum's 519
+    { species: 413, nickname: 'BONSLY' },      // XD's own, Colosseum's fourth-generation one
+    { species: 414, nickname: 'MUNCHLAX' },
+    { species: 253, nickname: 'MOONFANG' }     // a pack's
+  ];
+  const read = story.readStoryParty(saveFolder(t, card({ count: 1, plain: pack({ party }) })), 'xd');
+  assert.deepEqual(read.members.map(member => member.species), [122, 413, 519, 464, 472]);
+  assert.equal(read.packsLeftOut, 1);
+  assert.ok(read.members.every(member => story.validWireMember(story.wireMember(member), member.species)));
+  // they battle under Platinum's rules, as a Generation 4 party does, and Colosseum's rules say why not
+  const wire = read.members.map(story.wireMember), species = read.members.map(member => member.species);
+  assert.deepEqual(formats.problems({ format: 'casual', size: 3, battleRules: 4 }, species, wire), []);
+  assert.match(formats.problems({ format: 'casual', size: 3, battleRules: 3 }, species, wire).join(' '), /Generation 4 Pokémon, which play only under Pokémon Platinum's battle rules/);
 });
 
 // --- A real card the port wrote: XD_TEST_CARD=/path/to/PokemonXD.dat (a randomized new game) npm test ------------

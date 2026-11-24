@@ -43,7 +43,8 @@
       "Settings in the portable launcher now say why it can't update itself or switch to Beta, and Get the installer opens the releases page for the installer, which can.",
       "Fixed building the game failing on Windows, or freezing the whole computer on Linux, on PCs with many processor cores but little memory: the build now runs only as many jobs at once as the memory holds.",
       "Fixed A and B being swapped when moving around the launcher with a Switch Pro Controller or Joy-Con: A, on the right, now selects and B goes back, as printed.",
-      "Settings → Controls: moving a stick while it waits for a controller button now says the sticks always move the sticks and can't be bound, instead of doing nothing."
+      "Settings → Controls: moving a stick while it waits for a controller button now says the sticks always move the sticks and can't be bound, instead of doing nothing.",
+      "Fixed the Story party on the Online page leaving out Generation 4 Pokémon, and XD's Bonsly and Munchlax: they now come along and battle under Pokémon Platinum's battle rules."
     ],
     "game": [
       "120 fps in Colosseum and XD: characters, the camera and fades move twice as smoothly, menu text stays steady, Snag Balls play out in full, and the game keeps its normal speed.",

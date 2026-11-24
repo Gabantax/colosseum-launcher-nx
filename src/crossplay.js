@@ -97,11 +97,11 @@ function problems(party, members = null, names = {}, options = {}) {
 }
 
 // A Story party in a room for both games (src/story-party.js readStoryParty's members): those that can go as they
-// are, and why each of the others stays home, as Shadow Pokémon do.
-function storyMembers(members, wireMember, names = {}) {
+// are, and why each of the others stays home, as Shadow Pokémon do. options as memberProblems's.
+function storyMembers(members, wireMember, names = {}, options = {}) {
   const kept = [], leftOut = [];
   for (const member of members) {
-    const why = memberProblems(member.species, wireMember(member), names, Boolean(member.shadow));
+    const why = memberProblems(member.species, wireMember(member), names, Boolean(member.shadow), options);
     if (why.length) leftOut.push({ member, why });
     else kept.push(member);
   }
