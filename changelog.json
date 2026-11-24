@@ -93,7 +93,8 @@
       "The in-game Settings' Fullscreen resolution list no longer offers sizes smaller than the game's own 640×480, such as 320×240.",
       "Difficulty in Colosseum and XD: story trainers can have higher levels, evolved Pokémon, bigger teams up to 6, and more Shadow Pokémon, when you turn them on under Gameplay in the launcher. Every extra Shadow Pokémon you meet counts like the story's own, so Ho-Oh in Colosseum needs those purified too.",
       "GBA trades from the start: the Trade Center under Phenac City's Pokémon Center in Colosseum, and Gateon Port's in XD, now trades with a Game Boy Advance whenever you visit, instead of only after the story.",
-      "Difficulty in Colosseum and XD: with trainers' levels set higher than your strongest Pokémon, each story trainer's team is set that much above the highest level in your party and follows it as you level up, never below the game's own levels."
+      "Difficulty in Colosseum and XD: with trainers' levels set higher than your strongest Pokémon, each story trainer's team is set that much above the highest level in your party and follows it as you level up, never below the game's own levels.",
+      "Fixed Difficulty leaving Willie at the Outskirt Stand, the first trainer you battle in Colosseum, at the original game's levels and team: he now gets the higher levels, evolutions and bigger team too."
     ]
   },
   "releases": [
