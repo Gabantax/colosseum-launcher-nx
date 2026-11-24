@@ -381,6 +381,19 @@ function pbrTexturesInstalled(work, pack = PBR_TEXTURE_PACK) {
 }
 function pbrTextureFolder(work, pack = PBR_TEXTURE_PACK) { return path.join(pbrTextureDirectory(work), pack.folder); }
 
+// Images a published Battle Revolution HD pack has that the model draws better on its own (pbr-texture-pack.json
+// `leaveOut`: Skarmory's 16x16 reflection map, which the upscaler hardened into black and white bands). Removed before
+// launch and before the Pokédex reads the pack, so players needn't download the pack again.
+function dropLeftOutPbrTextures(work, pack = PBR_TEXTURE_PACK) {
+  if (!pack?.leaveOut?.length || !pbrTexturesInstalled(work, pack)) return [];
+  const folder = pbrTextureFolder(work, pack), removed = [];
+  for (const name of pack.leaveOut) {
+    if (path.basename(name) !== name) continue;
+    try { fs.unlinkSync(path.join(folder, name)); removed.push(name); } catch (_) { /* gone already, or not there */ }
+  }
+  return removed;
+}
+
 // The texture folders the game reads, first match wins: the player's custom textures, then the HD pack, then
 // Battle Revolution's HD textures (`pbrTextures`, a folder, when they're on and installed).
 function texturePackFolders(settings, root, customTextures, pbrTextures = null) {
@@ -778,6 +791,6 @@ function gameRuntimeFolders(environment = process.env) {
 
 module.exports = { PORT_URL, TEXTURE_PACK, PBR_TEXTURE_PACK, texturePack, gameArch, platformInfo, dependencyPaths, isPort, placeMainDol, validateRom, normalizeSettings, moveToMetal, turnOnQuickBattles,
   texturePackDirectory, texturePackInstalled, hdVisualsInstalled, dropLeftOutTextures, customTextureDirectory, customTexturesPresent, texturePackFolders,
-  pbrTextureDirectory, pbrTexturesInstalled, pbrTextureFolder, pbrTextureCommand,
+  pbrTextureDirectory, pbrTexturesInstalled, pbrTextureFolder, dropLeftOutPbrTextures, pbrTextureCommand,
   buildEnvironment, binaryPath, longPathProblem, pathCharacterProblem, nonAsciiPathProblem, playableInstall, useLauncherScripts, launcherScript,
   gameBuildEnvironment, buildCommand, buildJobs, textureCommand, pbrModelsScript, pbrModelsCommand, pbrOutdated, pbrMakesCries, playsOwnModels, playsPackCries, gameRunCommand, gameRuntimeFolders, systemLibdrmAmdgpu };

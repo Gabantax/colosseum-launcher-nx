@@ -1417,6 +1417,7 @@ function preparePlayPacks(rom, folder, battle = null) {
 let pokedexTextures = { key: null, index: new Map() };
 function pokedexTextureIndex(fresh = false) {
   const settings = { ...config.settings, textures: Boolean(config.repo && config.settings.textures && port.texturePackInstalled(config.repo, config.game)) };
+  if (pbrTexturesWanted(settings)) port.dropLeftOutPbrTextures(pbrWork());
   const folders = port.texturePackFolders(settings, config.repo, customTextureDirectory(), pbrTextureFolder()), key = folders.join('\n');
   if (fresh || key !== pokedexTextures.key) pokedexTextures = { key, index: texturePackLookup.indexFolders(folders) };
   return pokedexTextures.index;
@@ -1804,6 +1805,7 @@ async function playGame(installation = null, battle = null) {
   if (!hdVisualsReady(root, settings))
     throw new Error('HD visuals need to be set up. Return to the main screen to finish setup, or turn them off in Settings.');
   if (settings.textures) for (const name of port.dropLeftOutTextures(root, chosen.id)) log(`Removed ${name} from the HD texture pack: the game draws its own.`);
+  if (pbrTexturesWanted(settings)) for (const name of port.dropLeftOutPbrTextures(pbrWork())) log(`Removed ${name} from the Battle Revolution HD textures: the model draws its own.`);
   if (supports('languagePacks')) await ensureLanguage(settings);
   // An online battle plays on no save: the memory card stays as it was.
   if (!battle) makeSaveBackup('before-play');
