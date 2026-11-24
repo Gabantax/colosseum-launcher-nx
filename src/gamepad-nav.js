@@ -21,6 +21,14 @@
     return Boolean(button && (button.pressed || button.value > 0.5));
   }
 
+  // Nintendo's own controllers (Switch Pro, Joy-Con: vendor 057e) in the standard layout. Chromium puts their buttons
+  // where an Xbox pad's are, so B (bottom) is button 0 and A (right) is button 1, and without this B confirmed. Their
+  // GameCube adapter (057e, product 0337) isn't one: Chromium knows no layout for it.
+  function nintendoLetters(gamepad) {
+    const id = String(gamepad?.id || '');
+    return gamepad?.mapping === 'standard' && /vendor: ?057e|pro controller|joy-con|nintendo switch/i.test(id) && !/product: ?0337/i.test(id);
+  }
+
   // letters(gamepad): its A, B, X and Y are printed like Nintendo's (A on the right), so A confirms there.
   function heldInputs(gamepads, deadzone = 0.5, letters = () => false) {
     const held = new Set();
@@ -120,7 +128,7 @@
     return best;
   }
 
-  function start({ document, window, regions = '', defaultFocus = () => [], paused = () => false, letters = () => false, actions = {} }) {
+  function start({ document, window, regions = '', defaultFocus = () => [], paused = () => false, letters = nintendoLetters, actions = {} }) {
     const repeat = createRepeater();
     const gate = createRestGate();
     let frame = 0, lastFrame = 0;
@@ -246,7 +254,7 @@
     wake();
   }
 
-  const api = { heldInputs, scrollAxis, createRestGate, createRepeater, nextInDirection, typed, start };
+  const api = { heldInputs, nintendoLetters, scrollAxis, createRestGate, createRepeater, nextInDirection, typed, start };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.coloGamepadNav = api;
 })(typeof globalThis === 'object' ? globalThis : this);
