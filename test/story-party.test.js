@@ -108,6 +108,14 @@ test('Pokemon of Pokemon packs stay home: the other player\'s game wouldn\'t hav
   assert.deepEqual(party.members.map(member => member.species), [197]);
 });
 
+test('Generation 4 Pokemon come along: the room\'s rules say whether they can battle', t => {
+  const dir = saveFolder([{ species: 413, nickname: 'TURTWIG' }, { species: 444, nickname: 'BUIZEL' }, { species: 519, nickname: 'ARCEUS' }, UMBREON]);
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const party = story.readStoryParty(dir);
+  assert.equal(party.packsLeftOut, 0);
+  assert.deepEqual(party.members.map(member => member.species), [413, 444, 519, 197]);
+});
+
 test('no save, or one with no progress, is no Story party yet', t => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'colo-story-'));
   t.after(() => fs.rmSync(empty, { recursive: true, force: true }));

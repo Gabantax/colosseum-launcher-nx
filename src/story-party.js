@@ -9,10 +9,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { newestPlain } = require('./gci-save');
 const { isPackSpecies } = require('./pokemon-packs');
+const { isLaterSpecies } = require('./crossplay');
+const { speciesToColosseum } = require('./trade-convert');
 const xdSave = require('./xd-save');
 
 const SAVE = 'pokemon_colosseum.dat';
 const XD_SAVE = 'PokemonXD.dat';
+// A Pokémon of a Pokémon pack (src/pokemon-packs.js): the other player's game wouldn't have it. The fourth generation's
+// (Colosseum's 413 to 519) come along: every game has them under Pokémon Platinum's battle rules, and the room's rules
+// say whether they can battle (src/formats.js problems).
+const packSpecies = species => isPackSpecies(species) && !isLaterSpecies(species);
 // XD numbers the moves after Gen 3's 354 differently: its own Shadow moves first (355 to 374), then later generations'
 // 17 past Colosseum's (host/mechanics.c colo_xd_move). A member goes in Colosseum's numbers, which both games read.
 const XD_SHADOW_MOVES = [355, 374], XD_MOVE_SHIFT = 17;
@@ -96,9 +102,12 @@ function readXdParty(saveDir) {
   for (const member of party) {
     if (member.egg) continue;
     if (member.shadow) { leftOut++; continue; }
-    if (isPackSpecies(member.species)) { packsLeftOut++; continue; }
+    // in Colosseum's numbers, as the game's member lines carry them (host/mechanics.c colo_xd_species): the fourth
+    // generation's 2 later in XD, past its own Bonsly and Munchlax
+    const species = speciesToColosseum('xd', member.species);
+    if (packSpecies(species)) { packsLeftOut++; continue; }
     const moves = member.moves.map(([move, ups]) => [xdMove(move), ups]).map(([move, ups]) => (move ? [move, ups] : [0, 0]));
-    members.push({ ...member, moves, item: xdItem(member.item), shiny: isShiny(member) });
+    members.push({ ...member, species, moves, item: xdItem(member.item), shiny: isShiny(member) });
   }
   return { trainer, members, leftOut, packsLeftOut, modified: fs.statSync(file).mtimeMs };
 }
@@ -134,8 +143,7 @@ function readStoryParty(saveDir, gameId = 'colosseum') {
     const member = readMember(plain, at);
     if (member.egg) continue;
     if (member.shadow) { leftOut++; continue; }
-    // A Pokémon of a Pokémon pack (src/pokemon-packs.js): the other player's game wouldn't have it.
-    if (isPackSpecies(member.species)) { packsLeftOut++; continue; }
+    if (packSpecies(member.species)) { packsLeftOut++; continue; }
     members.push({ ...member, shiny: isShiny(member) });
   }
   return { trainer: String.fromCharCode(...trainer), members, leftOut, packsLeftOut, modified: fs.statSync(file).mtimeMs };

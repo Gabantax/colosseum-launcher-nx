@@ -75,7 +75,8 @@
       card.append(copy);
     }
     if (!usable) return card;
-    const choose = () => { setup.selected = STORY; save(); };
+    // with a Generation 4 Pokémon, it battles under Platinum's rules, as a Generation 4 party does
+    const choose = () => { setup.selected = STORY; if (storyGeneration() >= 4) setup.battleRules = 4; save(); };
     card.addEventListener('click', choose);
     card.addEventListener('keydown', event => { if (event.target === card && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); choose(); } });
     return card;
@@ -141,14 +142,18 @@
     save();
   }
 
-  // A new party is of the generation whose rules the Online page has chosen (the Story party's copy is the third's).
-  function openEditor(party, from = null, name = null) {
-    const generation = party?.generation || (from ? 3 : setup.battleRules >= 4 ? 4 : 3);
+  // A new party is of the generation whose rules the Online page has chosen (the Story party's copy is its own).
+  function openEditor(party, from = null, name = null, fromGeneration = 3) {
+    const generation = party?.generation || (from ? fromGeneration : setup.battleRules >= 4 ? 4 : 3);
     builder().open(party, { name: name || `Party ${setup.parties.length + 1}`, level: setup.level, battleRules: setup.battleRules, generation, from, done: keepParty,
       remove: () => { setup.parties = setup.parties.filter(item => item.id !== party.id); save(); } });
   }
 
   // The Story party's Pokémon as sets of the player's own, to change as they like.
+  // The Story party's generation: the fourth's when one of its Pokémon is, or knows one of its moves.
+  const storyGeneration = () => Math.max(3, ...state.story.members.flatMap(({ species, set }) =>
+    [window.coloTeamSets.speciesGeneration(species), ...(set?.moves || []).map(window.coloTeamSets.moveGeneration)]));
+
   async function copyStory() {
     await builder().load();
     const data = builder().data(), T = window.coloTeamSets;
@@ -156,9 +161,9 @@
       const ratio = data?.species[set.species]?.gender ?? T.GENDER.none, name = builder().speciesName(set.species);
       const nickname = set.nickname && set.nickname.toLowerCase() !== name.toLowerCase() ? set.nickname : '';
       const gender = T.genders(ratio).length === 2 ? (set.genderByte < ratio ? 'F' : 'M') : '';
-      return T.normalizeSet({ ...set, nickname, gender }, set.species);
+      return T.normalizeSet({ ...set, nickname, gender }, set.species, storyGeneration());
     });
-    openEditor(null, sets, state.story.trainer ? `${state.story.trainer}'s team` : 'Story team');
+    openEditor(null, sets, state.story.trainer ? `${state.story.trainer}'s team` : 'Story team', storyGeneration());
   }
 
   // --- Rooms
