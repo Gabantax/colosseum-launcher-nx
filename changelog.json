@@ -46,7 +46,8 @@
       "Settings → Controls: moving a stick while it waits for a controller button now says the sticks always move the sticks and can't be bound, instead of doing nothing.",
       "Fixed the Story party on the Online page leaving out Generation 4 Pokémon, and XD's Bonsly and Munchlax: they now come along and battle under Pokémon Platinum's battle rules.",
       "Fixed the trade window showing the wrong gender, and some move and item names, for Generation 4 Pokémon in XD, such as Bonsly.",
-      "Difficulty, under Gameplay: raise the story's trainers' levels by up to 50%, evolve their Pokémon to fit their level, give trainers with small teams more Pokémon, and add up to 48 more Shadow Pokémon to snag on story trainers, in Colosseum and XD. Each is off unless you turn it on."
+      "Difficulty, under Gameplay: raise the story's trainers' levels by up to 50%, evolve their Pokémon to fit their level, give trainers with small teams more Pokémon, and add up to 48 more Shadow Pokémon to snag on story trainers, in Colosseum and XD. Each is off unless you turn it on.",
+      "Trade from the start, under Settings, Game Boy Advance: on by default, the Trade Center trades with your GBA save before the story's end. Turn it off to wait as in the original game."
     ],
     "game": [
       "120 fps in Colosseum and XD: characters, the camera and fades move twice as smoothly, menu text stays steady, Snag Balls play out in full, and the game keeps its normal speed.",
@@ -89,7 +90,8 @@
       "Shiny odds: choose how likely Pokémon are to be shiny, from 1 in 8192 as in the original games up to 1 in 32. It counts for your starters, Shadow Pokémon and XD's Poké Spot Pokémon. Find it under Gameplay.",
       "Fixed the sunlight flashing on and off in Colosseum at 120 fps when the sunlight is strong, such as after Sunny Day or Drought: it now glows steadily.",
       "The in-game Settings' Fullscreen resolution list no longer offers sizes smaller than the game's own 640×480, such as 320×240.",
-      "Difficulty in Colosseum and XD: story trainers can have higher levels, evolved Pokémon, bigger teams up to 6, and more Shadow Pokémon, when you turn them on under Gameplay in the launcher. Every extra Shadow Pokémon you meet counts like the story's own, so Ho-Oh in Colosseum needs those purified too."
+      "Difficulty in Colosseum and XD: story trainers can have higher levels, evolved Pokémon, bigger teams up to 6, and more Shadow Pokémon, when you turn them on under Gameplay in the launcher. Every extra Shadow Pokémon you meet counts like the story's own, so Ho-Oh in Colosseum needs those purified too.",
+      "GBA trades from the start: the Trade Center under Phenac City's Pokémon Center in Colosseum, and Gateon Port's in XD, now trades with a Game Boy Advance whenever you visit, instead of only after the story."
     ]
   },
   "releases": [

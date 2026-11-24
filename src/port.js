@@ -278,6 +278,8 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     // A Game Boy Advance on a socket (src/gba.js): switched on and off as the game asks, unless the player
     // would rather; and its sound, in percent.
     gbaAutoPower: input.gbaAutoPower !== false,
+    // The Trade Center trades with a GBA save from the start, not only after the story (host/gbatrade.c). On unless turned off.
+    gbaTradeAnytime: input.gbaTradeAnytime !== false,
     gbaVolume: numberSetting(input.gbaVolume, 100, 0, 100),
     // The game's volumes in percent (Settings → Sound, or the game's own Settings screen): everything, its music, and its
     // sound effects (cries and the sounds around you too).
@@ -409,7 +411,8 @@ const FEATURE_ENVIRONMENT = {
   playAs: ['COLO_CHOOSE_HERO', 'COLO_PLAYER'],
   battleSpeed: ['COLO_BATTLE_SPEED'],
   quickMoves: ['COLO_QUICK_MOVES', 'COLO_FAST_STATUS', 'SMS_BUTTON_PROMPTS', 'SMS_BUTTON_PROMPT_PAD'],
-  hdText: ['COLO_HD_TEXT']
+  hdText: ['COLO_HD_TEXT'],
+  gbaLink: ['COLO_GBA_TRADE_ANYTIME']
 };
 
 // What the game reads when it starts, as run.sh and run.cmd set it up. `customTextures` is the custom
@@ -475,6 +478,8 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   if (settings.expAll) env.COLO_EXP_ALL = settings.expAllShare.toFixed(2);
   if (settings.cstickMove) env.COLO_CSTICK_MOVE = '1';
   if (settings.partnerPass === false) env.COLO_PARTNER_PASS = '0';
+  // Unset is on in the game: the Trade Center opens before the story's end.
+  if (settings.gbaTradeAnytime === false) env.COLO_GBA_TRADE_ANYTIME = '0';
   if (settings.pokeSpotPool === false) env.COLO_POKESPOT_POOL = '0';
   if (settings.chooseHero === false) env.COLO_CHOOSE_HERO = '0';
   env.COLO_COOP = settings.coop === false ? '0' : '1';

@@ -191,6 +191,10 @@ test('shiny odds are the games\' own 1 in 8192 unless chosen, in both games', ()
     assert.equal(port.normalizeSettings({ difficultyShadows: 30 }).difficultyShadows, 0);
     assert.equal(port.normalizeSettings({ difficultyLevels: 25, difficultyTeam: 7 }).difficultyLevels, 0, 'only the listed choices');
     assert.equal(port.normalizeSettings({ difficultyTeam: 7 }).difficultyTeam, 0);
+    assert.equal(port.normalizeSettings({}).gbaTradeAnytime, true, 'GBA trades from the start unless turned off');
+    assert.equal(env({}).COLO_GBA_TRADE_ANYTIME, undefined);
+    assert.equal(env({ gbaTradeAnytime: false }).COLO_GBA_TRADE_ANYTIME, '0');
+    assert.equal(env({ gbaTradeAnytime: false }, { game: 'xd' }).COLO_GBA_TRADE_ANYTIME, '0');
     assert.equal(port.normalizeSettings({}).shinyOdds, 8192);
     assert.equal(env({}).COLO_SHINY_ODDS, undefined, '1 in 8192 leaves it to the game');
     assert.equal(env({ shinyOdds: 8192 }).COLO_SHINY_ODDS, undefined);
