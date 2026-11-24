@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { heldInputs, scrollAxis, createRestGate, createRepeater, nextInDirection } = require('../src/gamepad-nav');
+const { heldInputs, nintendoLetters, scrollAxis, createRestGate, createRepeater, nextInDirection } = require('../src/gamepad-nav');
 
 function pad({ buttons = [], axes = [0, 0, 0, 0], connected = true, mapping = 'standard', index = 0, id = 'Xbox 360 Controller (XInput STANDARD GAMEPAD)' } = {}) {
   return { connected, mapping, index, id, axes, buttons: Array.from({ length: 17 }, (_, index) => ({ pressed: buttons.includes(index), value: buttons.includes(index) ? 1 : 0 })) };
@@ -250,4 +250,16 @@ test('an idle GameCube adapter leaves the Settings page where it is', () => {
   page.frames(300);
   assert.equal(page.document.activeElement, setting);
   assert.equal(settings.scrollTop, 800);
+});
+
+test("Nintendo's own controllers confirm with A, on the right; other controllers and the GameCube adapter don't swap", () => {
+  const pad = (id, mapping = 'standard') => ({ id, mapping });
+  assert.equal(nintendoLetters(pad('Pro Controller (STANDARD GAMEPAD Vendor: 057e Product: 2009)')), true);
+  assert.equal(nintendoLetters(pad('057e-2009-Pro Controller')), true);
+  assert.equal(nintendoLetters(pad('Joy-Con L+R (STANDARD GAMEPAD Vendor: 057e Product: 200e)')), true);
+  assert.equal(nintendoLetters(pad('Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)')), false);
+  assert.equal(nintendoLetters(pad('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)')), false);
+  assert.equal(nintendoLetters(pad('WUP-028 (Vendor: 057e Product: 0337)', '')), false);
+  assert.equal(nintendoLetters(pad('USB GamePad (STANDARD GAMEPAD Vendor: 057e Product: 0337)')), false);
+  assert.equal(nintendoLetters(null), false);
 });

@@ -41,7 +41,8 @@
       "Fixed the Pokémon editor saying a trade was in progress when no trade was running.",
       "Move Relearner: in Colosseum, the Move Deleter in Mt. Battle's Pokémon Center can make a Pokémon remember a level-up move even without Generation 4 Pokémon turned on. It's on by default; turn it off under Gameplay to have the Move Deleter only delete moves, as in the original game.",
       "Settings in the portable launcher now say why it can't update itself or switch to Beta, and Get the installer opens the releases page for the installer, which can.",
-      "Fixed building the game failing on Windows, or freezing the whole computer on Linux, on PCs with many processor cores but little memory: the build now runs only as many jobs at once as the memory holds."
+      "Fixed building the game failing on Windows, or freezing the whole computer on Linux, on PCs with many processor cores but little memory: the build now runs only as many jobs at once as the memory holds.",
+      "Fixed A and B being swapped when moving around the launcher with a Switch Pro Controller or Joy-Con: A, on the right, now selects and B goes back, as printed."
     ],
     "game": [
       "120 fps in Colosseum and XD: characters, the camera and fades move twice as smoothly, menu text stays steady, Snag Balls play out in full, and the game keeps its normal speed.",
