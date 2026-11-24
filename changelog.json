@@ -95,6 +95,7 @@
       "GBA trades from the start: the Trade Center under Phenac City's Pokémon Center in Colosseum, and Gateon Port's in XD, now trades with a Game Boy Advance whenever you visit, instead of only after the story.",
       "Difficulty in Colosseum and XD: with trainers' levels set higher than your strongest Pokémon, each story trainer's team is set that much above the highest level in your party and follows it as you level up, never below the game's own levels.",
       "Fixed Difficulty leaving Willie at the Outskirt Stand, the first trainer you battle in Colosseum, at the original game's levels and team: he now gets the higher levels, evolutions and bigger team too.",
+      "Fixed XD getting stuck at your first battle with Naps when Bigger teams was on: he had extra Pokémon that can't be snagged, in the one battle where you can only throw balls, so it never ended. He has just his Teddiursa there again.",
       "Fixed battles freezing when a Pokémon with a Battle Revolution model used a move it has its own animation for, such as Pichu's Tail Whip: the battle now goes on."
     ]
   },
