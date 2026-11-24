@@ -45,7 +45,8 @@
       "Fixed A and B being swapped when moving around the launcher with a Switch Pro Controller or Joy-Con: A, on the right, now selects and B goes back, as printed.",
       "Settings → Controls: moving a stick while it waits for a controller button now says the sticks always move the sticks and can't be bound, instead of doing nothing.",
       "Fixed the Story party on the Online page leaving out Generation 4 Pokémon, and XD's Bonsly and Munchlax: they now come along and battle under Pokémon Platinum's battle rules.",
-      "Fixed the trade window showing the wrong gender, and some move and item names, for Generation 4 Pokémon in XD, such as Bonsly."
+      "Fixed the trade window showing the wrong gender, and some move and item names, for Generation 4 Pokémon in XD, such as Bonsly.",
+      "Difficulty, under Gameplay: raise the story's trainers' levels by up to 50%, evolve their Pokémon to fit their level, and give trainers with small teams more Pokémon, in Colosseum and XD. Each is off unless you turn it on."
     ],
     "game": [
       "120 fps in Colosseum and XD: characters, the camera and fades move twice as smoothly, menu text stays steady, Snag Balls play out in full, and the game keeps its normal speed.",
@@ -87,7 +88,8 @@
       "Fixed Pokémon from More Poké Spot Pokémon being invisible at the Poké Spots, such as a wild Growlithe by an empty snack: the visitor now shows at the snack, shiny if it's shiny.",
       "Shiny odds: choose how likely Pokémon are to be shiny, from 1 in 8192 as in the original games up to 1 in 32. It counts for your starters, Shadow Pokémon and XD's Poké Spot Pokémon. Find it under Gameplay.",
       "Fixed the sunlight flashing on and off in Colosseum at 120 fps when the sunlight is strong, such as after Sunny Day or Drought: it now glows steadily.",
-      "The in-game Settings' Fullscreen resolution list no longer offers sizes smaller than the game's own 640×480, such as 320×240."
+      "The in-game Settings' Fullscreen resolution list no longer offers sizes smaller than the game's own 640×480, such as 320×240.",
+      "Difficulty in Colosseum and XD: story trainers can have higher levels, evolved Pokémon and bigger teams, up to 6, when you turn them on under Gameplay in the launcher."
     ]
   },
   "releases": [

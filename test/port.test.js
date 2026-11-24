@@ -181,6 +181,13 @@ test('shiny odds are the games\' own 1 in 8192 unless chosen, in both games', ()
   const saved = process.env.COLO_SHINY_ODDS;
   delete process.env.COLO_SHINY_ODDS;
   try {
+    assert.equal(env({}).COLO_DIFFICULTY, undefined, 'Difficulty is off unless chosen');
+    assert.deepEqual([port.normalizeSettings({}).difficultyLevels, port.normalizeSettings({}).difficultyEvolve, port.normalizeSettings({}).difficultyTeam], [0, false, 0]);
+    assert.equal(env({ difficultyLevels: '20' }).COLO_DIFFICULTY, '20:0:0', 'the list saves a string');
+    assert.equal(env({ difficultyEvolve: true, difficultyTeam: 4 }).COLO_DIFFICULTY, '0:35:4');
+    assert.equal(env({ difficultyLevels: 30, difficultyEvolve: true, difficultyTeam: 6 }, { game: 'xd' }).COLO_DIFFICULTY, '30:35:6');
+    assert.equal(port.normalizeSettings({ difficultyLevels: 25, difficultyTeam: 7 }).difficultyLevels, 0, 'only the listed choices');
+    assert.equal(port.normalizeSettings({ difficultyTeam: 7 }).difficultyTeam, 0);
     assert.equal(port.normalizeSettings({}).shinyOdds, 8192);
     assert.equal(env({}).COLO_SHINY_ODDS, undefined, '1 in 8192 leaves it to the game');
     assert.equal(env({ shinyOdds: 8192 }).COLO_SHINY_ODDS, undefined);

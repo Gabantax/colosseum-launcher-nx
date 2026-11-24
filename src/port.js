@@ -126,6 +126,11 @@ function numberSetting(value, fallback, lo, hi) {
 function choiceSetting(value, choices, fallback) { return choices.includes(value) ? value : fallback; }
 // The shiny odds the Gameplay list offers, 1 in each: the games' own first.
 const SHINY_ODDS = [8192, 4096, 1365, 512, 128, 32];
+// Difficulty (host/randomizer.c): how much higher the story's trainers' levels are, and the fewest Pokémon a trainer has.
+const DIFFICULTY_LEVELS = [0, 10, 20, 30, 50];
+const DIFFICULTY_TEAMS = [0, 3, 4, 5, 6];
+// The level at which a trainer's Pokémon that evolves by a stone, a trade or friendship evolves, with Evolve on.
+const DIFFICULTY_EVOLVE_LEVEL = 35;
 // Exp All's share: what each party Pokémon that didn't battle gets, of what one that battled gets, from 0.05 to 1 in
 // steps of 0.05; half unless set.
 function expAllShareSetting(value) {
@@ -185,6 +190,11 @@ function normalizeSettings(input = {}, platform = process.platform, arch = gameA
     shinyStarters: input.shinyStarters !== false,
     // 1 in how many Pokémon that can be shiny are (host/shiny.c): 1 in 8192, the games' own, unless chosen.
     shinyOdds: SHINY_ODDS.includes(Number(input.shinyOdds)) ? Number(input.shinyOdds) : 8192,
+    // Difficulty, for the story's trainers: higher levels, evolved to fit their level, more Pokémon on small teams. All
+    // off unless chosen, so the game plays as it always has.
+    difficultyLevels: DIFFICULTY_LEVELS.includes(Number(input.difficultyLevels)) ? Number(input.difficultyLevels) : 0,
+    difficultyEvolve: Boolean(input.difficultyEvolve),
+    difficultyTeam: DIFFICULTY_TEAMS.includes(Number(input.difficultyTeam)) ? Number(input.difficultyTeam) : 0,
     // A New Game asks whether to begin with Espeon and Umbreon, or two Pokémon the player picks. On unless turned off.
     chooseStarters: input.chooseStarters !== false,
     // The bag and shops list a TM by its move (Thunderbolt), its number in a tab over the description. On unless turned off.
@@ -384,6 +394,7 @@ const FEATURE_ENVIRONMENT = {
   shiny: ['COLO_SHINY_SHADOW'],
   shinyStarters: ['COLO_SHINY_STARTERS'],
   shinyOdds: ['COLO_SHINY_ODDS'],
+  difficulty: ['COLO_DIFFICULTY'],
   starters: ['COLO_CHOOSE_STARTERS'],
   tmNames: ['COLO_TM_NAMES'],
   infiniteTms: ['COLO_INFINITE_TMS'],
@@ -452,6 +463,9 @@ function buildEnvironment(settings, disc, root, { customTextures = null, pbrText
   if (settings.shinyStarters === false) env.COLO_SHINY_STARTERS = '0';
   // Unset is 1 in 8192 in the game, as on the disc.
   if (settings.shinyOdds && settings.shinyOdds !== 8192) env.COLO_SHINY_ODDS = String(settings.shinyOdds);
+  // LEVELS:EVOLVE:TEAM, unset when all are off (the game as on the disc)
+  if (settings.difficultyLevels || settings.difficultyEvolve || settings.difficultyTeam)
+    env.COLO_DIFFICULTY = `${settings.difficultyLevels || 0}:${settings.difficultyEvolve ? DIFFICULTY_EVOLVE_LEVEL : 0}:${settings.difficultyTeam || 0}`;
   if (settings.chooseStarters === false) env.COLO_CHOOSE_STARTERS = '0';
   if (settings.tmNames === false) env.COLO_TM_NAMES = '0';
   if (settings.infiniteTms) env.COLO_INFINITE_TMS = '1';
