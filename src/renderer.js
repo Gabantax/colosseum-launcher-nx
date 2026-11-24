@@ -279,11 +279,22 @@ function heldPadButtons() {
   return held;
 }
 
+// The sticks' positions (standard mapping: axes 0-3) on every connected controller, as "pad:axis" -> value.
+function stickAxes() {
+  const axes = new Map();
+  for (const pad of (navigator.getGamepads ? navigator.getGamepads() : []))
+    if (pad?.mapping === 'standard') pad.axes.slice(0, 4).forEach((value, index) => axes.set(`${pad.index}:${index}`, value));
+  return axes;
+}
+
 // Waits for newly pressed controller buttons (ones already held when capture began do not count): two held
-// together make a two-button binding (LB + LT), and one let go on its own is a binding by itself.
-function watchPad(baseline, chord = []) {
+// together make a two-button binding (LB + LT), and one let go on its own is a binding by itself. The game can't
+// bind a stick (they always move the sticks), so a stick pushed from where it rested says that instead of nothing.
+function watchPad(baseline, chord = [], rest = stickAxes()) {
   if (!capture) return;
   const held = heldPadButtons();
+  if (!chord.length && [...stickAxes()].some(([axis, value]) => Math.abs(value) > 0.7 && Math.abs(value - (rest.get(axis) ?? 0)) > 0.5))
+    $('binding-note').textContent = 'The sticks always move the sticks, and can\'t be bound. Press a button, or Esc to cancel.';
   for (const entry of held) {
     if (baseline.has(entry) || chord.some(item => item.entry === entry)) continue;
     const pad = ColoBindings.padFromIndex(Number(entry.split(':')[1]));
@@ -296,7 +307,7 @@ function watchPad(baseline, chord = []) {
   }
   if (chord.length && capture) $('binding-note').textContent = `${ColoBindings.padLabel(chord[0].pad)}: let go, or press another button with it.`;
   for (const entry of [...baseline]) if (!held.has(entry)) baseline.delete(entry);  // released: may count when pressed again
-  padPoll = requestAnimationFrame(() => watchPad(baseline, chord));
+  padPoll = requestAnimationFrame(() => watchPad(baseline, chord, rest));
 }
 
 function captureKey(event) {
