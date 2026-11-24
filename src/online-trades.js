@@ -42,12 +42,15 @@ function tradeEvolution(game, bytes) {
 
 // What the trade window shows of a Pokémon: every stat it has, in the viewer's game's numbers, from its bytes, whichever
 // game's (the page works out from them what the game would show: gender, ability, nature's effect, Hidden Power).
+// The team builder's battle data the page reads that from is by Colosseum's numbers, so each number also comes in
+// Colosseum's (dataSpecies, dataItem, a move's dataId): in XD's, a Generation 4 Pokémon is another one's row there
+// (XD's Bonsly is Colosseum's Turtwig), with another gender ratio.
 function summary(game, bytes, viewerGame = game) {
   const p = convert.read(game, bytes);
   const text = codes => { const end = codes.indexOf(0); return String.fromCharCode(...(end < 0 ? codes : codes.slice(0, end))); };
-  return { game, species: convert.speciesFromColosseum(viewerGame, p.species), nickname: p.nicknameText, level: p.level, exp: p.exp,
-    item: Math.max(convert.itemFromColosseum(viewerGame, Math.max(p.item, 0)), 0), heldKeyItem: p.item < 0,
-    moves: p.moves.filter(m => !m.shadow).map(m => ({ id: convert.moveFromColosseum(viewerGame, m.id), pp: m.pp, ppUps: m.ppUps })),
+  return { game, species: convert.speciesFromColosseum(viewerGame, p.species), dataSpecies: p.species, nickname: p.nicknameText, level: p.level, exp: p.exp,
+    item: Math.max(convert.itemFromColosseum(viewerGame, Math.max(p.item, 0)), 0), dataItem: Math.max(p.item, 0), heldKeyItem: p.item < 0,
+    moves: p.moves.filter(m => !m.shadow).map(m => ({ id: convert.moveFromColosseum(viewerGame, m.id), dataId: m.id, pp: m.pp, ppUps: m.ppUps })),
     personality: p.rnd, shiny: (((p.otId >>> 16) ^ (p.otId & 0xffff) ^ (p.rnd >>> 16) ^ (p.rnd & 0xffff)) >>> 0) < 8,
     nature: p.rnd % 25, abilitySlot: p.abilitySlot, ball: p.ball, hp: p.hp, maxHp: p.stats[0], stats: p.stats, ivs: p.ivs, evs: p.evs,
     friendship: p.friendship, otName: text(p.otName), otId: p.otId & 0xffff, otGender: p.otGender,
