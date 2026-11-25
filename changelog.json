@@ -1,7 +1,11 @@
 {
   "beta": {
     "launcher": [],
-    "game": []
+    "game": [
+      "Fixed online co-op battles going out of step and leaving the joining player stuck in the fight. The host's battle now decides, and the joining player's game follows its outcome.",
+      "Fixed Poké Balls, Snag Balls and other bag items in online co-op doing nothing in the other player's battle. A Pokémon either player snags or catches now ends up in both games.",
+      "Online co-op: the joining player's game now uses the host's Difficulty, shiny odds and Exp All, so both players face the same Pokémon. It also warns when your Pokémon packs differ from the host's."
+    ]
   },
   "releases": [
     {
